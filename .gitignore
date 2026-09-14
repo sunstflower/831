@@ -9,3 +9,6 @@ coverage/
 *.log
 .env
 .env.local
+
+# 架构图导出产物（由 docs/architecture.md 生成，可随时重建）
+docs/export/
