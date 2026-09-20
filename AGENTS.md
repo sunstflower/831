@@ -22,10 +22,12 @@
   - [`design.md`](./design.md)：设计文档（架构 / 模块目标 / 要求规范 / 数据模型 / 状态机 / 算法）。
   - [`docs/api.md`](./docs/api.md)：接口文档（全量契约 / 错误码 / 事件）。
   - [`docs/module-M4-dispatch.md`](./docs/module-M4-dispatch.md)：模块开发文档（调度引擎 M4，面向开发）。
+  - [`docs/module-M6-map.md`](./docs/module-M6-map.md)：模块开发文档（地图渲染 M6，React Flow 方案；含选型实测数据、数据映射、Handle 策略、性能护栏、测试与打包口径，**方案待评审**）。
   - [`docs/database.md`](./docs/database.md)：SQLite 建表 DDL / 索引 / seed / 迁移规则。
   - [`docs/build-plan.md`](./docs/build-plan.md)：P1-P6 构建计划与阶段验收门。
   - [`docs/order-data-map-design.md`](./docs/order-data-map-design.md)：订单数据接入与地图生成设计（CSV 导入 / 地区目录 / 订单数据文档 / 地图联动，**设计态，尚无实现**）。
-  - [`docs/architecture.md`](./docs/architecture.md)：架构图集（22 张 Mermaid，可直接导出 PPT / Word / PDF / 图片；含实现状态标记与导出命令）。
+  - [`docs/architecture.md`](./docs/architecture.md)：架构图集（23 张 Mermaid，可直接导出 PPT / Word / PDF / 图片；含实现状态标记与导出命令）。
+  - [`docs/data-interfaces.md`](./docs/data-interfaces.md)：数据文件接口规范（订单 CSV / 仿真地图 / 车辆参数 / 算法配置的导入契约 + 统一导入管线，**草案，调研中**）。
   - [`docs/requirement-raw.md`](./docs/requirement-raw.md)：原始需求存档。
   - [`README.md`](./README.md)：项目说明。
 
@@ -99,6 +101,11 @@
 | D-14 | 数据库实现采用 Node 内置 `node:sqlite` `DatabaseSync`，不引入 better-sqlite3 | 与当前 Node/Electron 运行时及零原生额外依赖目标一致；如更换驱动必须同步 `desktop/src/db/index.ts`、迁移/事务测试与构建文档 |
 | D-15 | 订单接入引入独立「地区目录」（`regions` / `region_aliases` / `region_dataset_versions`），不复用业务 `sites` 承担外部地址别名；匹配优先级为「标准编码 → 规范化名称 → 别名 → 归一化唯一命中」，多候选/无候选一律进失败明细，禁止自动猜测 | 外部地址别名数量与语义远多于业务站点；匹配结果需可复核（保存 `inputValue`/`matchType`/`confidence`/`datasetVersion`）。见 `docs/order-data-map-design.md` §3 |
 | D-16 | CSV 导入按 `contentSha256 + mappingVersion` 幂等，重复上传默认不重复建任务；导入分「预检预览（零副作用）+ 确认导入」两步，单行失败不回滚其它合法行，仅批次级系统错误整体回滚 | 满足「先预览后生效」与部分成功反馈；避免重复导入污染任务表。见 `docs/order-data-map-design.md` §2/§4.3 |
+| D-17 | 四类数据文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）共用一套导入契约：统一 JSON 信封 `schemaVersion+kind+meta+data`、统一 `ImportIssue` 错误模型、统一 `mode`（validateOnly/merge/replace/appendOnly）与幂等键 `contentSha256+schemaVersion+mappingVersion+targetScope` | 管线与错误模型完全一致，前端只需一套导入向导；避免四套各自为政的导入语义。见 `docs/data-interfaces.md` §2。**待评审** |
+| D-18 | 文件内一律用业务 `code` 引用、不使用数据库 ID；引用必须能在同一文件内解析（`merge` 模式可放宽为库内解析） | ID 由系统生成，外部文件无法预知；用 code 才能让地图/车队文件自洽、可手写、可 diff。见 `docs/data-interfaces.md` §4.2 |
+| D-19 | 车辆参数文件**只承载物理参数与服务能力**，禁止出现运行态字段（status/x/y/currentNodeId/battery/loadKg）；出现即报错阻断，不静默忽略 | 静默忽略会让使用者误以为配置生效；运行态由调度与执行器独占管理。见 `docs/data-interfaces.md` §5.1 |
+| D-20 | 算法配置以「导入型配置集 + 版本化（active/superseded）」落地，不接管运行时 `settings` 热更新；与 `settings` 重叠项以 `settings` 优先并给 info 提示 | 兼顾 D-12（P4 权重走常量）与仿真可复现诉求；不静默覆盖用户显式设置过的项。见 `docs/data-interfaces.md` §6.4 |
+| D-21 | M6 地图渲染改用 **React Flow（`@xyflow/react` v12，仅 renderer 依赖）** 替换原「自研 SVG/Canvas 平面图层」；`map/overview` 为画布唯一数据入口；地图只渲染路线不自行搜索路径；车辆位置以事件为权威、插值仅补帧且禁止外推；图层开关用 `hidden` 而非过滤元素 | React Flow 是节点/边图渲染器，与 D-05 的平面 `{x,y}` 米制路网模型天然匹配，且视口/命中/标签/箭头等均为其成熟能力，省去自研；**M6 尚未实现，属零迁移成本替换**。实测：Vite 6 构建通过、体积 +187 KB（gzip +61 KB）、产物无 Worker/WASM/动态 import、Electron `loadFile` 正常渲染、2000 节点+3910 边 20 Hz 刷新仍 60 fps。见 `docs/module-M6-map.md`。**待评审** |
 
 ## 困难与问题记录
 
@@ -113,6 +120,13 @@
 | 2026-09-14 | `renderer/` 同时存在嵌套 `node_modules`（Vite 6.4.3），根 `node_modules` 为 Vite 5.4.21 | renderer 依赖未完全提升；两套 Vite 并存 | 属正常 workspaces 现象，但需注意：`renderer/vite.config.ts` 由 Vite 6 执行，根 `vitest.config.ts` 由 Vite 5 执行；排查构建/测试问题时要区分版本 |
 | 2026-09-14 | `npm run build` 在 renderer 阶段失败，`npm run dev` 看似正常但拿不到入口 | `renderer/index.html` 引用 `/src/main.tsx`，该文件不存在；dev server 用 SPA 兜底返回 `index.html`，被误判为 200 成功 | 已记录为真实基线；P1 补齐 `src/main.tsx` 后重跑 `npm run build` 与浏览器冒烟 |
 | 2026-09-14 | `npm run dev:electron` 端到端链路从未验证 | renderer 无入口，Electron 加载 `http://localhost:5173` 必然白屏 | 待 renderer 入口 + `ipc` 适配器就位后验证；验证前不得声称桌面端可用 |
+| 2026-09-15 | 能耗估算缺乏量纲正确的模型：代码注释中出现 `kmToWh(总里程)`，把「里程」直接当「耗电」 | 设计阶段只有「按里程估算」一句，未定义单位与电池容量口径 | 已在 `docs/data-interfaces.md` §5.4 固定为「每公里耗电 Wh × 里程」并引入 `batteryCapacityWh`；缺容量时退化为百分比近似并给 warning。实现 M4 时需按此口径改写 |
+| 2026-09-15 | 算法配置存在两处可改同一参数的隐患（`settings` 表 vs 导入型配置集） | D-12 决定权重走常量、D-20 引入配置集，二者边界未定义 | 已定为「重叠项以 `settings` 优先 + info 提示」（`docs/data-interfaces.md` §6.4）；**待评审** |
+| 2026-09-15 | 导入进度无承载通道：现有事件总线仅有 `task.changed` 等业务事件，不适合承载批次进度 | 导入为长耗时操作，IPC 默认等待不足 | 记为待评审问题 Q6（倾向先轮询 `GET /api/imports/{id}`），未擅自新增事件名 |
+| 2026-09-20 | Chrome 直接打开 `file://` 产物时 React Flow 不渲染，一度疑似打包缺陷 | Chromium 以 CORS 规则拦截 `file://` 下的 ES module 脚本；用最小复现（纯 `type="module"` 脚本 BLOCKED、同内容的传统 `<script src>` 正常）确认与 React Flow 无关 | **已排除**：真实 Electron 44 用 `loadFile()` 实测渲染正常（视口/节点/边/边路径 DOM 齐全）。验收请用 `dev:electron` 或 `vite preview`，不要用 Chrome 开 `file://`。兜底为单文件 IIFE 构建（实测在 `file://` 下可渲染）。见 `docs/module-M6-map.md` §11 |
+| 2026-09-20 | jsdom 中 `render(<ReactFlow/>)` 直接抛 `ReferenceError: ResizeObserver is not defined` | React Flow 依赖 `ResizeObserver` 测量节点尺寸，jsdom 未实现该 API | 已给出最小 stub（`ResizeObserver` + `matchMedia`）并实测通过；但**必须先修复 `tests/setup.ts` 的既有依赖缺失**，否则新增用例同样无法收集。见 `docs/module-M6-map.md` §10.1 |
+| 2026-09-20 | `@xyflow/react` 自带 `zustand@4.5.7`，与项目 `zustand@5.0.15` 并存两份 | React Flow 的 `dependencies` 固定 `zustand ^4.4.0`，npm 无法将其提升为根的单版本 | **属正常现象**，两者互不干扰（React Flow 只用自己那份）；排查版本问题需注意 `renderer/node_modules/@xyflow/react/node_modules/zustand`。已记入文档，与既有「两套 Vite」同类 |
+| 2026-09-15 | 迁移编号可能冲突：`order-data-map-design.md` 建议 `0002_order_ingestion.sql`，`data-interfaces.md` 建议 `0002_data_import.sql` | 两份设计分别编号，均未落地 | **已解决**：统一为 `0002_data_import.sql`，`0002_order_ingestion.sql` 作废（见本文件 Q7 与两文档去重说明） |
 
 ## 工作日志
 
@@ -220,3 +234,98 @@
   1. 图中标注的三处**实现缺口**需在后续阶段闭合：`EventBus` 未按会话权限过滤事件（M6/M8 落地时补）、车辆状态机迁移表未成稿（M2/M7 补）、renderer 全层未实现。
   2. 待 D-15 / D-16 评审通过、`docs/api.md` 回写订单接口后，本图集需补一张「订单接入与地图联动」流程图。
   3. 未提交（按纪律，等评审后统一提交）。
+
+### 2026-09-15 — 新增数据文件接口规范 `docs/data-interfaces.md`（四类文件，草案） ✅
+
+- **范围与目标**：为新需求设计四类可导入数据文件的接口契约 —— 订单数据集 CSV、仿真地图、配送车辆参数、配送算法配置。需求方明确「仍在调研」，故本次**只做接口文档设计，不写实现**，并把不确定项集中列为待评审问题而非擅自定论。
+- **变更清单**：
+  - 新建 `docs/data-interfaces.md`（1092 行，12 章 + 2 张 Mermaid 图）：
+    - §2 通用文件契约：编码/体积、JSON 信封（`schemaVersion`+`kind`+`meta`+`data`）、统一导入管线（12 阶段）、统一 `ImportIssue` 错误模型、幂等与批次、四种 `mode`、场景包组合校验。
+    - §3 F1 订单 CSV：表头/分隔符/编码嗅探（含 GBK）、字段契约、列名映射两层策略、名称解析与歧义、重复策略、公式注入防护。
+    - §4 F2 仿真地图：`nodes`/`edges`/`sites`/`restrictions` 完整示例与字段契约、**用 code 引用**的规则、图结构校验（连通分量/孤立节点等 7 项）、导入模式差异。
+    - §5 F3 车辆参数：与既有 `vehicles` 表的分工（物理参数 vs 运行态）、能耗模型（量纲修正）、服务能力、与地图交叉校验、导入模式差异。
+    - §6 F4 算法配置：与 `DISPATCH_COST_WEIGHTS` 等既有常量逐键对齐、权重量纲与约束、路径参数与 A* 可采纳性、规模上限、与 `settings` 表冲突优先级、生效时机。
+    - §7 接口草案：统一 `{kind}` 参数化的 6 个导入接口 + 各 kind 权限/专属参数 + 算法配置 dry-run 预览 + 对称的导出能力（含往返一致要求）。
+    - §8 错误码汇总：54 条，按管线/订单/地图/车辆/算法/路径/场景分组，每条带 severity。
+    - §9 前端落地要点：导入向导状态机、组件拆分、性能与体验要点、三层适配器差异。
+    - §10 数据模型新增建议（4 张表 + 索引）、§11 测试清单（C1-C5 / O1-O7 / M1-M7 / V1-V5 / A1-A6）、§12 待评审问题 Q1-Q9。
+  - `design.md` §10.2 文档索引、`README.md` 文档入口表：补入本文件与另两份未索引的文档（`order-data-map-design.md`、`architecture.md`）。
+- **关键设计决策**：新增 D-17（四类文件共用一套导入契约）、D-18（文件内用 code 引用）、D-19（车辆文件禁止运行态字段）、D-20（算法配置版本化，不接管 settings 热更新）。**四条均标注「待评审」**。
+- **验证与测试结果**：
+  - ✅ 文档结构自检：代码围栏 32 处（偶数配对）；52 个 Markdown 表格列数**逐块一致**（脚本校验，0 处不一致）。
+  - ✅ 错误码闭环校验：文中出现的 54 个错误码与 §8 声明集合**完全一致**（脚本比对，无「用了未声明」或重复声明）。初稿有 3 处不一致（`MAP.IN_USE_CONFLICT` 与实际使用的 `IMPORT.IN_USE_CONFLICT` 混用、`ROUTE.VIA_NOT_ALLOWED` 与 `ROUTE.DETOUR_EXCEEDED` 未声明），已修正。
+  - ✅ 2 张 Mermaid 图（导入管线、向导状态机）渲染成功（`@mermaid-js/mermaid-cli`，exit 0）。
+  - ✅ 与既有实现的对齐核对：`costWeights` 五个键名与 `DISPATCH_COST_WEIGHTS` 完全一致；`priorityWeight` 与 `PRIORITY_WEIGHT` 一致；`limits` 缺省值与 D-12 的 `taskIds≤50`/车辆≤30 一致；`minBatteryPercent` 缺省与 `MIN_BATTERY_PERCENT` 一致；枚举取值均取自 `shared/src/enums.ts`。
+  - 未执行：无代码改动，未运行 `npm test` / `npm run build`。
+- **遇到的困难与解决方案**：
+  1. 能耗模型量纲不成立（既有注释 `kmToWh(总里程)` 把里程当耗电），已在新文件 §5.4 固定为「每公里耗电 × 里程」并引入 `batteryCapacityWh`，同时给出缺容量时的退化口径与 warning，同步记入问题记录。
+  2. 算法配置与 `settings` 表存在双写同一参数的隐患，定为「重叠项 settings 优先 + info 提示」，不静默覆盖，列为 Q3 待评审。
+  3. 大文件路径的三层适配器差异（Electron 传 `filePath`、浏览器传 base64）会导致同一份前端代码行为分叉，已明确写入接口契约与前端要点，避免实现时「渲染层先读成 base64 再传」的性能陷阱。
+  4. 预检长耗时与 IPC 等待的现实矛盾：引入 `options.previewLimit` 截断 + `truncated` 标记，并要求前端显式提示「仅预检前 N 行」，避免用户误判已全文校验。
+- **遗留问题与下一步**：
+  1. **Q1-Q9 待评审**，其中 Q2（配置确认权限用 `settings:write` 还是 `dispatch:apply`）、Q3（配置与 settings 边界）、Q7（迁移编号合并）影响面最大。
+  2. 评审通过后回写：`docs/api.md`（新增导入/导出接口与 54 条错误码）、`docs/database.md`（4 张新表 DDL）、`design.md`（§6 数据模型、§7 权限矩阵）。
+  3. 与 `docs/order-data-map-design.md` 合并去重：两份文件在订单导入、地区目录、错误分类上有重叠，需统一为单一来源，避免又一处文档漂移。
+  4. 未提交（按纪律，等评审后统一提交）。
+
+### 2026-09-15 — 两份订单/数据文档去重，消除口径分歧 ✅
+
+- **范围与目标**：`docs/order-data-map-design.md`（v1.0）与 `docs/data-interfaces.md`（v0.1）在「文件怎么收、怎么校验、怎么报错、接口长什么样」上大面积重复，且已产生**三处实际口径分歧**。本次做一次性去重，确立「同一主题只有一处定义」并补齐交叉引用。仅文档改动，无代码。
+- **变更清单**：
+  - 重写 `docs/order-data-map-design.md`（144 行 → 201 行）：**只保留订单领域语义** —— 地区目录与匹配语义（§3）、订单数据文档（§4）、地图联动（§5）、订单专属接口（§6）、权限审计（§7）、落地节奏（§8）。新增 §0「去重说明」表，逐条列出被移除的 11 个重复主题及其唯一来源。
+  - `docs/data-interfaces.md`（v0.1 → v0.2）：新增「与 `order-data-map-design.md` 的分工」表；§3.4 名称解析改为引用订单文档 §3.1，只保留错误码与 severity；§10 表清单登记订单领域三组表的**归属**（主定义在订单文档）并说明同属一个 `0002` 迁移；Q7 标记为已定。
+  - `AGENTS.md`：问题记录的「迁移编号冲突」标记为**已解决**；新增本日志条目。
+- **关键设计决策**：无新增 D 编号。本次是**既有设计决策的归属整理**，不改变任何设计内容的实质。
+- **修正的三处口径分歧**（去重的主要收益）：
+  1. **错误码命名**：v1.0 用无命名空间形式（`FILE_INVALID` / `FIELD_REQUIRED` / `DUPLICATE_ORDER` / `REGION_NOT_FOUND` / `REGION_AMBIGUOUS` / `ROUTE_NOT_FOUND` / `SITE_DISABLED`），与 `data-interfaces.md` §8 的 `IMPORT.*` / `ORDER.*` 形式冲突。现统一以 `data-interfaces.md` §8 为唯一错误码登记处。
+  2. **批次表**：v1.0 的 `order_import_batches` 与 `data-interfaces.md` 的 `import_batches` 重复。现合并为一张 `import_batches`（`kind='orders'`）。
+  3. **导入接口路径**：v1.0 的 `POST /api/orders/import/preview|confirm` 与 `data-interfaces.md` 的 `POST /api/imports/preview|confirm` 重复。现统一为后者 + `kind="orders"`，订单文档不再另立导入入口。
+  - 附带解决 **Q7**：迁移编号统一为 `0002_data_import.sql`，`0002_order_ingestion.sql` 作废。
+- **验证与测试结果**：
+  - ✅ 结构自检：`order-data-map-design.md` 5 个表格列数一致、代码围栏 2 处配对；`data-interfaces.md` 54 个表格列数一致、围栏 32 处配对。
+  - ✅ 1 张 Mermaid 图（订单领域流程）重新渲染成功，`data-interfaces.md` 2 张图仍正常（`@mermaid-js/mermaid-cli`，exit 0）。
+  - ✅ 去重效果核验：脚本检索订单文档，确认「20 MB 上限 / BOM / 分隔符 / 流式解析 / 字段必填表 / onDuplicate / 公式注入」等主题**仅以引用形式出现**，无重复定义。
+  - ✅ 残留引用扫描：全仓无 `order_import_batches`、`/api/orders/import`、`FILE_INVALID`、`HEADER_MISSING` 等已废弃标识的遗留使用（仅存在于去重说明表与历史日志中，属有意保留）。
+  - 未执行：无代码改动，未运行 `npm test` / `npm run build`。
+- **遇到的困难与解决方案**：
+  1. 去重的难点不是删字，而是**判断每个主题该归谁**。判据定为：「文件格式/管线/横跨四类文件的通用规则」归 `data-interfaces.md`；「订单业务语义」归订单文档。据此把 `orders` / `order_import_rows` 留在订单文档，把 `import_batches` / `import_issues` 收归通用文档。
+  2. `order_import_rows` 与 `import_issues` 语义相近易被合并，已明确分工并写入文档：前者是**每行结果**（含成功行，供数据文档还原），后者是**问题清单**（仅问题项）。二者不互相替代。
+  3. 历史工作日志（2026-09-14 条目）中出现已作废的 `0002_order_ingestion.sql`。按工作日志**只追加不篡改**的原则保留原文，改由本条日志与问题记录表标注「已解决」，避免历史被悄悄改写。
+- **遗留问题与下一步**：
+  1. Q1-Q6、Q8、Q9 仍待评审（Q7 已定）。
+  2. 评审通过后仍须回写 `docs/api.md`（导入/导出接口 + 错误码）、`docs/database.md`（新增表 DDL + `0002` 迁移）、`design.md`（§6 数据模型、§7 权限矩阵）。
+  3. 未提交（按纪律，等评审后统一提交）。
+
+### 2026-09-20 — 地图渲染选型改为 React Flow + 新增 M6 模块方案文档 ⏳（未提交）
+
+- **范围与目标**：按需求「用 React Flow 做配送车辆地图以更好地可视化路线」，为 M6（地图可视化）定制落地方案并同步受影响文档。本次**只做方案与文档，不写业务代码**；`renderer/` 当前仍无入口，属纯新增设计。
+- **变更清单**：
+  - 新建 `docs/module-M6-map.md`（470 行，13 章）：选型结论与**实测数据**、React Flow 的能力边界、代码结构规划（`renderer/src/map/` 全展开）、数据映射（`map/overview` → 节点/边，含 id 命名空间与坐标变换）、节点与边类型系统（含 Handle 策略二选一）、视口与交互、路线高亮与车辆插值动画、事件接入与去重节流、性能预算与护栏、测试清单（含 jsdom stub）、打包与离线、风险与待评审、开发顺序与 DoD。
+  - `design.md`：§2.1 分层图「地图画布」→ React Flow；§2.3 技术选型表地图行改为 React Flow（v12，仅 renderer）；§2.4 目录规划展开 `renderer/`（补 `main.tsx` 缺失说明与 `map/` 子结构）；§4.6 M6 职责补实现方案链接、Req-M6-4/5 补验收细节、**新增「渲染层约束」4 条**；§10.2 文档索引补 M6 方案。
+  - `docs/architecture.md`：第 1、2 章两张图中的「SVG Canvas」改为 React Flow；新增 §8.2「地图渲染链路（M6 · React Flow 方案）」图（数据流与职责边界 + 4 项实现缺口），原 §8.2 顺延为 §8.3；图数 22 → 23，同步导出注释。
+  - `README.md`：文档入口表补 `docs/module-M6-map.md`；图集数量 22 → 23。
+  - `AGENTS.md`：文档索引补 M6 方案；新增决策 **D-21**；新增 3 条问题记录；本日志条目。
+- **关键设计决策**：新增 **D-21**（M6 改用 React Flow，`@xyflow/react` v12，仅 renderer 依赖；`map/overview` 为唯一数据入口；地图只渲染路线不自行搜索路径；车辆位置禁止外推；图层开关用 `hidden`）。**待评审**。
+- **验证与测试结果（2026-09-20 实测）**：
+  - ✅ 依赖可解析：`@xyflow/react@12.11.6` + React 18.3.1，26 包，无 peer 冲突；license MIT；peer `react >= 17`。
+  - ✅ Vite 6.4.3 构建（renderer 同形态）：186 模块 431ms；产物 JS 330.62 kB（gzip 106.66 kB）+ CSS 15.87 kB（gzip 2.67 kB）。
+  - ✅ 体积增量：对照基线（仅 React+react-dom）143.65 kB → +186.97 kB（gzip +60.58 kB）。
+  - ✅ 离线核验：产物中 `new Worker` / `WebAssembly` / `eval(` / 动态 `import(` 均为 0；仅含 `reactflow.dev` 署名链接字符串，**无运行时网络请求**。
+  - ✅ Electron 44 端渲染：`loadFile()` 后真实 DOM 有 1 视口 / 1 节点 / 1 边，边 `<path d>` 与节点包围盒正常。
+  - ✅ 车辆沿折线移动：按进度插值更新节点位置，3 次采样屏幕坐标 (229,119) → (508,319) → (337,148)，确在移动。
+  - ✅ 性能：1200 节点/2330 边 + 20 Hz 刷新 → 中位 8.3 ms、p95 9.0 ms；2000 节点/3910 边 → 中位 8.3 ms、p95 16.7 ms（仍 60 fps）。
+  - ✅ jsdom 组件测试：Vitest 2.1.9 分别在 Vite **6.4.3** 与 **5.4.21**（本仓库根配置）下各 1 passed；需 `ResizeObserver` + `matchMedia` stub。
+  - ✅ 关键行为实测（均已写入文档）：handle **不会**自动就近选择（不指定时取声明顺序第一个）；同源同目标边路径完全重合且按数组顺序绘制（后者在上）；`hidden: true` 对节点与边均生效；显式 `sourceHandle`/`targetHandle` 生效；`EdgeLabelRenderer` 自定义边标签渲染成功。
+  - ✅ `file://` 归因：Chrome headless 下 `type="module"` 脚本被拦、同内容传统脚本正常（最小复现），确认是 Chromium 的 `file://` 模块 CORS 行为；**真实 Electron `loadFile()` 实测正常**；单文件 IIFE 构建在 `file://` 下亦可渲染（兜底）。
+  - 未执行：`npm test` / `npm run build` / `npm run db:migrate`（本次**无代码改动**，且 `tests/setup.ts` 既有阻塞项未修，跑了也只会复现已知失败）。所有验证均在 `/tmp` 下的独立探针工程与 Electron 44 中完成，未污染本仓库依赖。
+- **遇到的困难与解决方案**：
+  1. 首轮 Electron 验证只输出消息、拿不到渲染结果：改用 `executeJavaScript` 读取真实 DOM 计数与几何（节点数、边 `<path d>`、包围盒），才拿到可信结论。
+  2. `file://` 不渲染一度疑似打包缺陷：设计对照实验（模块脚本 vs 传统脚本）确认是浏览器行为而非 React Flow 问题，再用真实 Electron 复核，避免把错误结论写进文档。
+  3. 「自定义边未生效」的假警报：实际是探针 HTML 入口指向了旧文件（构建输入未更新），修正入口后 `edgeTypes` 正常工作。已在文档中保留「自定义边可用」的正面结论。
+  4. 几个凭印象容易写错的点被实测推翻（自动就近选 handle、重复边自动错线），这三条若照印象写文档会直接导致实现返工，已改为「实测事实」并给出强制写法。
+- **遗留问题与下一步**：
+  1. **Q-1…Q-4 待评审**（是否隐藏 React Flow 署名、`PIXELS_PER_METER` 是否自适应、Handle 方案 A/B、超规模降级顺序）。
+  2. D-21 待评审；通过后再落地 `renderer/package.json` 依赖与 `src/map/`。
+  3. **前置阻塞未变**：`tests/setup.ts` 缺 `@testing-library/jest-dom` 导致 5 个既有套件无法收集；M6 渲染层测试依赖此项先修复（且需补 `ResizeObserver` stub）。
+  4. 既有待办仍在：`design.md` §2.3 的 `better-sqlite3`（本次**仅改了地图行**，数据层行仍待按 D-14 修正）、`docs/build-plan.md` §2/§7、`README.md` 状态段与运行命令、D-15…D-20 评审。
+  5. 按纪律：本次**未提交**，等评审后再统一提交。

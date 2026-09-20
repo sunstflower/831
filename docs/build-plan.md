@@ -83,6 +83,7 @@ npm run build          # typecheck + vite build + electron-builder（P6 启用�
 - Vite + React Router 页面骨架：登录、监控工作台、地图、任务、调度中心、基础数据、告警、审计、设置（route 清单见 design §7.1）。
 - `api/`：`apiClient` + 三个适配器；页面只依赖 `apiClient`。
 - `store/`：zustand 全局态（会话 / selection / 筛选）+ 事件订阅。
+- `map/`：React Flow（`@xyflow/react` v12，renderer 依赖）地图图层；结构、数据映射与性能护栏见 [`module-M6-map.md`](./module-M6-map.md)。**注意**：M6 尚未实现，属零迁移成本选型（D-21，待评审）。
 
 ## 5. 数据库迁移与 seed
 

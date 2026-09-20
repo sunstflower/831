@@ -62,7 +62,7 @@
 flowchart TB
   subgraph UI["展示层（渲染进程）"]
     P1["React 页面/组件"]
-    P2["地图画布（SVG/Canvas）"]
+    P2["地图画布（React Flow）"]
     P3["表格 / 表单 / 弹窗"]
   end
   subgraph ST["状态层"]
@@ -122,7 +122,7 @@ flowchart TB
 | 数据层 | SQLite（better-sqlite3，仅主进程） | 本地持久化，Repository 封装 |
 | 迁移 | SQL 迁移脚本 + schema_version 表 | 启动按序执行，seed 幂等可重入 |
 | 状态管理 | zustand | 全局状态与订阅缓存；页面态留在组件 |
-| 地图 | 自研 SVG/Canvas 平面图层（`{x,y}`） | 离线稳定，不依赖真实地图服务 |
+| 地图 | React Flow（`@xyflow/react` v12，仅 renderer） | 节点/边图渲染，匹配平面 `{x,y}` 路网模型；零在线依赖，详见 `docs/module-M6-map.md` |
 | 测试 | Vitest + React Testing Library（+ Electron 冒烟） | 算法、状态机、服务契约单测必测 |
 | 打包 | electron-builder | 打包阶段引入 |
 
@@ -147,7 +147,11 @@ flowchart TB
 │   ├── ipc/                # ipcMain 注册 + 鉴权中间件
 │   └── services/           # 会话、事件总线、执行器、日志
 ├── renderer/               # React（Vite）
-│   ├── pages/ components/ api/ store/ map/ styles/
+│   ├── pages/ components/ api/ store/ styles/
+│   ├── main.tsx            # 应用入口（当前缺失，P1 补齐）
+│   └── map/                # 地图图层（React Flow）
+│       ├── MapView.tsx  stage/  nodes/  edges/  model/  hooks/
+│       └── 详见 docs/module-M6-map.md（选型依据 / 数据映射 / 性能护栏 / 测试清单）
 └── tests/                  # 端到端冒烟
 ```
 
@@ -492,7 +496,8 @@ stateDiagram-v2
 
 **目标**：把任务、车辆、站点、路径、告警直观展示在同一空间视图，并与列表/详情联动。
 
-**职责**：地图渲染（SVG/Canvas 平面图）、图层控制、车辆定位与图标、路线高亮、告警标记、实时刷新。
+**职责**：地图渲染（React Flow 平面图）、图层控制、车辆定位与图标、路线高亮、告警标记、实时刷新。
+**实现方案**：见 [`docs/module-M6-map.md`](./docs/module-M6-map.md)（选型依据 / 数据映射 / 节点与边类型 / 动画与性能护栏 / 测试与打包）。
 
 **需求条目**：
 
@@ -501,13 +506,19 @@ stateDiagram-v2
 | Req-M6-1 | 渲染路网（节点/边/站点）、车辆、任务起终点、路线、告警五类图层 | 图层可开关 |
 | Req-M6-2 | 点击实体（车/任务/站点）与列表、详情双向联动 | 高亮+详情抽屉 |
 | Req-M6-3 | 车辆位置随执行推进实时更新（事件推送 + 定时兜底） | 秒级可见 |
-| Req-M6-4 | 支持缩放、平移、复位视角、图例 | 交互可用 |
-| Req-M6-5 | 概览快照接口一次返回画布所需数据，减少多次请求 | `map/overview` |
+| Req-M6-4 | 支持缩放、平移、复位视角、图例 | 交互可用（React Flow 内置视口，缩放范围 0.1–4） |
+| Req-M6-5 | 概览快照接口一次返回画布所需数据，减少多次请求 | `map/overview`（画布唯一数据入口，禁止自行拼多次请求） |
 | Req-M6-6 | 车辆轨迹可回放（时间轴） | 轨迹采样点查询 |
 
 **接口概览**：`/api/map/overview`、`/api/map/tracks/{vehicleId}`。权限点：`map:read`。图层开关、缩放、选中态均为页面态，不落库。
 
 **验收**：在列表点选任务，地图高亮其路线与起终点；执行中车辆图标按轨迹移动。
+
+**渲染层约束**（与 `docs/module-M6-map.md` 一致，实现前先读该文档）：
+
+1. 坐标由 `map/overview` 唯一提供；渲染层的像素换算是展示变换，不得写回业务数据（D-05）。
+2. 地图只渲染 `overview.routes`，**不自行搜索路径**（路径权威在 M5，自行搜索会绕过禁行规则）。
+3. 车辆位置以事件推送为权威，插值仅用于补帧；**禁止外推预测**。
 
 ### 4.7 运行监控（M7）
 
@@ -832,7 +843,11 @@ erDiagram
 - `design.md`：本设计文档。
 - `docs/api.md`：接口文档（全量契约、错误码、事件清单）。
 - `docs/module-M4-dispatch.md`：调度引擎（M4）模块开发详档（P4 编码参考）。
+- `docs/module-M6-map.md`：地图渲染（M6）React Flow 方案（P3 编码参考）。
 - `docs/database.md`：SQLite 建表 DDL、索引、seed 与迁移规则。
 - `docs/build-plan.md`：P1-P6 构建计划与验收门。
+- `docs/data-interfaces.md`：数据文件接口规范（订单 CSV / 仿真地图 / 车辆参数 / 算法配置的导入契约与统一导入管线，草案）。
+- `docs/order-data-map-design.md`：订单数据接入与地图生成设计（设计态）。
+- `docs/architecture.md`：架构图集（Mermaid，可导出）。
 - `docs/requirement-raw.md`：原始需求存档。
 - `AGENTS.md`：工作日志、提交纪律与设计决策记录。

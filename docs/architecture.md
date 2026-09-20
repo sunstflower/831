@@ -28,7 +28,7 @@
 以下命令均已实测通过：
 
 ```bash
-# 1) 导出 Markdown + PNG 图集（本文件全部 22 张图一次性导出）
+# 1) 导出 Markdown + PNG 图集（本文件全部 23 张图一次性导出）
 npx -y @mermaid-js/mermaid-cli \
   -i docs/architecture.md \
   -o docs/export/architecture.md \
@@ -72,7 +72,7 @@ config:
 ---
 flowchart TB
   SH["<b>shared · 类型唯一来源【已实现】</b><br/>枚举 · 类型 · 错误目录 · 常量<br/>无运行时依赖，渲染层与主进程共同引用"]
-  UI["<b>展示层 · 渲染进程 renderer（设计中）</b><br/>React 页面 / 组件 · 地图画布 SVG Canvas · 表格 / 表单 / 弹窗"]
+  UI["<b>展示层 · 渲染进程 renderer（设计中）</b><br/>React 页面 / 组件 · 地图画布 React Flow · 表格 / 表单 / 弹窗"]
   ST["<b>状态层（设计中）</b><br/>全局状态 会话 / 角色 / 筛选 / 主题 · 页面态 · 事件订阅缓存"]
   ADP["<b>服务适配器 · 同一契约三种实现（部分实现）</b><br/>IpcAdapter 生产形态 · HttpAdapter 预留【二期】 · MockAdapter 浏览器独立开发"]
   GW["<b>接入层【已实现】</b><br/>IPC Router 注册表 + 鉴权 + traceId · API Routes 7 条"]
@@ -120,7 +120,7 @@ flowchart LR
     subgraph RP["Electron 渲染进程 · 浏览器运行时"]
       R1["React 18 应用 【设计中】"]
       R2["zustand store 【设计中】"]
-      R3["地图画布 【设计中】"]
+      R3["地图画布 React Flow 【设计中】"]
     end
   end
 
@@ -762,7 +762,62 @@ flowchart TB
 
 > `M11` / `M12` 为二期预留。`M7` 首期用**本地模拟执行器**（定时步进 + 轨迹采样），二期以真实协议替换执行器但**不改上层契约**（D-10）。
 
-### 8.2 已实现 vs 待实现（截至 2026-09-14 实测）
+### 8.2 地图渲染链路（M6 · React Flow 方案 【设计中】）
+
+> 选型与实现细节见 [`module-M6-map.md`](./module-M6-map.md)。此图只表达**数据流与职责边界**。
+
+```mermaid
+flowchart TB
+  OV["GET /api/map/overview 【设计中】<br/>nodes · edges · sites · vehicles · tasks · routes · alerts · eventSeq"]
+  OV2["可选 include=orders,orderEndpoints<br/>订单起终点图层"]
+
+  subgraph MAP["renderer/map/（全部【设计中】，React Flow）"]
+    direction TB
+    HOOK["useMapOverview<br/>拉取 + 事件刷新 + 轮询兜底"]
+    TOFLOW["model/toFlow.ts · 纯函数<br/>overview + 图层可见性 + 选中态 → nodes/edges"]
+    PROJ["model/projection.ts<br/>米制 {x,y} → 画布坐标（y 翻转 × 比例）"]
+    CANVAS["stage/FlowCanvas.tsx<br/>ReactFlow + Background + Controls + MiniMap"]
+    NT["nodes/ · 5 类节点<br/>net · site · vehicle · taskEndpoint · orderEndpoint"]
+    ET["edges/ · 2 类边<br/>net 基础边 · route 高亮边"]
+  end
+
+  EV["事件 UDM:Event<br/>vehicle.changed · execution.progress<br/>task.changed · alert.* · map.updated"]
+  SEL["全局 selection<br/>（对象类型 + ID）"]
+  LIST["任务列表 / 详情 / 告警中心"]
+
+  OV --> HOOK
+  OV2 -.-> HOOK
+  EV --> HOOK
+  HOOK --> TOFLOW
+  PROJ --> TOFLOW
+  SEL --> TOFLOW
+  TOFLOW --> CANVAS
+  CANVAS --> NT
+  CANVAS --> ET
+  CANVAS -. 点击实体 .-> SEL
+  SEL -. 高亮 + 定位 .-> LIST
+
+  style OV fill:#fffde7
+  style OV2 fill:#fffde7
+  style EV fill:#e8f5e9
+```
+
+**三条边界**（违反即为架构违规）：
+
+1. `overview` 是画布**唯一**数据入口；地图不读 CSV、不调多次接口拼装。
+2. 地图只渲染 `routes`，**不自行搜索路径** —— 禁行规则与可达性判定只在 M5。
+3. 车辆位置以事件为权威、插值仅补帧且**禁止外推**；所有选中/缩放/图层开关都是页面态。
+
+**M6 实现缺口**（截至本文档更新日）：
+
+| 缺口 | 说明 |
+| --- | --- |
+| `map/overview` 服务端未实现 | M6 接口在 `docs/api.md` §3.6 已成稿，主进程侧尚未落地 |
+| renderer 无入口 | 连 `src/main.tsx` 都没有，整层未实现 |
+| `EventBus` 未按会话权限过滤 | 与第 10 章同一问题，M6/M8 落地时一并补 |
+| 组件测试 setup 阻塞 | `tests/setup.ts` 缺依赖导致 0 测试可收集，且 jsdom 还需 `ResizeObserver` stub |
+
+### 8.3 已实现 vs 待实现（截至 2026-09-14 实测）
 
 ```mermaid
 flowchart LR

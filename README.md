@@ -16,6 +16,10 @@
 | [`docs/module-M4-dispatch.md`](./docs/module-M4-dispatch.md) | 模块开发文档：调度引擎 M4（文件划分、类型/方法签名、策略与事务、测试与验收） |
 | [`docs/database.md`](./docs/database.md) | 数据库设计：17 张表 DDL、索引、种子规则、常用查询、迁移演进规则 |
 | [`docs/build-plan.md`](./docs/build-plan.md) | 构建计划：仓库形态与脚本、P1-P6 任务与验收门、风险与开工清单 |
+| [`docs/data-interfaces.md`](./docs/data-interfaces.md) | 数据文件接口规范：订单 CSV / 仿真地图 / 车辆参数 / 算法配置的导入契约与统一导入管线（草案） |
+| [`docs/order-data-map-design.md`](./docs/order-data-map-design.md) | 订单数据接入与地图生成设计（设计态） |
+| [`docs/module-M6-map.md`](./docs/module-M6-map.md) | 模块开发文档：地图渲染 M6（React Flow 方案：选型实测、数据映射、性能护栏、测试清单） |
+| [`docs/architecture.md`](./docs/architecture.md) | 架构图集：23 张 Mermaid 架构图，可导出 PPT / Word / PDF |
 | [`AGENTS.md`](./AGENTS.md) | 项目工作日志与提交纪律（构建阶段每次提交前必须记录） |
 | [`docs/requirement-raw.md`](./docs/requirement-raw.md) | 原始需求存档 |
 
