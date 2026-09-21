@@ -30,7 +30,7 @@ v1.0 与 `docs/data-interfaces.md` 在「文件怎么收、怎么校验、怎么
 1. **错误码统一为带命名空间的形式**：v1.0 的 `FILE_INVALID` / `FIELD_REQUIRED` / `DUPLICATE_ORDER` / `REGION_NOT_FOUND` /
    `REGION_AMBIGUOUS` / `ROUTE_NOT_FOUND` / `SITE_DISABLED` 对应 `data-interfaces.md` §8 的
    `IMPORT.ENCODING_INVALID` / `ORDER.FIELD_REQUIRED` / `ORDER.DUPLICATE_ORDER` / `ORDER.REGION_NOT_FOUND` /
-   `ORDER.REGION_AMBIGUOUS` / `ORDER.ROUTE_NOT_FOUND` / `ORDER.SITE_DISABLED`。
+   `ORDER.REGION_AMBIGUOUS` / `ROUTE.NOT_FOUND_PATH` / `ORDER.SITE_DISABLED`。
    以 `data-interfaces.md` §8 为唯一错误码登记处，此处不再另立名单。
 2. **批次表合并为一张**：v1.0 的 `order_import_batches` 并入通用 `import_batches`（`kind='orders'`），避免「四类文件各有一张批次表」。
 3. **导入接口路径统一**：v1.0 的 `POST /api/orders/import/preview` / `confirm` 改为 `POST /api/imports/preview` / `confirm` 且 `kind="orders"`。
@@ -115,7 +115,7 @@ flowchart LR
 | 情况 | 结果 | 错误码 |
 | --- | --- | --- |
 | 地区未匹配 | 无法定位 | `ORDER.REGION_NOT_FOUND` |
-| 地区已匹配、路网不可达 | 端点已知但无路径 | `ORDER.ROUTE_NOT_FOUND`（warning） |
+| 地区已匹配、路网不可达 | 端点已知但无路径 | `ROUTE.NOT_FOUND_PATH`（warning） |
 | 地区已匹配、路径可行 | 可用 | — |
 
 ---

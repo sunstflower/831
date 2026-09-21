@@ -76,37 +76,195 @@
 
 ## 2. 错误码目录
 
+> **全项目唯一登记处**：`shared/src/errors.ts` 的 `ERROR_CODES`（实现即契约）。
+> 本表由该文件与 `shared/src/errors.catalog.test.ts` 的断言共同锁定 —— 文档里出现未登记的 code 会导致 `npm test` 失败。
+> 数据文件导入域的 code（`IMPORT.*` / `ORDER.*` / `MAP.*` / `VEHICLE.*` / `ALGO.*` / `SCENARIO.*`）见 §2.2。
+
+### 2.1 运行时业务错误码
+
+`source` 表示错误来源（`auth` 认证 / `validation` 参数 / `business` 业务规则 / `system` 系统）；HTTP 列仅供本地 HTTP 适配器参考，IPC 与 Mock 不产生 HTTP 状态。
+
+**认证与授权**
+
 | code | source | 说明 | HTTP(参考) |
 | --- | --- | --- | --- |
-| `AUTH.REQUIRED` | auth | 未登录或会话失效 | 401 |
-| `AUTH.INVALID_TOKEN` | auth | Token 无效/过期 | 401 |
-| `AUTH.FORBIDDEN` | auth | 已登录但无权限点 | 403 |
+| `AUTH.REQUIRED` | auth | 未登录或会话已失效 | 401 |
+| `AUTH.INVALID_TOKEN` | auth | 会话令牌无效 | 401 |
+| `AUTH.FORBIDDEN` | auth | 当前账号无此操作权限 | 403 |
 | `AUTH.LOGIN_FAILED` | auth | 用户名或密码错误 | 401 |
-| `AUTH.USER_DISABLED` | auth | 账号已禁用 | 401 |
-| `AUTH.ACCOUNT_LOCKED` | auth | 密码错误次数过多已锁定 | 401 |
+| `AUTH.USER_DISABLED` | auth | 账号已被禁用 | 401 |
+| `AUTH.ACCOUNT_LOCKED` | auth | 密码错误次数过多，账号已临时锁定 | 401 |
 | `AUTH.OLD_PASSWORD_WRONG` | auth | 原密码错误 | 400 |
-| `VALIDATION.FAILED` | validation | 参数校验失败，`detail.fields` 注明字段 | 400 |
-| `USER.NOT_FOUND` / `USER.NAME_EXISTS` | business | 用户不存在 / 用户名已存在 | 404 / 409 |
-| `SITE.NOT_FOUND` / `VEHICLE.NOT_FOUND` / `NODE.NOT_FOUND` / `EDGE.NOT_FOUND` / `TEMPLATE.NOT_FOUND` | business | 对应资源不存在 | 404 |
-| `BASE.CODE_EXISTS` | business | 编码重复 | 409 |
-| `BASE.NODE_IN_USE` | business | 节点被边/站点引用，禁止禁用/删除 | 409 |
+
+**通用校验**
+
+| code | source | 说明 | HTTP(参考) |
+| --- | --- | --- | --- |
+| `VALIDATION.FAILED` | validation | 参数校验失败 | 400 |
+| `API.ROUTE_NOT_FOUND` | validation | 接口不存在 | 404 |
+
+**用户与主数据**
+
+| code | source | 说明 | HTTP(参考) |
+| --- | --- | --- | --- |
+| `USER.NOT_FOUND` | business | 用户不存在 | 404 |
+| `USER.NAME_EXISTS` | business | 用户名已存在 | 409 |
+| `SITE.NOT_FOUND` | business | 站点不存在 | 404 |
+| `NODE.NOT_FOUND` | business | 路网节点不存在（导入时指引用的节点编码无法解析） | 404 |
+| `EDGE.NOT_FOUND` | business | 路网边不存在（导入时指引用的边无法解析） | 404 |
+| `TEMPLATE.NOT_FOUND` | business | 任务模板不存在 | 404 |
+| `BASE.CODE_EXISTS` | business | 编码已存在 | 409 |
+| `BASE.NODE_IN_USE` | business | 节点被边或站点引用，禁止禁用或删除 | 409 |
+
+**任务**
+
+| code | source | 说明 | HTTP(参考) |
+| --- | --- | --- | --- |
 | `TASK.NOT_FOUND` | business | 任务不存在 | 404 |
-| `TASK.STATE_CONFLICT` | business | 非法状态迁移 | 409 |
-| `TASK.BATCH_PARTIAL_FAIL` | business | 批量导入部分失败（`data.failed` 有明细） | 200 |
-| `VEHICLE.STATE_CONFLICT` | business | 车辆状态不允许（如非 idle 指派） | 409 |
-| `DISPATCH.REQUEST_NOT_FOUND` | business | requestId 不存在或不属于当前用户会话批次 | 404 |
-| `DISPATCH.PLAN_EXPIRED` | business | 预览已过期（快照变化），需重新预览 | 409 |
-| `DISPATCH.ALREADY_APPLIED` | business | 该请求已应用 | 409 |
-| `DISPATCH.NO_CANDIDATE` | business | 无任何可用车辆/候选 | 409 |
-| `ROUTE.NOT_FOUND_PATH` | business | 起终点间无可行路径 | 409 |
-| `GRAPH.EMPTY` / `GRAPH.DISCONNECTED` / `GRAPH.BLOCKED` | business | 图为空 / 起点或终点孤立 / 被禁行封闭 | 409 |
-| `ALERT.NOT_FOUND` / `ALERT.STATE_CONFLICT` | business | 告警不存在 / 告警状态不允许 | 404 / 409 |
-| `SETTINGS.KEY_NOT_FOUND` | business | 设置键不存在 | 404 |
-| `SYS.INTERNAL` | system | 系统内部错误（message 通用） | 500 |
+| `TASK.STATE_CONFLICT` | business | 当前状态不允许执行该操作 | 409 |
+| `TASK.BATCH_PARTIAL_FAIL` | business | 批量导入存在失败项 | 200 |
 
-### 2.1 调度拒绝原因（`rejected[].reason`）
+**车辆与调度**
 
-`VEHICLE_NOT_AVAILABLE` / `LOAD_EXCEEDED` / `TIMEWINDOW_CONFLICT` / `BATTERY_INSUFFICIENT` / `UNREACHABLE` / `RESTRICTION_VIOLATED` / `NO_AVAILABLE_VEHICLE`。每条拒绝 = `{ taskId, reason, message, detail }`。
+| code | source | 说明 | HTTP(参考) |
+| --- | --- | --- | --- |
+| `VEHICLE.NOT_FOUND` | business | 车辆不存在 | 404 |
+| `VEHICLE.STATE_CONFLICT` | business | 车辆状态不允许该操作 | 409 |
+| `DISPATCH.REQUEST_NOT_FOUND` | business | 调度请求不存在或已失效 | 404 |
+| `DISPATCH.PLAN_EXPIRED` | business | 调度预览已过期，请重新预览 | 409 |
+| `DISPATCH.ALREADY_APPLIED` | business | 该调度请求已应用 | 409 |
+| `DISPATCH.NO_CANDIDATE` | business | 没有满足约束的候选车辆 | 409 |
+
+**路径与图**
+
+| code | source | 说明 | HTTP(参考) |
+| --- | --- | --- | --- |
+| `ROUTE.NOT_FOUND_PATH` | business | 起点与终点之间不存在可行路径 | 409 |
+| `GRAPH.EMPTY` | business | 路网为空 | 409 |
+| `GRAPH.DISCONNECTED` | business | 路网不连通 | 409 |
+| `GRAPH.BLOCKED` | business | 受禁行规则限制无法通行 | 409 |
+
+**告警与设置**
+
+| code | source | 说明 | HTTP(参考) |
+| --- | --- | --- | --- |
+| `ALERT.NOT_FOUND` | business | 告警不存在 | 404 |
+| `ALERT.STATE_CONFLICT` | business | 告警当前状态不允许该操作 | 409 |
+| `SETTINGS.KEY_NOT_FOUND` | business | 设置项不存在 | 404 |
+
+**系统**
+
+| code | source | 说明 | HTTP(参考) |
+| --- | --- | --- | --- |
+| `SYS.INTERNAL` | system | 系统内部错误，请查看日志 | 500 |
+
+除 `AUTH.*` 与 `VALIDATION.FAILED` 外，其余错误码的 `message` 为兜底文案；
+接口可在 `DomainError(code, message, detail)` 中给更贴切的中文，前端**按 `code` 本地化，不解析 `message`**。
+
+### 2.2 数据文件导入域错误码
+
+四类可导入文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）共用一套 `ImportIssue` 模型，
+`severity` 决定该条问题是否阻断：`error` 阻断**所在条目**（同批次其它合法条目仍入库）、`warning` 入库但提示、`info` 仅告知。
+**`severity` 是单次问题出现的属性，不是 code 的身份** —— 同一个 code 可在不同调用点以不同 severity 出现
+（如 `GRAPH.EMPTY`：导入预检报 warning、调度预览报 error）。契约细节见 `docs/data-interfaces.md` §8。
+
+| code | source | 说明 | HTTP(参考) | severity |
+| --- | --- | --- | --- | --- |
+| `IMPORT.FILE_TOO_LARGE` | validation | 超过体积或行数上限 | 413 | error |
+| `IMPORT.ENCODING_INVALID` | validation | 无法解码 | 422 | error |
+| `IMPORT.ENCODING_ASSUMED` | validation | 按 GB18030 解码，需用户确认 | 200 | warning |
+| `IMPORT.DELIMITER_ASSUMED` | validation | 分隔符为推断值 | 200 | warning |
+| `IMPORT.KIND_MISMATCH` | validation | `kind` 与接口不符 | 400 | error |
+| `IMPORT.SCHEMA_VERSION_UNSUPPORTED` | validation | 版本不支持 | 400 | error |
+| `IMPORT.SCHEMA_VERSION_ASSUMED` | validation | 文件未声明版本，按 v1 解析 | 200 | info |
+| `IMPORT.MAPPING_INCOMPLETE` | validation | 标准字段缺少来源列 | 400 | error |
+| `IMPORT.MAPPING_CONFLICT` | validation | 多列映射到同一标准字段 | 400 | error |
+| `IMPORT.FILE_CHANGED` | business | 确认时校验和与预检不一致 | 409 | error |
+| `IMPORT.IN_USE_CONFLICT` | business | 被进行中的任务/规则引用，禁止 replace | 409 | error |
+| `IMPORT.CROSS_CHECK_SKIPPED` | validation | 依赖数据缺失，跳过交叉校验 | 200 | warning |
+| `IMPORT.BATCH_FAILED` | business | 批次致命错误，已整体回滚 | 409 | error |
+| `ORDER.FIELD_REQUIRED` | validation | 必填缺失 | 200 | error |
+| `ORDER.FIELD_FORMAT` | validation | 类型或格式非法 | 200 | error |
+| `ORDER.NUMBER_NORMALIZED` | validation | 数值被规范化（如千分位） | 200 | warning |
+| `ORDER.DUPLICATE_ORDER` | business | 批次内或库中重复 | 200 | error |
+| `ORDER.UPDATE_SKIPPED_STATE` | business | 目标订单非 `draft`，跳过更新 | 200 | warning |
+| `ORDER.HEADER_INCONSISTENT` | validation | 同批次混入 26 列与 32 列两种骨架 | 200 | error |
+| `ORDER.TIMEWINDOW_PAIR_MISSING` | validation | 时间窗未成对出现 | 200 | error |
+| `ORDER.TIMEWINDOW_INVALID` | validation | `tw_start_s >= tw_end_s` | 200 | error |
+| `ORDER.TIMEWINDOW_CROSS_DAY` | validation | `tw_end_s > 86400`（跨日，首期不支持） | 200 | error |
+| `ORDER.TIME_TEXT_MISMATCH` | validation | 文本时间与秒数列对不上（比对按分钟下取整） | 200 | warning |
+| `ORDER.ORDER_TIME_AFTER_WINDOW` | validation | `order_time_s > tw_start_s`（下单晚于时间窗开始） | 200 | warning |
+| `ORDER.PRIORITY_OUT_OF_RANGE` | validation | `priority` 不在 `{1,2,3}` | 200 | error |
+| `ORDER.PRIORITY_FORMAT` | validation | `priority` 用了枚举名而非数字 | 200 | error |
+| `ORDER.TYPE_UNKNOWN` | validation | `order_type` 不在已知取值内 | 200 | error |
+| `ORDER.TYPE_ENDPOINT_MISMATCH` | validation | `order_type` 与起终点是否为 `DEPOT` 不符（§3.5） | 200 | error |
+| `ORDER.SAME_ENDPOINT` | validation | `pickup_id == dropoff_id` | 200 | error |
+| `ORDER.DERIVED_DIST_MISMATCH` | validation | 派生距离/时长列与复算不符 | 200 | warning |
+| `ORDER.TW_INFEASIBLE_ROW` | validation | `tw_feasible = 0` | 200 | warning |
+| `ORDER.PICKUP_COORD_MISMATCH` | validation | 订单坐标与站点表不符（疑似订单与地图版本不一致） | 200 | warning |
+| `ORDER.NAME_CODE_MISMATCH` | validation | `pickup_name` 与命中的站点名不一致 | 200 | warning |
+| `ORDER.REGION_NOT_FOUND` | business | 起终点无法匹配 | 200 | error |
+| `ORDER.REGION_AMBIGUOUS` | business | 匹配到多个候选 | 200 | error |
+| `ORDER.SITE_DISABLED` | business | 站点已禁用 | 200 | warning |
+| `MAP.CODE_DUPLICATE` | validation | code 重复 | 200 | error |
+| `MAP.ROAD_TYPE_NOT_FOUND` | validation | 边引用的 `roadType` 未声明 | 200 | error |
+| `MAP.RESTRICTION_TARGET_NOT_FOUND` | validation | 禁行目标不存在 | 200 | error |
+| `MAP.REFERENCE_UNRESOLVED_IN_DB` | validation | `merge` 模式下库内也无法解析引用 | 200 | error |
+| `MAP.COORDINATE_SYSTEM_UNSUPPORTED` | validation | `meta.coordinateSystem` 非 `planar-meters` | 200 | error |
+| `MAP.EDGE_SELF_LOOP` | validation | 自环边 | 200 | error |
+| `MAP.EDGE_DUPLICATE` | validation | 重复有向边（含 `bidirectional` 与显式反向边冲突） | 200 | error |
+| `MAP.EDGE_INVALID_SPEED` | validation | 限速非正 | 200 | error |
+| `MAP.BERTH_OUT_OF_RANGE` | validation | 泊位区间越出边长（`endPosM > lengthM`） | 200 | error |
+| `MAP.SITE_WITHOUT_EDGE` | validation | 站点未绑定边 | 200 | warning |
+| `MAP.EDGE_LENGTH_MISMATCH` | validation | `lengthM` 与两端坐标距离不符（容差 0.01 m） | 200 | warning |
+| `MAP.BERTH_LENGTH_MISMATCH` | validation | `berthLengthM` ≠ `endPosM − startPosM` | 200 | warning |
+| `MAP.SPEED_LIMIT_MISMATCH` | validation | 行内 `speed_kmh` 与 `roadType` 声明值不一致 | 200 | warning |
+| `MAP.LANE_COUNT_MISMATCH` | validation | 行内 `num_lanes` 与 `roadType` 声明值不一致 | 200 | warning |
+| `MAP.GEOJSON_MISMATCH` | validation | GeoJSON 与 CSV 不一致（CSV 为准） | 200 | warning |
+| `MAP.OBSTACLE_EDGE_UNLINKED` | validation | `construction` 障碍未关联任何边 | 200 | warning |
+| `MAP.ROAD_TYPE_INFERRED` | validation | `roadType` 缺失，按限速推断得到 | 200 | warning |
+| `MAP.ONE_WAY_EDGE` | validation | 单向边且无反向边（合法，疑似编辑遗漏） | 200 | info |
+| `VEHICLE.RUNTIME_FIELD_REJECTED` | validation | 文件中出现运行态字段（§5.1） | 200 | error |
+| `VEHICLE.TYPE_NOT_IN_FLEET` | validation | `vehicles` 的键未在 `fleet` 中声明 | 200 | error |
+| `VEHICLE.FLEET_TYPE_MISSING` | validation | `fleet` 声明的车型无参数体（视为预留） | 200 | warning |
+| `VEHICLE.ROAD_TYPE_UNKNOWN` | validation | `speedLimitsKmh` 的键不是已知道路类型 | 200 | warning |
+| `VEHICLE.ROAD_SPEED_EXCEEDS_MAX` | validation | 某道路限速超过设计最高车速（规则 4） | 200 | error |
+| `VEHICLE.SPEED_ORDER_INVALID` | validation | `operatingSpeedKmh > maxSpeedKmh`（规则 3） | 200 | error |
+| `VEHICLE.SOC_RANGE_INVALID` | validation | `socMinPct >= socTargetPct`（规则 1） | 200 | error |
+| `VEHICLE.EFFECTIVE_RANGE_MISMATCH` | validation | 有效续航与公式不符（规则 2） | 200 | error |
+| `VEHICLE.EMERGENCY_DECEL_INVALID` | validation | 应急减速度未大于常规减速度（规则 9） | 200 | error |
+| `VEHICLE.PAYLOAD_EXCEEDED_BY_ORDER` | business | 存在订单货重超过最大载重（规则 7） | 200 | error |
+| `VEHICLE.PAYLOAD_ALL_INSUFFICIENT` | business | 全车队载重均不足以承接任何订单 | 200 | error |
+| `VEHICLE.ENERGY_CAPACITY_MISMATCH` | validation | 能耗 × 续航与容量偏差超 5%（规则 5） | 200 | warning |
+| `VEHICLE.CHARGE_RATE_MISMATCH` | validation | 充电速率与功率/容量偏差超 10%（规则 6） | 200 | warning |
+| `VEHICLE.CARGO_BOX_UNDERSIZED` | validation | `cells × cellMaxLoadKg < maxPayloadKg`（规则 8） | 200 | warning |
+| `VEHICLE.ENERGY_MODEL_APPROXIMATE` | validation | 缺 `batteryCapacityKwh`，退化为百分比近似 | 200 | warning |
+| `VEHICLE.ENERGY_NO_LOAD_FACTOR` | validation | 未做载重修正，重载实际续航会低于估算 | 200 | info |
+| `VEHICLE.CONCURRENCY_UNSUPPORTED` | validation | `maxConcurrentStops>1` 首期不生效 | 200 | warning |
+| `VEHICLE.SITE_TYPE_UNCOVERED` | validation | 声明可服务的站点类别无对应站点 | 200 | warning |
+| `VEHICLE.PASSAGE_WIDTH_CONFLICT` | validation | `minPassageWidthM` 大于所有道路可通行宽度 | 200 | warning |
+| `VEHICLE.SPEED_LIMIT_CONFLICT` | validation | 车型限速高于地图同类型道路限速（实际取更严一侧） | 200 | info |
+| `VEHICLE.WEATHER_UNKNOWN` | validation | `weather` 含未知取值 | 200 | warning |
+| `VEHICLE.CUSTOM_RULE_FAILED` | validation | 文件自定义一致性规则未通过（不阻断） | 200 | info |
+| `VEHICLE.SPEED_OUTLIER` | validation | 同类型车辆速度离散度过大 | 200 | info |
+| `ALGO.WEIGHT_NEGATIVE` | validation | 权重为负 | 200 | error |
+| `ALGO.WEIGHTS_ALL_ZERO` | validation | 权重全为 0 | 200 | error |
+| `ALGO.WEIGHT_IMBALANCE` | validation | 权重差异过大 | 200 | warning |
+| `ALGO.HEURISTIC_NOT_ADMISSIBLE` | validation | 参考速度可能导致 A* 非最优 | 200 | warning |
+| `ALGO.LIMIT_RAISED` | validation | 规模上限被调高 | 200 | warning |
+| `ALGO.SETTINGS_CONFLICT` | business | 与 `settings` 表既有值冲突 | 200 | info |
+| `ALGO.STRATEGY_NOT_ENABLED` | validation | `defaultStrategy` 不在 `enabledStrategies` 中 | 200 | error |
+| `SCENARIO.VEHICLE_TYPE_UNCOVERED` | validation | 车队车型在算法配置中无参数 | 200 | warning |
+| `SCENARIO.PARAM_MISSING` | validation | 必需参数缺失 | 200 | warning |
+| `ROUTE.VIA_NOT_ALLOWED` | business | 配置关闭 `allowViaNodes` 后仍传了 `viaNodeIds` | 200 | error |
+| `ROUTE.DETOUR_EXCEEDED` | business | 实际里程超出 `maxDetourRatio` 上限 | 200 | warning |
+| `GRAPH.ISOLATED_NODE` | validation | 存在没有任何邻边的孤立节点 | 200 | warning |
+
+### 2.3 调度拒绝原因（`rejected[].reason`）
+
+调度预览的「拒绝」**不是**错误码，而是逐条约束评估的结果，用独立枚举表达（`shared/src/enums.ts` 的 `REJECT_REASONS`），
+随 `data.rejected[]` 一并返回：`VEHICLE_NOT_AVAILABLE` / `LOAD_EXCEEDED` / `TIMEWINDOW_CONFLICT` / `BATTERY_INSUFFICIENT` / `UNREACHABLE` / `RESTRICTION_VIOLATED` / `NO_AVAILABLE_VEHICLE`。
+每条拒绝 = `{ taskId, reason, message, detail }`。
 
 ---
 
@@ -469,9 +627,18 @@ query：`requestId/action/strategy/taskId/from/to/page/pageSize`。记录：`req
 
 #### 3.6.1 地图概览快照
 
-`GET /api/map/overview` · `map:read`
+`GET /api/map/overview` · `map:read` · **【已实现】**
 
-query：`include=`(逗号可选图层，默认全量)。
+query：`include=`(逗号可选图层，默认全量；**该参数尚未实现**，订单摄入落地后再接入，
+当前恒返回全量图层，`orderEndpoints` 字段不出现)。
+
+实现要点（实测口径，详见 `module-M6-map.md` §11.5）：
+
+- 本接口是地图画布的**唯一数据入口**；渲染层不得自行拼接多次请求或读取文件。
+- `eventSeq` 取 `event_log` 的 `sqlite_sequence` 值（**单调水位线**），
+  不是 `MAX(seq)` —— 后者在最高位事件被删除后会回退，导致渲染层重放旧事件。
+- 车辆的 `taskId` 由 `tasks.assigned_vehicle_id` 反查、路线 `status` 由 `dispatch_plans.status`
+  派生（`routes` 表没有 `status` 列），均为**读取时计算**，不冗余落库。
 
 ```json
 {
@@ -488,7 +655,7 @@ query：`include=`(逗号可选图层，默认全量)。
 
 #### 3.6.2 车辆轨迹
 
-`GET /api/map/tracks/{vehicleId}` · `map:read`
+`GET /api/map/tracks/{vehicleId}` · `map:read` · 【设计中，未实现】
 
 query：`taskId?/from?/to?`。响应：
 
