@@ -22,7 +22,18 @@ export const SEED_IDS = {
   vehicleCarrier: 'seed-veh-car01',
   vehicleDrone: 'seed-veh-drn01',
   templateStandard: 'seed-tpl-std',
-  templateCharging: 'seed-tpl-chg'
+  templateCharging: 'seed-tpl-chg',
+  /**
+   * 演示任务/路线/告警：让「地图路线高亮」「车辆执行中」这两件事在**首次启动**就可见。
+   *
+   * 真实业务里 `tasks`/`routes` 初始为空（由调度流程产生），但那样地图上永远只有路网，
+   * 无法验证路线高亮与车辆动画。这里放入一条状态自洽的最小演示数据
+   * （AGV-01 从 A 仓跑向 B 仓，路线经真实存在着的 5 条边），
+   * 与 Mock 形态的演示数据保持同一语义。
+   */
+  demoTask: 'seed-task-demo',
+  demoRoute: 'seed-route-demo',
+  demoAlert: 'seed-alert-demo'
 } as const;
 
 export const SETTINGS_SCHEMA: SettingSchemaItem[] = [

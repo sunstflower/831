@@ -23,6 +23,7 @@
     "db:reset": "npm run build:shared && npm run build --workspace desktop && node desktop/dist/cli/db.js reset"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.10.0",
     "@types/node": "^22.10.0",
     "concurrently": "^9.1.0",
     "typescript": "^5.7.0",
@@ -30,6 +31,6 @@
     "wait-on": "^8.0.1"
   },
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.5"
   }
 }

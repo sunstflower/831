@@ -1,0 +1,46 @@
+/**
+ * 全局主题变量与基础样式。
+ * 颜色集中在变量里，地图与页面共用，避免两处各写一套色值后不一致。
+ */
+:root {
+  --udm-bg: #0f172a;
+  --udm-panel: #1e293b;
+  --udm-panel-2: #273449;
+  --udm-border: #334155;
+  --udm-text: #e2e8f0;
+  --udm-text-dim: #94a3b8;
+  --udm-accent: #38bdf8;
+  --udm-ok: #4ade80;
+  --udm-warn: #fbbf24;
+  --udm-danger: #f87171;
+  --udm-site: #a78bfa;
+  --udm-route: #38bdf8;
+  --udm-net: #64748b;
+  /* 车辆状态色：与 shared/enums 的 7 态一一对应 */
+  --udm-veh-idle: #4ade80;
+  --udm-veh-reserved: #60a5fa;
+  --udm-veh-busy: #38bdf8;
+  --udm-veh-charging: #fbbf24;
+  --udm-veh-offline: #64748b;
+  --udm-veh-fault: #f87171;
+  --udm-veh-disabled: #475569;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--udm-bg);
+  color: var(--udm-text);
+  font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+}

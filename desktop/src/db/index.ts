@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSyncImpl, type DatabaseSync } from './sqlite.js';
 
 export type Db = DatabaseSync;
 export type SqlParam = string | number | bigint | null | Uint8Array;
@@ -28,7 +28,7 @@ export function openDatabase(file: string = defaultDbPath()): Db {
   if (file !== ':memory:') {
     mkdirSync(dirname(file), { recursive: true });
   }
-  const db = new DatabaseSync(file);
+  const db = new DatabaseSyncImpl(file);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA busy_timeout = 5000;');

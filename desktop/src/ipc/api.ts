@@ -1,5 +1,6 @@
 import { APP_VERSION, DEFAULT_PAGE_SIZE, DomainError, MAX_PAGE_SIZE, SETTINGS_SCHEMA, type UserListItem } from '@udm/shared';
 import { get, nowIso, type Db } from '../db/index.js';
+import { getMapOverview } from '../db/repositories/map.repo.js';
 import { listUsers } from '../db/repositories/users.repo.js';
 import { getSettings } from '../db/repositories/settings.repo.js';
 import { login } from '../services/auth.js';
@@ -89,6 +90,11 @@ export function createApiRoutes(deps: ApiDependencies): Route[] {
       path: '/api/settings/schema',
       permission: 'settings:read',
       handler: () => SETTINGS_SCHEMA
+    },
+    {
+      path: '/api/map/overview',
+      permission: 'map:read',
+      handler: () => getMapOverview(db)
     },
     {
       path: '/api/users',

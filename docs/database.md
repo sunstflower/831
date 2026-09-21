@@ -17,6 +17,8 @@
 
 ## 2. 建表 DDL（0001_init.sql）
 
+> 规模口径：**业务表 16 张 + `schema_version` = 合计 17 张**（另有 18 条索引）。此前多处写作「17 张业务表」，实为把 `schema_version` 一并计入，已于 2026-09-20 更正。
+
 ### 2.1 版本与账号
 
 ```sql
@@ -344,8 +346,15 @@ seed 由代码执行（`desktop/db/seed.ts`），**幂等**：全部使用固定
 | 车辆 ×3 | AGV-01 / CAR-01 / DRN-01，初始 `idle`、电量 100、停靠在站点节点 | `seed-veh-agv01`… |
 | 模板 ×2 | 仓到仓标准配送、仓到充电桩回充 | `seed-tpl-std`、`seed-tpl-chg` |
 | 设置 | design §4.10 键目录的默认值 | `dispatch.defaultStrategy`… |
+| 演示执行 ×1 组 | 任务 `running`（A仓→B仓，进度 0.42）+ 路线（`N01→N05→N09→N10→N11→N12`，每段都是库中真实存在的边）+ 告警 1 条（挂 DRN-01）；同时把 AGV-01 置 `busy`、`load_kg` 与任务载重一致 | `seed-task-demo`、`seed-route-demo`、`seed-alert-demo` |
 
 注意：seed **不写明文密码**；`admin123` 等仅在文档与演示说明中出现，DB 只存哈希。
+
+演示执行数据的用途：真实业务中 `tasks`/`routes` 由调度流程产生、初始为空，
+于是地图上永远只有路网，**路线高亮与车辆动画没有任何可见样本**。
+该组数据必须**状态自洽**：任务 `running` 就必须有车辆 `busy` 且 `load_kg > 0`
+（不能出现「running 任务挂在 idle 车上」），路线每一段也必须是真实存在的边。
+约束已由 `desktop/src/db/db.test.ts` 的用例固定。
 
 ## 5. 常用查询（Repository 参考）
 

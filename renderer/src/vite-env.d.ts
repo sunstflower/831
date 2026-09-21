@@ -10,7 +10,8 @@ declare global {
         payload?: Record<string, unknown>,
         token?: string | null
       ): Promise<unknown>;
-      on(event: string, handler: (message: DomainEvent) => void): () => void;
+      /** `event` 传 `null` 表示订阅全部（preload 按 falsy 判定）。 */
+      on(event: string | null, handler: (message: DomainEvent) => void): () => void;
     };
   }
 }

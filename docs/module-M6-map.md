@@ -1,6 +1,6 @@
 # 模块开发文档：地图渲染（M6）· React Flow 方案
 
-> 版本：v1.0 · 面向开发 · 状态：**方案待评审**
+> 版本：v1.1 · 面向开发 · 状态：**已实现（待评审项见 §12）**
 > 关联：`design.md` §2.3 / §2.4 / §4.6 · `docs/api.md` §3.6 / §4 · `docs/data-interfaces.md` §10（F2 仿真地图）
 > 定位：把 M6 的地图渲染从「自研 SVG/Canvas 平面图层」替换为 **React Flow（`@xyflow/react` v12）**，
 > 并给出渲染层文件划分、数据映射、动画/性能/测试口径。任何实现偏差必须先回写本文档与 `AGENTS.md`。
@@ -21,8 +21,12 @@
 | 小地图、控件、背景网格 | `MiniMap` / `Controls` / `Background` 组件 |
 | 标签、箭头、虚线动画、边标签渲染 | `MarkerType` / `animated` / `EdgeLabelRenderer` |
 
-关键前提：**M6 尚未实现**（`renderer/` 目前连 `src/main.tsx` 都没有），因此这是一次**零迁移成本的选型替换**，
-不存在需要重写的既有画布代码。若 M6 已完成再改，成本会显著不同 —— 这也是现在提此方案的主要理由。
+关键前提（**历史**）：提出本方案时 M6 尚未实现（`renderer/` 连 `src/main.tsx` 都没有），
+因此是一次**零迁移成本的选型替换**，不存在需要重写的既有画布代码。
+
+> **现状（2026-09-21）**：M6 已按本方案落地 —— `renderer/src/map/`（`MapView` / `toFlow` / 节点与边组件 /
+> `useVehicleMotion`）已实现，并有 8 个测试套件覆盖；`npm run build` 与 `npm test` 均通过。
+> 本方案剩余未决项见 §12（Q-1 React Flow 署名策略须在对外分发前确认）。
 
 ### 1.2 必须说清楚的边界：React Flow 不是地图库
 
@@ -425,6 +429,67 @@ class ResizeObserverStub { observe() {} unobserve() {} disconnect() {} }
 5. **署名合规**：React Flow 为 MIT，允许隐藏右下角署名（`proOptions={{ hideAttribution: true }}`），
    但官方请求隐藏时给予支持（订阅 React Flow Pro）。**这是产品/合规选择，列入待评审**（§12 Q-3）。
 
+## 11.5 实现期实测新增结论（2026-09-20 落地时发现）
+
+以下四条都是**写完代码后在真实 Electron 里量出来的**，与前述章节的「选型期实测」互补。
+其中前三条若不修正，功能会「看起来没问题、实际不生效」，属于最危险的一类缺陷。
+
+### 11.5.1 `MiniMap` 只为「有尺寸」的节点画方块
+
+`@xyflow/react` 的 `NodeComponentWrapperInner` 有这一句：
+
+```js
+if (!node || node.hidden || !nodeHasDimensions(node)) return null;
+// nodeHasDimensions = (measured?.width ?? width ?? initialWidth) !== undefined && 高度同理
+```
+
+实测（Electron 44 + React Flow 12.11.6）：画布渲染完成后，用户节点的 `measured` **仍未落位**，
+于是缩略图**一个方块都不画**，只剩一个空框 + 遮罩，且**不报任何错**；
+`window.resize`、`zoomIn`、`fitView` 都无法恢复（排除时序问题）。
+
+- 对策：在 `model/toFlow.ts` 给每类节点补 `initialWidth` / `initialHeight`
+  （`NODE_SIZE`，与 `style/map.css` 对应），补上后实测 `minimap-node` 从 0 → 20（全量）。
+- 必须用 `initial*` 而**不是** `width`/`height`：后者会与真实测量值竞争；
+  实测 `initial*` 在测量完成后会被 `measured` 自然覆盖，不影响布局。
+- 回归护栏：`model/toFlow.test.ts` 的「节点声明尺寸（MiniMap 依赖）」一组用例。
+
+### 11.5.2 `BaseEdge` 的 `className` 落在 `<path>` 自身，不是外层 `<g>`
+
+React Flow 的 `BaseEdge` 实现是：
+
+```js
+jsx("path", { ...props, d: path, className: cc(['react-flow__edge-path', props.className]) })
+```
+
+即我们传入的 `className` 会**拼到那个 `<path>` 上**，并不存在包一层的 `<g class="udm-edge-net">`。
+因此按「祖先 + 后代」写的选择器 `.udm-edge-net path` / `.udm-edge-route.is-active path`
+**全部匹配不到**，边会静默落回 React Flow 默认样式（灰 1px），
+表现为「路线高亮完全看不出来，但也不报错」。
+
+- 对策：选择器写成 `.react-flow__edge-path.udm-edge-net` 这种「同元素多类」形式（`style/map.css` 已改）。
+- 实测取值：修正前 `stroke: rgb(177,177,183)` / `1px`；修正后路线 `rgb(56,189,248)` / `4px`、路网 `rgb(71,85,105)` / `1.5px`。
+
+### 11.5.3 节点选中态的类名是 `selected`，不是 `is-selected`
+
+React Flow 给选中节点容器加的是 `selected`（实测 DOM：
+`class="react-flow__node react-flow__node-site selected"`）。
+旧样式里的 `.react-flow__node.is-selected` 是**死选择器**，实测 `boxShadow === 'none'`，
+即那圈选中光晕从未生效过。已改为 `.react-flow__node.selected`。
+
+### 11.5.4 `Controls` / `MiniMap` 默认是浅色主题
+
+两者沿用 React Flow 自带的浅色样式，在深色画布上表现为**一块白方块**（截图确认）。
+React Flow 不提供深色变量，需自行覆盖（`style/map.css` 已补），
+`MiniMap` 另需显式传 `bgColor` / `maskColor` 与 `nodeColor`（按图层配色）。
+
+### 11.5.5 适配器默认值必须按「有没有 preload 桥」判定
+
+打包后的 Electron 用 `loadFile` 加载渲染层产物，构建时通常不带 `.env`，
+于是 `VITE_API_ADAPTER` 为 `undefined`。若默认落到 `mock`，桌面端会**静默显示假数据**
+（不读 SQLite、不报错）——属于最难排查的一类问题。
+`renderer/src/api/index.ts` 已改为：有 `window.dispatchApi` → `ipc`，否则 `mock`；
+并用 `api/index.test.ts` 锁死该行为。
+
 ## 12. 风险与待评审
 
 | 编号 | 事项 | 建议 | 状态 |
@@ -433,6 +498,8 @@ class ResizeObserverStub { observe() {} unobserve() {} disconnect() {} }
 | Q-2 | `PIXELS_PER_METER` 固定为 3 是否够用 | 首期固定；若导入地图跨度差异大，再考虑按 bounds 自适应 | **待评审** |
 | Q-3 | Handle 策略最终取方案 A 还是 B | 首期 A；若评审要求「正交折线路网」，改 B 并补方向计算 | **待评审** |
 | Q-4 | 超过 2000 节点时的降级顺序（§9） | 先在导入侧拦截，渲染侧只做精简模式 | **待评审** |
+| Q-5 | `NODE_SIZE`（`toFlow.ts`）与 CSS 尺寸重复声明 | 首期接受；若 CSS 频繁调整，可改为从 CSS 变量读取或集中到一处常量 | **待评审** |
+| Q-6 | 是否需要「车辆运行态推进器」（模拟执行器） | 现无组件持续产生 `vehicle.changed`，车辆静止；M7 执行器落地时一并解决 | **待评审** |
 
 | 风险 | 影响 | 缓解 |
 | --- | --- | --- |

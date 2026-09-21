@@ -1,4 +1,4 @@
-import type { AlertLevel, AlertStatus, AlertType, ObjectType, Permission, Role, RejectReason, TaskPriority, TaskStatus, VehicleStatus } from './enums.js';
+import type { AlertLevel, AlertStatus, AlertType, ObjectType, Permission, Role, RejectReason, SiteType, TaskPriority, TaskStatus, VehicleStatus } from './enums.js';
 
 export type ErrorSource = 'validation' | 'auth' | 'business' | 'system';
 
@@ -182,6 +182,108 @@ export interface VehicleListItem {
   battery: number;
   x: number;
   y: number;
+}
+
+/**
+ * 地图概览快照（`GET /api/map/overview`，契约见 `docs/api.md` §3.6.1）。
+ *
+ * 这是地图画布的**唯一数据入口**（D-21 / Req-M6-5）：不得由渲染层拼多次请求，
+ * 否则路网与车辆可能来自不同时刻，出现「车在已禁用的边上」这类鬼影。
+ *
+ * 坐标一律为平面 `{ x, y }` 米制（D-05 / `design.md` §3.2），**禁止经纬度**。
+ */
+export interface MapSnapshotNode {
+  id: string;
+  code: string;
+  x: number;
+  y: number;
+  status: 'enabled' | 'disabled';
+}
+
+export interface MapSnapshotEdge {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  lengthM?: number;
+  speedLimitMps?: number | null;
+  status?: 'enabled' | 'disabled';
+}
+
+export interface MapSnapshotSite {
+  id: string;
+  code: string;
+  name?: string;
+  type: SiteType;
+  nodeId: string | null;
+  x: number;
+  y: number;
+  status: 'enabled' | 'disabled';
+}
+
+export interface MapSnapshotVehicle {
+  id: string;
+  code: string;
+  status: VehicleStatus;
+  x: number;
+  y: number;
+  battery: number;
+  taskId: string | null;
+}
+
+export interface MapSnapshotTask {
+  id: string;
+  code: string;
+  status: TaskStatus;
+  fromSiteId: string;
+  toSiteId: string;
+  vehicleId: string | null;
+  progress: number;
+}
+
+export interface MapSnapshotRoute {
+  id: string;
+  taskId: string | null;
+  vehicleId: string | null;
+  nodeIds: string[];
+  status: 'active' | 'superseded' | 'cancelled';
+}
+
+export interface MapSnapshotAlert {
+  id: string;
+  type: AlertType;
+  level: AlertLevel;
+  status?: AlertStatus;
+  objectType: ObjectType;
+  objectId: string;
+}
+
+/**
+ * 订单起终点（`?include=orders,orderEndpoints`）。
+ * 契约来源：`docs/order-data-map-design.md` §5。**未匹配到地区的订单不上图，不伪造坐标。**
+ * 订单摄入（`0002_data_import`）尚未落地，故首期该字段恒为空。
+ */
+export interface MapSnapshotOrderEndpoint {
+  orderId: string;
+  role: 'from' | 'to';
+  x: number;
+  y: number;
+  confidence?: number;
+  matchType?: string;
+  pathStatus?: 'ok' | 'route_unavailable';
+}
+
+export interface MapOverview {
+  nodes: MapSnapshotNode[];
+  edges: MapSnapshotEdge[];
+  sites: MapSnapshotSite[];
+  vehicles: MapSnapshotVehicle[];
+  tasks: MapSnapshotTask[];
+  routes: MapSnapshotRoute[];
+  alerts: MapSnapshotAlert[];
+  /** 可选：仅在 `?include=orders,orderEndpoints` 时返回。 */
+  orderEndpoints?: MapSnapshotOrderEndpoint[];
+  /** 事件日志当前游标；渲染层据此丢弃重放/乱序的旧事件。 */
+  eventSeq: number;
 }
 
 export type DomainEventHandler<T = unknown> = (payload: T) => void;

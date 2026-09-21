@@ -119,7 +119,7 @@ flowchart TB
 | 桌面壳 | Electron | 主进程、窗口、本地能力；不引入云端能力 |
 | 渲染层 | React 18 + Vite | 页面、组件、状态；纯前端可 Mock 运行 |
 | 语言 | TypeScript | 全仓统一，类型与枚举共享 |
-| 数据层 | SQLite（better-sqlite3，仅主进程） | 本地持久化，Repository 封装 |
+| 数据层 | SQLite（Node 内置 `node:sqlite` `DatabaseSync`，仅主进程；见 AGENTS D-14） | 本地持久化，Repository 封装；无原生编译依赖 |
 | 迁移 | SQL 迁移脚本 + schema_version 表 | 启动按序执行，seed 幂等可重入 |
 | 状态管理 | zustand | 全局状态与订阅缓存；页面态留在组件 |
 | 地图 | React Flow（`@xyflow/react` v12，仅 renderer） | 节点/边图渲染，匹配平面 `{x,y}` 路网模型；零在线依赖，详见 `docs/module-M6-map.md` |
@@ -850,4 +850,5 @@ erDiagram
 - `docs/order-data-map-design.md`：订单数据接入与地图生成设计（设计态）。
 - `docs/architecture.md`：架构图集（Mermaid，可导出）。
 - `docs/requirement-raw.md`：原始需求存档。
+- `docs/issues.md`：项目问题汇总（Issue Register，全项目唯一的问题/风险/待决清单）。
 - `AGENTS.md`：工作日志、提交纪律与设计决策记录。
