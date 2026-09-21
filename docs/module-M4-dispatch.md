@@ -3,6 +3,7 @@
 > 版本：v1.0 · 面向开发
 > 关联文档：`design.md` §4.4/§5、`docs/api.md` §3.4
 > 本文目标是让开发者在 P4 阶段**不回头翻全量文档即可实现 M4**：给出文件划分、核心类型与方法签名、约束与算法细节、事务/事件/审计边界、测试与验收清单。任何实现偏差必须先回写本文档与 `AGENTS.md`。
+> **文档边界**：本文件只负责「M4 调度引擎的模块内实现口径」。其余事实按 [`docs/api.md`](./api.md) §0「文档事实单一来源」引用，**不复述可漂移的数值**。
 
 ## 1. 模块定位
 
@@ -44,32 +45,32 @@
 ## 3. 代码结构规划
 
 ```text
-shared/types/dispatch.ts        # 对外契约类型（DTO 见 docs/api.md）
-shared/enums/dispatch.ts        # dispatchStrategy / rejectReason 等（唯一来源）
-desktop/domain/dispatch/
+shared/src/types.ts             # 追加 M4 对外契约类型（DTO 见 docs/api.md）
+shared/src/enums.ts             # 追加 dispatchStrategy / rejectReason 等（唯一来源）
+desktop/src/domain/dispatch/
 ├── dispatch.service.ts         # 编排：鉴权参数→快照→算法→事务落库→日志/审计/事件
 ├── snapshot.ts                 # buildSnapshot：组装 DispatchSnapshot + 构图（调用 M5 图构建）
 ├── evaluate.ts                 # 单车×单任务约束评估（顺序固定）+ 代价计算
 ├── occupancy.ts                # 占用区间模型（区间相交检测）
 ├── explain.ts                  # 人类可读 explain 生成
 └── errors.ts                   # M4 错误码常量与构造器
-desktop/algorithms/dispatch/
+desktop/src/algorithms/dispatch/
 ├── types.ts                    # 算法层内部输入输出（纯类型）
 ├── greedy.ts                   # 贪心策略
 ├── hungarian.ts                # 匈牙利指派（n×m，不可行格=∞）
 └── index.ts                    # runDispatch(snapshot, strategy) 分派
-desktop/db/repositories/         # 对应 Repository（已有通用实现，本模块只用查询/受控写入）
+desktop/src/db/repositories/     # 对应 Repository（已有通用实现，本模块只用查询/受控写入）
 ├── task.repo.ts  vehicle.repo.ts  graph.repo.ts  restriction.repo.ts
 ├── dispatch-plan.repo.ts  route.repo.ts  dispatch-log.repo.ts
 ```
 
 边界约束：
 
-1. `desktop/algorithms/dispatch/*` 不得 import 任何 db/domain 实现，只消费传入快照。
+1. `desktop/src/algorithms/dispatch/*` 不得 import 任何 db/domain 实现，只消费传入快照。
 2. `dispatch.service.ts` 不写 SQL，只调用 Repository 方法。
 3. `dispatch.service.ts` 不 import 算法文件以外任何 UI 内容。
 
-## 4. 核心类型契约（实现时以 `shared/types` 为准）
+## 4. 核心类型契约（实现时以 `shared/src/types.ts` 为准）
 
 ```ts
 // 算法层输入快照（纯数据）
@@ -229,7 +230,7 @@ cost = w1*deadheadTimeS + w2*executeTimeS + w3*waitTimeS
 - 拒绝：「任务 {code} 拒绝：{reason 中文}（{detail 摘要}）」。
 - 策略对比：「策略 {strategy} 共指派 {assigned}/{totalTasks}，总代价 {totalCost}」。
 
-中文文案统一放 `shared/i18n/dispatch.ts`，算法层只产出结构化原因，**文案在表现层/服务层翻译**（算法保持语言无关）。
+中文文案统一放 renderer 侧的文案模块（当前仍内联在 `renderer/src/pages/`；**尚无 `shared/i18n/`**，落地时再建），算法层只产出结构化原因，**文案在表现层/服务层翻译**（算法保持语言无关）。
 
 ## 9. DispatchService 方法签名
 
@@ -370,8 +371,8 @@ sequenceDiagram
 
 | 事件 | 触发动作 | 载荷要点 |
 | --- | --- | --- |
-| `task.changed` | apply / manual_assign / recompute（回收时） | `{ taskId, status: 'assigned'|'pending', … }` |
-| `vehicle.changed` | apply / manual_assign / recompute（回收时） | `{ vehicleId, status: 'reserved'|'idle', … }` |
+| `task.changed` | apply / manual_assign / recompute（回收时） | `{ taskId, status: 'assigned' / 'pending', … }` |
+| `vehicle.changed` | apply / manual_assign / recompute（回收时） | `{ vehicleId, status: 'reserved' / 'idle', … }` |
 | `map.updated` | 以上全部 | `{ eventSeq }` |
 | `alert.created` | recompute 检测到封路/故障时（由 M7/M8 落） | 见 docs/api.md §4 |
 
@@ -440,7 +441,7 @@ sequenceDiagram
 ## 15. 开发顺序与完成标准（DoD）
 
 ```text
-Step 1  shared/types + enums（dispatchStrategy/rejectReason/DTO）      → 编译通过
+Step 1  shared/src/types.ts + enums.ts 追加 M4 类型                   → 编译通过
 Step 2  algorithms：occupancy → evaluate → greedy → hungarian → explain → U1-U11 绿
 Step 3  domain/dispatch：snapshot → errors → dispatch.service(preview/apply/manual/recompute)
         + Repository 方法                                              → S1-S8 绿

@@ -3,6 +3,7 @@
 > 版本：v1.0（文档阶段）
 > 维护约定：本文档与 `docs/api.md`、`AGENTS.md` 同步更新；规则冲突以本文档与 `AGENTS.md` 的「最新设计决策」为准，并回写相关文档。
 > 原始需求存档：`docs/requirement-raw.md`。
+> **文档边界**：本文件只负责「模块需求条目（`Req-*`）、状态机、数据模型字段语义」。其余事实按 [`docs/api.md`](docs/api.md) §0「文档事实单一来源」引用，**不复述可漂移的数值**。
 
 ## 1. 项目总览
 
@@ -109,7 +110,7 @@ flowchart TB
 - 内部通信：统一服务契约（JSON）。调用方不感知传输细节，由三层适配器实现同一契约：
   - `IpcAdapter`：生产形态，`ipcRenderer.invoke` ↔ `ipcMain.handle`。
   - `HttpAdapter`：预留形态（`localhost` 随机端口 + 会话 Token），用于自动化测试与后续接入。
-  - `MockAdapter`：浏览器独立开发/演示形态（内存 + localStorage 种子数据），接口契约一致。
+  - `MockAdapter`：浏览器独立开发/演示形态（**纯内存**种子数据，无持久化），接口契约一致。
 - 事件推送：主进程 `webContents.send` 推送领域事件（车辆位置、任务状态、告警新增等）；渲染层按事件订阅，并以系统设置的刷新间隔做定时兜底拉取。
 
 ### 2.3 技术选型
@@ -126,40 +127,32 @@ flowchart TB
 | 测试 | Vitest + React Testing Library（+ Electron 冒烟） | 算法、状态机、服务契约单测必测 |
 | 打包 | electron-builder | 打包阶段引入 |
 
-### 2.4 目录规划（目标态）
+### 2.4 目录规划
+
+> **口径**：目录形态的唯一来源是 [`README.md`](./README.md)「目录结构」；
+> 下面只标注各层**在 `design.md` 里的设计意图**与实现状态。
+> 文档清单不在本树重复 —— 见 [`README.md`](./README.md)「文档入口」。
 
 ```text
 831/
-├── README.md               # 项目说明 + 文档入口
-├── AGENTS.md               # 工作日志与提交纪律（本仓库规则）
-├── design.md               # 本设计文档
-├── docs/
-│   ├── api.md              # 接口文档（全量契约）
-│   ├── requirement-raw.md  # 原始需求存档
-│   └── decisions.md        # （后续）设计决策增量记录
-├── shared/                 # 类型 + 常量 + 枚举 + 错误目录（唯一来源）
-│   ├── types/  enums/  errors/
-├── desktop/                # Electron 主进程
-│   ├── main.ts             # 启动入口
-│   ├── db/                 # 连接、迁移、seed、repository
-│   ├── domain/             # 业务服务（任务/车辆/调度/路径/告警…）
-│   ├── algorithms/         # 纯函数算法（图搜索/指派）
-│   ├── ipc/                # ipcMain 注册 + 鉴权中间件
-│   └── services/           # 会话、事件总线、执行器、日志
-├── renderer/               # React（Vite）
-│   ├── pages/ components/ api/ store/ styles/
-│   ├── main.tsx            # 应用入口（当前缺失，P1 补齐）
-│   └── map/                # 地图图层（React Flow）
-│       ├── MapView.tsx  stage/  nodes/  edges/  model/  hooks/
-│       └── 详见 docs/module-M6-map.md（选型依据 / 数据映射 / 性能护栏 / 测试清单）
-└── tests/                  # 端到端冒烟
+├── README.md  AGENTS.md  design.md   # 说明 + 文档索引 / 规则日志 / 设计文档
+├── docs/                             # 其余文档（清单见 README「文档入口」）
+├── shared/src/*.ts                   # 类型 / 常量 / 枚举 / 错误目录（唯一来源，扁平文件）
+├── desktop/
+│   ├── src/                          # 主进程实现（db / services / ipc / cli / main.ts）
+│   ├── migrations/                   # SQL 迁移（0001_init.sql）
+│   ├── preload.cjs                   # contextBridge 最小面
+│   └── .data/app.db                  # 开发库（gitignore）
+├── renderer/src/                     # api / store / app / pages / components / map / styles
+│   └── map/                          # 地图图层（React Flow，详见 docs/module-M6-map.md）
+└── tests/setup.ts                    # 全局测试 setup（用例与被测代码同目录）
 ```
 
 模块边界约束：
 
 1. `shared` 不依赖任何进程实现；渲染层与主进程只能从 `shared` 引入类型、枚举、错误定义。
-2. `desktop/algorithms` 禁止 import `desktop/db`；入参必须是调用方组装好的快照。
-3. `renderer` 只依赖 `shared` 与自身 `api/` 适配器，禁止直接操作 Node/Electron 能力。
+2. `desktop/src/algorithms`（【设计中】）禁止 import `desktop/src/db`；入参必须是调用方组装好的快照。
+3. `renderer` 只依赖 `shared` 与自身 `renderer/src/api/` 适配器，禁止直接操作 Node/Electron 能力。
 
 ### 2.5 数据与事件主流程
 
@@ -188,10 +181,10 @@ flowchart TB
 ### 3.2 数据规范
 
 1. 时间统一 ISO 8601，UTC，毫秒精度：`2026-09-07T09:00:00.000Z`；入库与传输同格式，展示层本地化。
-2. 坐标统一 `{ x, y }`，单位米，直角平面坐标（x 向右、y 向上）。首期内部模块一律使用平面坐标，禁止混用经纬度；二期如需真实地图，再在 `shared/types` 中定义显式转换层。
+2. 坐标统一 `{ x, y }`，单位米，直角平面坐标（x 向右、y 向上）。首期内部模块一律使用平面坐标，禁止混用经纬度；二期如需真实地图，再在 `shared/src/types.ts` 中定义显式转换层。
 3. ID 统一字符串型主键（UUID v4）。种子数据允许可读固定 ID（如 `seed-admin`）。
 4. 单位固定：距离 `米(m)`、时长 `秒(s)`、速度 `m/s`、载重 `千克(kg)`、电量 `0-100`；字段名用 `distanceM`、`durationS`、`capacityKg`、`battery`。
-5. 枚举只在 `shared/enums` 定义一份，前后端、主渲染共同引用；任何状态/类型字段存枚举字符串值。
+5. 枚举只在 `shared/src/enums.ts` 定义一份，前后端、主渲染共同引用；任何状态/类型字段存枚举字符串值。
 
 ### 3.3 状态规范
 
@@ -281,7 +274,7 @@ interface DomainError {
 | `dispatcher` 调度员 | 日常调度执行 | 任务全操作、调度、路径、监控接管、告警处理 |
 | `monitor` 监控员 | 只读 + 告警确认 | 看板/地图/任务/车辆只读、告警查看与确认 |
 
-权限点目录（`shared/enums` 定义，接口层按此校验）：
+权限点目录（`shared/src/enums.ts` 定义，接口层按此校验）：
 
 | 权限点 | 允许角色 | 覆盖动作 |
 | --- | --- | --- |
@@ -306,13 +299,11 @@ interface DomainError {
 | `settings:read` | admin / dispatcher | 设置查看 |
 | `settings:write` | admin | 设置修改 |
 
-种子账号（仅供演示，首版默认密码见 AGENTS.md 种子说明）：
-
-| 用户名 | 角色 | 默认密码 |
-| --- | --- | --- |
-| `admin` | admin | `admin123` |
-| `dispatcher` | dispatcher | `dispatcher123` |
-| `monitor` | monitor | `monitor123` |
+种子账号（仅供演示）：`admin` / `dispatcher` / `monitor` 各一个，**账号与默认密码的唯一来源是
+`shared/src/constants.ts` 的 `SEED_ACCOUNTS`**（此处不复述密码，避免与代码漂移）。
+各角色**实际**拥有的权限点由同文件 `shared/src/enums.ts` 的 `ROLE_PERMISSIONS` 计算得出
+（本项目不复述权限点总数与各角色条数；登录接口返回的 `permissions` 即该计算结果，见 `docs/api.md` §3.1.1，
+权限点清单与总数以 `docs/api.md` §3 为准）。
 
 ---
 
@@ -704,6 +695,13 @@ cost = w1 * deadheadTime      // 车辆当前位置 → 任务起点的空驶时
 
 存储：SQLite（仅主进程访问）。约定：所有表 `id TEXT PRIMARY KEY`；时间字段存 ISO 8601 UTC 字符串（见 §3.2）；枚举字段存枚举字符串；变更留痕字段 `createdBy/updatedBy` 为执行人用户名（审计主表存 ID）；布尔统一 `0/1`。
 
+> **规模口径**：首期 **16 张业务表** + `schema_version` = 合计 17 张表、18 条索引（实测）。
+> 建表 DDL、索引与约束的**唯一来源**是 [`docs/database.md`](./docs/database.md) §2/§3；本节只给字段语义。
+>
+> **第二个迁移**：四类导入数据文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）所需的表与列
+> 归 `0002_data_import.sql`，**草案、待评审**，不在本节展开 —— 见 `docs/data-interfaces.md` §10
+> 与 `docs/order-data-map-design.md` §3，编号登记见 `docs/database.md` §6。
+
 ### 6.1 关系总览
 
 ```mermaid
@@ -801,7 +799,7 @@ erDiagram
 | 可靠性 | 主进程崩溃重启后基于 event_log/轨迹可恢复展示；关键写操作事务化 |
 | 数据安全 | 密码 bcrypt；本地 DB 文件默认放用户数据目录；审计只增不改不删 |
 | 可测试 | 算法纯函数、状态机、服务契约均有单测；无 UI 可跑通演示主线（契约测试） |
-| 可演示 | 内置 seed 场景（园路网 + 3 车 + 示例任务）与「一键重置演示数据」入口（仅演示） |
+| 可演示 | 内置 seed 场景（园路网 + 3 车 + 示例任务）；重置走 `npm run db:reset`（脚本已实现，UI 入口**未实现**） |
 | 可回放 | 所有状态变化、位置变化可依据日志/轨迹按时间回放 |
 | 兼容 | 渲染层可在浏览器 Mock 运行；Electron 包可离线启动 |
 
@@ -840,15 +838,8 @@ erDiagram
 
 ### 10.2 文档索引
 
-- `design.md`：本设计文档。
-- `docs/api.md`：接口文档（全量契约、错误码、事件清单）。
-- `docs/module-M4-dispatch.md`：调度引擎（M4）模块开发详档（P4 编码参考）。
-- `docs/module-M6-map.md`：地图渲染（M6）React Flow 方案（P3 编码参考）。
-- `docs/database.md`：SQLite 建表 DDL、索引、seed 与迁移规则。
-- `docs/build-plan.md`：P1-P6 构建计划与验收门。
-- `docs/data-interfaces.md`：数据文件接口规范（订单 CSV / 仿真地图 / 车辆参数 / 算法配置的导入契约与统一导入管线，草案）。
-- `docs/order-data-map-design.md`：订单数据接入与地图生成设计（设计态）。
-- `docs/architecture.md`：架构图集（Mermaid，可导出）。
-- `docs/requirement-raw.md`：原始需求存档。
-- `docs/issues.md`：项目问题汇总（Issue Register，全项目唯一的问题/风险/待决清单）。
-- `AGENTS.md`：工作日志、提交纪律与设计决策记录。
+> **文档索引的唯一来源是 [`README.md`](./README.md) 的「文档入口」表。**
+> 本节不再维护副本 —— 三份副本正是历史上文档漂移的成因之一（见 `docs/issues.md` ISS-032）。
+> 本节只声明**本文件自己的定位**：模块需求条目（`Req-*`）、状态机、数据模型字段语义的权威来源，
+> 其余事实（接口、DDL、脚本、问题、决策）分别由 `docs/api.md`、`docs/database.md`、
+> `docs/build-plan.md`、`docs/issues.md`、`AGENTS.md` 负责，对应关系见 `docs/api.md` §0。

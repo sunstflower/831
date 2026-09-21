@@ -3,8 +3,11 @@
 > 版本：v0.3（**草案，调研中**；2026-09-21 按真实样本逐字段核对）
 > 状态：仅接口与文件契约设计，**不包含实现**；字段与接口均待评审确认。
 > 样本依据：`第三次课_数据准备/1_仿真地图` · `2_订单数据集` · `3_车辆参数`（实测数值见 §13）。
-> 范围声明：本次**未**核对 `4_调度约束` / `5_数据校验` / `6_数据说明文档`（F4 章因此未更新，见 §12 Q16）。
-> 关联：[`design.md`](../design.md) §5（算法）· §6（数据模型）· [`docs/api.md`](./api.md) §1（通用约定）· [`docs/database.md`](./database.md）
+> 范围声明：本次**未**逐字段核对 `4_调度约束` / `5_数据校验` / `6_数据说明文档`（F4 章因此未更新，见 §12 Q16）。
+> 例外：§5.9 的 `[A/B/C/D]` 可信级别统计**读取了** `5_数据校验/数据可信级别.csv`（该文件正是级别数据本身的载体，
+> 且两处口径差异已由它暴露出来）；这是一次有意的越界读取，不改变「F4 未核对」的结论。
+> 关联：[`design.md`](../design.md) §5（算法）· §6（数据模型）· [`docs/api.md`](./api.md) §1（通用约定）· [`docs/database.md`](./database.md)
+> **文档边界**：本文件只负责「四类导入数据文件的**字段契约**（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）与统一导入管线」。其余事实按 [`docs/api.md`](./api.md) §0「文档事实单一来源」引用，**不复述可漂移的数值**。
 
 ### 与 `docs/order-data-map-design.md` 的分工（去重后）
 
@@ -30,7 +33,7 @@
 | 编号 | 文件 | 承载 | 实测样本形态 | 系统侧标准形态 |
 | --- | --- | --- | --- | --- |
 | F1 | 订单数据集 | 待配送订单 | CSV **26 列**（另有一变体 32 列） | 同 CSV（无信封） |
-| F2 | 仿真地图 | 路网节点 / 有向边 / 站点 / 泊位 / 障碍 | **4 个文件**（3 CSV + 1 GeoJSON） | 单文件 JSON 信封 |
+| F2 | 仿真地图 | 路网节点 / 有向边 / 站点 / 泊位 / 障碍 | **5 个文件**（3 CSV + 1 XML + 1 GeoJSON） | 单文件 JSON 信封 |
 | F3 | 配送车辆参数 | 车队物理参数与服务能力 | YAML（权威）/ JSON 同构 | 单文件 JSON 信封 |
 | F4 | 配送算法配置 | 策略、代价权重、约束阈值 | 无样本，纯设计 | 单文件 JSON 信封 |
 
@@ -113,7 +116,7 @@
     "name": "校园仿真路网",
     "description": "30 节点 / 90 有向边 / 13 站点",
     "source": "sumo-network",
-    "sourceFiles": ["campus_nodes.csv", "campus_edges.csv", "campus_stations.csv", "campus.geojson"],
+    "sourceFiles": ["campus_nodes.csv", "campus_edges.csv", "campus_stations.csv", "campus.add.xml", "campus.geojson"],
     "coordinateSystem": "planar-meters",
     "createdAt": "2026-09-21T00:00:00.000Z"
   },
@@ -252,8 +255,8 @@ JSON 文件用 JSON Pointer 定位：
 
 地图 + 车辆 + 算法是仿真的最小可复现单元。首期**不做压缩包格式**，而是用「同一 `scenarioId` 顺序导入」表达，批次记录中写入同一 `scenarioId`，即可复现「当时用了哪版地图、哪版车队、哪版算法」。
 
-**地图是 4 个文件、车辆与算法各 1 个文件**，故一个完整场景包含 **6 份文件输入**（实测样本形态）。
-`scenarioId` 的幂等计算必须覆盖**全部 6 份文件的内容哈希**，而不是只取主文件——
+**地图是 5 个文件、车辆与算法各 1 个文件**，故一个完整场景包含 **7 份文件输入**（实测样本形态）。
+`scenarioId` 的幂等计算必须覆盖**全部 7 份文件的内容哈希**，而不是只取主文件——
 只哈希 `campus_edges.csv` 会漏掉站点泊位或 GeoJSON 的变更，导致「地图改了但幂等键没变」。
 
 组合校验（三件套齐备时执行，返回为 warning 而非阻断）：
@@ -527,17 +530,26 @@ JSON 文件用 JSON Pointer 定位：
 
 ## 4. F2 仿真地图（JSON）
 
-### 4.1 输入形态：**四个文件的捆绑包**，不是一个文件
+### 4.1 输入形态：**五个文件的捆绑包**，不是一个文件
 
-样本目录 `1_仿真地图/` 是一套 SUMO 路网工程。可直接导入的**四个文件**构成一个「地图包」，
-其余文件（`*.nod.xml` / `*.edg.xml` / `*.net.xml` / `*.sumocfg` / `*.png`）是 SUMO 侧产物或配置，**不参与导入**：
+样本目录 `1_仿真地图/` 是一套 SUMO 路网工程（共 17 个文件）。可直接导入的**五个文件**构成「地图包」，
+另有一个**辅助输入** `campus.obstacles.rou.xml`（障碍物 → 边的关联声明，见 §4.1.3）；
+其余（`*.nod.xml` / `*.edg.xml` / `*.net.xml` / `campus*.sumocfg` / `*.typ.xml` / `*.png` /
+`build_network.*` / `campus_demo.rou.xml` / `tripinfo.xml`）是 SUMO 侧产物、跑批结果或构建脚本，**不参与导入**：
 
 | 文件 | 角色 | 行数 | 必需 |
 | --- | --- | --- | --- |
 | `campus_nodes.csv` | 节点 | 30 | 是 |
 | `campus_edges.csv` | 有向边 | 90 | 是 |
 | `campus_stations.csv` | 站点 / 泊位 | 13 | 是 |
+| `campus.add.xml` | 泊位（`parkingArea`）与障碍物（`poly`） | 14 + 15 | 否¹ |
 | `campus.geojson` | 几何（边线 + 节点 + 站点 + 图层） | 133 features | 否（缺失时坐标为唯一来源） |
+
+> ¹ `campus.add.xml` 缺失时地图仍可导入，但 `obstacles[]` 与「泊位区间 / 容量」失去来源 ——
+> 站点表自带 `start_pos`/`end_pos`/`berth_capacity`，**与 `add.xml` 实测 13/13 完全一致**，
+> 故泊位可退回用站点表；障碍物则**没有**替代来源，只能为空并给 `MAP.OBSTACLES_UNAVAILABLE` warning。
+> `campus.obstacles.rou.xml` 是 `construction` → 边的**关联声明**（见 §4.1.3），
+> 与 `add.xml` 一起构成障碍物的完整输入。
 
 坐标沿用平面 `{x,y}` 米制（D-05）。**实测确认**：`campus.geojson` 无 `crs` 成员、坐标形如 `[[0,0],[150,0]]`，
 量级为 0–760，与节点表逐点吻合——**它不是经纬度**，不得按经纬度解析或投影。
@@ -553,7 +565,7 @@ JSON 文件用 JSON Pointer 定位：
   "meta": {
     "name": "校园仿真路网",
     "source": "sumo-network",
-    "sourceFiles": ["campus_nodes.csv", "campus_edges.csv", "campus_stations.csv", "campus.geojson"],
+    "sourceFiles": ["campus_nodes.csv", "campus_edges.csv", "campus_stations.csv", "campus.add.xml", "campus.geojson"],
     "coordinateSystem": "planar-meters"
   },
   "data": {
@@ -585,6 +597,9 @@ JSON 文件用 JSON Pointer 定位：
 避免有人把经纬度文件导进来后才在图上一片空白地排查。
 
 #### 4.1.2 样本文件 → 标准字段（逐列映射）
+
+> 下面覆盖 3 份 CSV 与 GeoJSON 四者；XML（`campus.add.xml`）的映射见 §4.1.3 ——
+> 它是「泊位区间 / 容量」与「障碍物」两个标准字段组的来源。
 
 **`campus_nodes.csv`（4 列）**
 
@@ -638,7 +653,7 @@ JSON 文件用 JSON Pointer 定位：
 | 几何 | 数量 | `properties` | 用途 |
 | --- | --- | --- | --- |
 | `LineString` | 90 | `id` / `road_type` / `lanes` / `speed_kmh` | 与 `campus_edges.csv` 一一对应（同一套 `id`） |
-| `Point` + `kind=junction` | 30 | `id` / `name` / `kind` / `node_type` | 对应 `campus_nodes.csv`；`node_type` 与 `type` 同义 |
+| `Point` + `kind=junction` | 30 | `id` / `kind` / `node_type` | 对应 `campus_nodes.csv`；`node_type` 与 `type` 同义。**实测无 `name`**（`name` 只有 `berth` / `depot` 有） |
 | `Point` + `kind=berth` | 12 | `id` / `name` / `kind` / `category` | 12 个配送站点 |
 | `Point` + `kind=depot` | 1 | `id` / `name` / `kind` | 配送中心（`betth` 之外的单独 kind） |
 
@@ -831,7 +846,7 @@ GeoJSON 是**几何视图**，不是权威数据源：CSV 与 GeoJSON 冲突时*
 | --- | --- | --- |
 | `vehicle_params.yaml` | 权威源：**逐字段带 `[A/B/C/D]` 可信级别标注** + `references` 原文摘录 | ✅ 首选 |
 | `vehicle_params.json` | 与 YAML 同构（`fleet` + `vehicles` + `consistency_rules` + `references`） | ✅ 等价可导入 |
-| `vehicle_params.csv` | 3 型 × 19 列速览 | ⚠️ 列不全，仅人工速览 |
+| `vehicle_params.csv` | 3 型 × 20 列速览（表头 `id`/`名称`/…/`车队数量`） | ⚠️ 列不全，仅人工速览 |
 | `sumo_vtypes.add.xml` | SUMO `vType`（含 `vClass`/`guiShape`/`lcStrategic`） | ❌ SUMO 侧配置，不导入 |
 
 **文件结构不是 §2.2 的 `data`+`meta`+`kind` 扁平信封，而是三段式**：
@@ -939,7 +954,7 @@ GeoJSON 是**几何视图**，不是权威数据源：CSV 与 GeoJSON 冲突时*
 > 示例只展出一个车型（`UGV-S`）。**层级分组（`kinematics`/`energy`/`payload`/…）是为可读性与前端分组渲染引入的**；
 > 样本是扁平的 38 个键。映射时按 §5.3 的「样本键」列一一对应，分组名本身不落库。
 
-### 5.3 字段契约（38 字段，逐字段对齐样本）
+### 5.3 字段契约（45 行 = 38 个顶层键 + 7 个 `cargo_box.*` 展开项，逐字段对齐样本）
 
 **必填（决定车辆能否参与调度）**
 
@@ -1140,22 +1155,28 @@ GeoJSON 是**几何视图**，不是权威数据源：CSV 与 GeoJSON 冲突时*
 
 ### 5.9 溯源字段（`[A/B/C/D]` 可信级别）
 
-样本**每个字段都标注可信级别**，并附 `references`（含 `cite`/`url`/`quote`/`local_text`/`used_for`）：
+样本**每个带取值的字段行都标注可信级别**（缺失即校验失败），并附 `references`。
+`references[]` 的元素键以 `id` / `cite` / `quote` / `used_for` 为常见项，另有可选的
+`url`（9 条里 4 条有）、`local_text`（5 条）、`quote_table1` / `note`（各 1~2 条）。
 
-| 级别 | 含义 | 实测占比 |
-| --- | --- | --- |
-| `A` | 公开真实数据集（可下载 + SHA256） | 0 个（0%） |
-| `B` | 公开资料原文明确记载（附原文摘录） | 62 个（28.4%） |
-| `C` | 由 B 级按公式推导 | 24 个（11.0%） |
-| `D` | **本文工程假设（无外部来源）** | **132 个（60.6%）** |
+> ⚠️ **统计口径必须区分「车辆文件」与「样本合计」** —— 样本 `5_数据校验/数据可信级别.csv`
+> 覆盖的是**两份**配置文件（`vehicle_params.yaml` 129 个 + `dispatch_constraints.yaml` 89 个）。
+> 只讲车辆时必须用前者，否则会把算法配置的假设算进车辆参数：
+
+| 级别 | 含义 | **本文件（车辆）129 个** | 样本合计 218 个（含 `4_调度约束`） |
+| --- | --- | --- | --- |
+| `A` | 公开真实数据集（可下载 + SHA256） | 0 个（0%） | 0 个（0%） |
+| `B` | 公开资料原文明确记载（附原文摘录） | 43 个（33.3%） | 62 个（28.4%） |
+| `C` | 由 B 级按公式推导 | 20 个（15.5%） | 24 个（11.0%） |
+| `D` | **本文工程假设（无外部来源）** | **66 个（51.2%）** | **132 个（60.6%）** |
 
 导入处理（**待评审，见 §12 Q14**）：
 
 1. **保留级别**：级别随参数一起落库（`vehicle_type_params.field_tier` 或独立 `param_provenance` 表），
-   UI 在参数旁展示徽标。理由：60.6% 的数值是假设，不展示就等于把假设当实测。
+   UI 在参数旁展示徽标。理由：车辆文件里 **51.2%** 的数值是假设，不展示就等于把假设当实测。
 2. **不阻断**：`D` 级参数**不报错**——样本的定位就是「工程假设明确标注 + 可复现」，报错会阻断正常使用。
-3. **汇总提示**：预检报告给一行统计「本文件 218 个数值字段：B 62 / C 24 / D 132」，
-   并在参数详情页可筛选「仅看 D 级」。
+3. **汇总提示**：预检报告给一行统计「**本文件 129 个数值字段：B 43 / C 20 / D 66**」，
+   并在参数详情页可筛选「仅看 D 级」。（不要写成 218 / B 62 / C 24 / D 132 —— 那是两份文件的合计。）
 4. **`A` 级为空**：样本无 `A` 级字段属正常（车辆参数走的是 B/C/D 路线，`A` 级留给公开算例），
    不产生任何告警。
 
@@ -1421,13 +1442,13 @@ GeoJSON 是**几何视图**，不是权威数据源：CSV 与 GeoJSON 冲突时*
 | --- | --- | --- | --- |
 | `serviceDate` | `orders` | `YYYY-MM-DD`，缺省导入当天 | `*_s` 秒数换算为绝对时间时的基准日（§3.3） |
 | `priorityMapping` | `orders` | 对象，缺省系统内置 `{1:normal, 2:high, 3:urgent}` | 优先级映射覆盖（§3.4） |
-| `sourceBundle` | `map` | `{ nodes, edges, stations, geojson }` 四个路径或内容 | 多文件地图包的入口（§4.1）；缺 `geojson` 合法 |
+| `sourceBundle` | `map` | `{ nodes, edges, stations, addXml, geojson }` 五个路径或内容 | 多文件地图包的入口（§4.1）；`geojson` 与 `addXml` 可缺（缺 `addXml` 给 `MAP.OBSTACLES_UNAVAILABLE`） |
 | `inferRoadTypes` | `map` | boolean，缺省 `true` | 是否允许按 §4.4 推断缺失的 `roadType` |
 | `executeConsistencyRules` | `vehicle-fleet` | boolean，缺省 `true` | 是否执行文件自带的 `consistency_rules`（§5.7） |
 | `keepProvenance` | `vehicle-fleet` | boolean，缺省 `true` | 是否保留 `[A/B/C/D]` 可信级别（§5.9） |
 
 > `sourceBundle` 与 §7.1.1 的 `filePath` / `content` 是**叠加关系**而非替代：
-> Electron 下四个文件都传路径，浏览器 Mock 下传四份 base64。**不允许**让前端先把 4 个文件拼成一个大 JSON 再上传——
+> Electron 下五个文件都传路径，浏览器 Mock 下传五份 base64。**不允许**让前端先把 5 个文件拼成一个大 JSON 再上传——
 > 那会把 20 MB 上限的检查挪到渲染层，且拼接本身就在内存里多存一份（§7.1.1 的同一条性能纪律）。
 
 > `dispatch-algorithm` 的确认权限取 `settings:write` 而非 `dispatch:apply`：它改的是全局参数，属于配置变更而非调度动作。这一点建议评审时重点确认。
@@ -1555,6 +1576,7 @@ GeoJSON 是**几何视图**，不是权威数据源：CSV 与 GeoJSON 冲突时*
 | `MAP.GEOJSON_MISMATCH` | warning | GeoJSON 与 CSV 不一致（CSV 为准） |
 | `MAP.LANE_COUNT_MISMATCH` | warning | 行内 `num_lanes` 与 `roadType` 声明值不一致 |
 | `MAP.OBSTACLE_EDGE_UNLINKED` | warning | `construction` 障碍未关联任何边 |
+| `MAP.OBSTACLES_UNAVAILABLE` | warning | 障碍物来源 `campus.add.xml` 缺失，`obstacles[]` 只能为空 |
 | `MAP.ROAD_TYPE_INFERRED` | warning | `roadType` 缺失，按限速推断得到 |
 | `MAP.SITE_WITHOUT_EDGE` | warning | 站点未绑定边 |
 | `MAP.SPEED_LIMIT_MISMATCH` | warning | 行内 `speed_kmh` 与 `roadType` 声明值不一致 |
@@ -1670,7 +1692,7 @@ stateDiagram-v2
 | `ConfigDiffPanel` | 仅算法：与当前配置对比 | 复用 `algorithm-config/preview` 的 `changedPlans` |
 | `ImportHistory` | 批次列表与结果文档下载 | 分页；失败批次可一键重试 |
 | `SourceTierBadge` | 来源层徽标（① 真实基准 / ② 文献参数 / ③ 仿真构造） | **按 `data_origin` 前缀**判定，不解析整串中文（§3.1） |
-| `MapBundlePicker` | 仅地图：四个文件的选入与缺项提示 | GeoJSON 可缺；缺 `nodes`/`edges`/`stations` 时明确报缺哪份（§4.1） |
+| `MapBundlePicker` | 仅地图：五个文件的选入与缺项提示 | `geojson`/`addXml` 可缺；缺 `nodes`/`edges`/`stations` 时明确报缺哪份（§4.1） |
 | `BerthTable` | 仅地图：站点泊位一览（位置区间/长度/容量） | 越界项高亮；与地图画布联动（§4.3） |
 | `ConsistencyRulePanel` | 仅车辆：9 条规则逐条结果 | 展示「表达式 + 左值 + 右值 + 判定」，**前端不求值**（§5.7） |
 | `TierFilterBar` | 仅车辆：按 `[A/B/C/D]` 筛选参数 | 默认展示全部；一键「仅看 D 级假设」（§5.9） |
@@ -1694,8 +1716,8 @@ stateDiagram-v2
 | F-1 | 「来源层」必须在向导第一步与结果页**显著展示** | 200 条订单是仿真数据；真实基准与仿真混在同一目录，不做标识就会被当成真实业务数据 |
 | F-2 | 时间列**双列并排**（原始秒数 + 换算 `HH:MM`），并显示 `serviceDate` 基准日 | `29226` 不可读；只显示换算值又无法与数据方对账（§3.3） |
 | F-3 | 优先级列**同时显示原始值与映射结果** | `3` → `urgent` 是系统映射，用户要看得到「我没传错」（§3.4） |
-| F-4 | 地图缺文件时**指名道姓**报缺哪一份 | 四文件包里 GeoJSON 可缺、其余不可缺；笼统报「地图解析失败」会让用户逐份试（§4.1） |
-| F-5 | 车辆参数按**八组分组**渲染，并给 `[D]` 级筛选 | 38 个扁平字段直接铺开不可读；60.6% 是工程假设，必须可见可筛（§5.3 / §5.9） |
+| F-4 | 地图缺文件时**指名道姓**报缺哪一份 | 五文件包里 `geojson`/`addXml` 可缺、三份 CSV 不可缺；笼统报「地图解析失败」会让用户逐份试（§4.1） |
+| F-5 | 车辆参数按**八组分组**渲染，并给 `[D]` 级筛选 | 38 个扁平键直接铺开不可读；51.2% 是工程假设，必须可见可筛（§5.3 / §5.9） |
 
 > **共同原则**：这些信息都属于「用户必须看见才能做判断」的元数据，不是可选装饰。
 > 反过来，**不得**把它们做成阻断性校验——样本本身是合规的，用户不该为数据的属性而被迫操作。
@@ -1737,7 +1759,7 @@ stateDiagram-v2
 | `sites` | 新增 `edge_id`、`lane_id`、`berth_start_pos_m`、`berth_end_pos_m`、`berth_length_m`、`berth_capacity`、`category`；`node_id` **改为可空** | §4.7（站点绑定到边） |
 | `obstacles`（新） | `code`、`type`、`shape_json`、`is_routable`、`affects_edge_ids`(JSON) | §4.1.3 |
 | `vehicle_type_params`（新） | 车型 38 字段 + `config_version`、`source_batch_id` | §5.3 |
-| `vehicle_param_provenance`（新，可选） | `type_id`、`field_path`、`tier`(A/B/C/D)、`line_no` | §5.9（60.6% 为 `[D]` 级假设，需可查） |
+| `vehicle_param_provenance`（新，可选） | `type_id`、`field_path`、`tier`(A/B/C/D)、`line_no` | §5.9（车辆文件 51.2% 为 `[D]` 级假设，需可查） |
 
 设计取舍：
 
@@ -1816,10 +1838,11 @@ stateDiagram-v2
 | M14 | `length_m` 与坐标距离不符 | `MAP.EDGE_LENGTH_MISMATCH` warning（样本 0 处） |
 | M15 | 两片区各自成网 | `GRAPH.DISCONNECTED` warning **不阻断** |
 | M16 | `construction` 障碍未关联边 | `MAP.OBSTACLE_EDGE_UNLINKED` warning；`building`/`water` 不参与路径 |
-| M17 | 删掉 `road_type` 列 | `MAP.ROAD_TYPE_INFERRED` warning（按限速推断） |
-| M18 | 存在非终态任务时 `replace` | `IMPORT.IN_USE_CONFLICT`，`detail.refs` 有任务 |
-| M19 | `replace` 后 | 旧节点为 `disabled`（软删），历史路线仍可查 |
-| M20 | `coordinateSystem` 为 `EPSG:4326` | `MAP.COORDINATE_SYSTEM_UNSUPPORTED` error |
+| M17 | 地图包中缺 `campus.add.xml` | `MAP.OBSTACLES_UNAVAILABLE` warning，`obstacles[]` 为空但地图仍可导入 |
+| M18 | 删掉 `road_type` 列 | `MAP.ROAD_TYPE_INFERRED` warning（按限速推断） |
+| M19 | 存在非终态任务时 `replace` | `IMPORT.IN_USE_CONFLICT`，`detail.refs` 有任务 |
+| M20 | `replace` 后 | 旧节点为 `disabled`（软删），历史路线仍可查 |
+| M21 | `coordinateSystem` 为 `EPSG:4326` | `MAP.COORDINATE_SYSTEM_UNSUPPORTED` error |
 
 ### 11.4 车辆（F3）
 
@@ -1839,7 +1862,7 @@ stateDiagram-v2
 | V12 | 追加一条自定义 `consistency_rules` 且不满足 | `VEHICLE.CUSTOM_RULE_FAILED` info，**不阻断** |
 | V13 | `speed_limits_kmh` 出现不存在的道路类型 | `VEHICLE.ROAD_TYPE_UNKNOWN` warning |
 | V14 | 缺 `battery_capacity_kwh` | `VEHICLE.ENERGY_MODEL_APPROXIMATE` warning |
-| V15 | 导入后查看参数页 | `[A/B/C/D]` 徽标齐全；统计为 B 62 / C 24 / D 132 |
+| V15 | 导入后查看参数页 | `[A/B/C/D]` 徽标齐全；**车辆文件**统计为 B 43 / C 20 / D 66（129 个） |
 | V16 | `merge` 导入 | 运行态字段（status/位置/电量/载重）**未被覆盖** |
 | V17 | `fleet.count=6` 但库中 3 台车 | info 提示编制不一致，**不自动补建车辆** |
 | V18 | `vehicles` 出现 `fleet` 未声明的车型 | `VEHICLE.TYPE_NOT_IN_FLEET` error |
@@ -1893,11 +1916,11 @@ stateDiagram-v2
 
 | 编号 | 问题 | 背景（实测） | 建议倾向 | 影响面 |
 | --- | --- | --- | --- | --- |
-| Q10 | 地图导入是否接受**多文件包**，还是要求数据方先合并成一个 JSON？ | 样本是 3 CSV + 1 GeoJSON 的工程目录 | **接受多文件包**（§4.1.1 的 `sourceBundle`）：要求数据方改工具链不现实；系统侧内部仍统一为单 JSON 信封 | 接口、导入器、前端向导 |
+| Q10 | 地图导入是否接受**多文件包**，还是要求数据方先合并成一个 JSON？ | 样本是 3 CSV + 1 XML + 1 GeoJSON 的工程目录 | **接受多文件包**（§4.1.1 的 `sourceBundle`）：要求数据方改工具链不现实；系统侧内部仍统一为单 JSON 信封 | 接口、导入器、前端向导 |
 | Q11 | `sites` 是否改为**边绑定**（新增 `edge_id`/泊位列），`node_id` 保留可空？ | 样本 13/13 站点都在边上，含泊位区间与容量，既有 `node_id` 模型表达不了 | **双写过渡**（§4.7）：新增边绑定列，`node_id` 保留可空；不在同一迁移里强制二选一（避免打断 M6） | 数据模型、M6、M7 泊位约束 |
 | Q12 | 订单优先级是否采用 `{1→normal, 2→high, 3→urgent}`？会丢失 `low` | 样本仅 1/2/3，无 4；`3` 与站间调拨强相关 | 采用默认映射，同时**保存原始 `priority_raw`**（§3.4）；`priorityMapping` 可覆盖 | 算法、UI、任务模型 |
 | Q13 | 订单时间是「当日秒数」还是 ISO 8601？ | 样本为 `HH:MM(:SS)` + 秒数，全列无日期无时区 | **保留秒数口径**（§3.3），基准日由 `serviceDate` 决定。ISO 会把仿真数据钉到具体日期，破坏可复现 | 数据模型、UI 时间展示、跨日策略 |
-| Q14 | 车辆 `[A/B/C/D]` 可信级别是否随参数落库并在 UI 展示？ | 60.6% 的数值字段为 `[D]` 工程假设 | **落库 + 展示徽标 + 可筛选**（§5.9）；不阻断导入 | 数据模型、车辆参数页 |
+| Q14 | 车辆 `[A/B/C/D]` 可信级别是否随参数落库并在 UI 展示？ | 车辆文件 **51.2%**（66/129）的数值字段为 `[D]` 工程假设 | **落库 + 展示徽标 + 可筛选**（§5.9）；不阻断导入 | 数据模型、车辆参数页 |
 | Q15 | 9 条 `consistency_rules` 用**服务端求值**还是信任文件预校验结果？ | 样本自带可执行 `expression`，三型实测全部通过 | **服务端求值**（§5.7）：前端/数据方自算会引入第二套实现；错误码由系统固定，不从文件读 | 导入器、错误模型 |
 | Q16 | F4 算法配置是否需要按样本对齐？ | 样本目录 `4_调度约束/`、`5_数据校验/` 本次**未纳入**（用户指定只读三类） | 下一轮把 `4_调度约束/dispatch_constraints.yaml` 纳入，做与 F3 同等的逐字段核对 | F4 全章、M4 约束评估 |
 
@@ -1959,7 +1982,7 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | 编制数 `count` | 6 | 2 | 0（预留） |
 | `max_speed_kmh` / `operating_speed_kmh` | 30 / 20 | 60 / 30 | 50 / 40 |
-| `scene_avg_speed_kmh` | 5.0 | 5.0 | 5.0 |
+| `scene_avg_speed_kmh` | 5.0 | **（无此键）** | **（无此键）** |
 | `battery_capacity_kwh` / `nominal_range_km` | 15.5 / 100 | 31.0 / 200 | 31.0 / 200 |
 | `effective_range_km` | 80 | 160 | 160 |
 | `energy_consumption_kwh_per_km` | 0.155 | 0.155 | 0.155 |
@@ -1971,7 +1994,8 @@ stateDiagram-v2
 | `load_time_per_order_s` / `park_time_per_stop_s` | 90 / 60 | 60 / 90 | 60 / 120 |
 | `turn_speed_limit_kmh` / `intersection_turn_time_s` | 8 / 6 | 10 / 8 | 12 / 10 |
 | 一致性规则 | 9 条全部通过 | 同上 | 同上 |
-| 可信级别（全文件 218 个数值字段） | A 0 / B 62 / C 24 / **D 132（60.6%）** | | |
+| 可信级别（**车辆文件** 129 个数值字段） | A 0 / B 43 / C 20 / **D 66（51.2%）** | | |
+| 可信级别（样本合计 218 个，含 `dispatch_constraints.yaml` 89 个） | A 0 / B 62 / C 24 / D 132（60.6%） | | |
 
 ---
 

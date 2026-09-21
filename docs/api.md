@@ -1,8 +1,43 @@
 # API 接口文档
 
-> 项目：无人物流调度管理软件 · 文档阶段
+> 项目：无人物流调度管理软件 · 状态：**契约文档（已实现部分标【已实现】）**
 > 配套：[`design.md`](../design.md)（设计文档，字段/表结构以此为准）
-> 说明：接口以服务路径 `/api/{module}/{action}` 表达。实现层映射三种适配器（IPC / 本地 HTTP / Mock），契约完全一致；调用方只依赖 `shared/apiClient`，不感知传输细节。
+> 说明：接口以服务路径 `/api/{module}/{action}` 表达。实现层映射三种适配器（IPC / 本地 HTTP / Mock），契约完全一致；调用方只依赖 `renderer/src/api/index.ts` 导出的 `apiClient`（**适配器在 renderer 侧，不在 `shared/`**），不感知传输细节。
+
+## 0. 文档事实单一来源（Single Source of Truth）
+
+> 本表规定**每个事实由哪份文档负责**。其余文档**只能引用、不得复述具体数值** ——
+> 复述就会漂移（见 `docs/issues.md` ISS-032：同一事实曾最多出现三种写法）。
+
+| 事实 | 唯一负责文档 | 其它文档应当 |
+| --- | --- | --- |
+| 错误码目录 | `shared/src/errors.ts` → 本文 §2（**条数以 §2 为准**） | 引用 code，不复述条数 |
+| 接口路径、请求/响应字段、权限点 | 本文（`docs/api.md`） | 引用 §号 |
+| 事件名与载荷 | 本文 §4 | 引用 §4 |
+| 数据表 DDL、索引、字段约束 | `docs/database.md` | 引用表名 |
+| 模块需求条目与状态机 | `design.md` | 引用 `Req-*` / §号 |
+| 四类导入数据文件的字段契约 | `docs/data-interfaces.md` | 引用 §号 |
+| 工程脚本、仓库形态、阶段验收 | `docs/build-plan.md` | 引用脚本名 |
+| 问题 / 风险 / 待决 | `docs/issues.md` | 引用 `ISS-xxx` |
+| 设计决策编号（D-xx） | `AGENTS.md` | 引用编号 |
+| 适配器默认行为 / 环境开关 | `renderer/src/api/index.ts`（代码即事实） | 引用 D-22，不复述默认值 |
+| 演示数据规模（seed） | `desktop/src/db/seed.ts` → `docs/database.md` §4 | 引用表名与「见 §4」 |
+| **源码文件与目录路径** | **仓库文件系统本身**（目录树速览见 `README.md`「目录结构」） | 引用真实路径；写路径前先确认它存在 |
+| npm 脚本清单 | `package.json` → `docs/build-plan.md` §3 | 引用脚本名 |
+| 文档索引 | `README.md`「文档入口」 | 不再各自维护副本 |
+
+> **禁止**：在非负责文档的**正文叙述**里复述可漂移的数值（条数、节点数、用例数、路径、默认值）。
+> 需要时写「见 §X」。只有两类例外，且都必须**自带出处与日期**：
+>
+> 1. **带日期的实测快照** —— `AGENTS.md` 的「项目快照 / 验证基线」、各文档的「实测结论」小节。
+>    它们记录的是**某一次运行**的结果，因此必须写明实测日期；下一次复测时**整段更新**，不做增量引用。
+> 2. **图表视图** —— `docs/architecture.md` 等图集为汇报需要可在图内嵌数字，
+>    但文件头必须声明「**与来源冲突时以来源为准**」并标注生成日期。
+>
+> 判定要点：**不是在问「这个数字对不对」，而是在问「它是否有唯一作者」。**
+>
+> **注意**：受管事实的**载体不限于 Markdown** —— `.env.example` 的注释、脚本与测试里的注释同样可能在复述事实，
+> 按本表指派时应按「事实」而非「文件类型」判断（`.env.example` 曾写「默认 mock」而代码实际按 preload 桥判定）。
 
 ## 1. 通用约定
 
@@ -49,7 +84,7 @@
 - 单位：距离 `distanceM`(米)、时长 `durationS`(秒)、速度 `mps`、载重 `capacityKg/loadKg/cargoKg`(千克)、电量 `battery`(0-100)。
 - 坐标：`x`、`y`（平面米制）。全部模块一致，禁止混用经纬度。
 
-### 1.5 通用枚举目录（唯一来源：`shared/enums`）
+### 1.5 通用枚举目录（唯一来源：`shared/src/enums.ts`）
 
 | 枚举 | 取值 |
 | --- | --- |
@@ -78,6 +113,8 @@
 
 > **全项目唯一登记处**：`shared/src/errors.ts` 的 `ERROR_CODES`（实现即契约）。
 > 本表由该文件与 `shared/src/errors.catalog.test.ts` 的断言共同锁定 —— 文档里出现未登记的 code 会导致 `npm test` 失败。
+> **条数不在此处固化**（易漂移）：实时值 = `Object.keys(ERROR_CODES).length`，当前为 **124 条
+> （34 运行时 + 90 导入域）**；其它文档引用条数时请改引「本文 §2」，不要各自复述（D-34）。
 > 数据文件导入域的 code（`IMPORT.*` / `ORDER.*` / `MAP.*` / `VEHICLE.*` / `ALGO.*` / `SCENARIO.*`）见 §2.2。
 
 ### 2.1 运行时业务错误码
@@ -222,6 +259,7 @@
 | `MAP.LANE_COUNT_MISMATCH` | validation | 行内 `num_lanes` 与 `roadType` 声明值不一致 | 200 | warning |
 | `MAP.GEOJSON_MISMATCH` | validation | GeoJSON 与 CSV 不一致（CSV 为准） | 200 | warning |
 | `MAP.OBSTACLE_EDGE_UNLINKED` | validation | `construction` 障碍未关联任何边 | 200 | warning |
+| `MAP.OBSTACLES_UNAVAILABLE` | validation | 障碍物来源 `campus.add.xml` 缺失，`obstacles[]` 只能为空 | 200 | warning |
 | `MAP.ROAD_TYPE_INFERRED` | validation | `roadType` 缺失，按限速推断得到 | 200 | warning |
 | `MAP.ONE_WAY_EDGE` | validation | 单向边且无反向边（合法，疑似编辑遗漏） | 200 | info |
 | `VEHICLE.RUNTIME_FIELD_REJECTED` | validation | 文件中出现运行态字段（§5.1） | 200 | error |
@@ -289,11 +327,15 @@
   "token": "sess_xxxx",
   "user": {
     "id": "seed-admin", "username": "admin", "role": "admin",
-    "displayName": "管理员",
-    "permissions": ["base:write", "task:write", "dispatch:read", "dispatch:preview", "dispatch:apply", "audit:read", "settings:write", "user:manage"]
+    "displayName": "系统管理员",
+    "permissions": ["user:manage", "base:read", "base:write", "task:read", "task:write", "dispatch:read", "dispatch:preview", "dispatch:apply", "route:plan", "map:read", "monitor:read", "execution:start", "execution:takeover", "alert:read", "alert:ack", "alert:resolve", "alert:archive", "audit:read", "settings:read", "settings:write"]
   }
 }
 ```
+
+`permissions` 由 `permissionsOf(role)` 计算（`shared/src/enums.ts` 的 `ROLE_PERMISSIONS`），
+按角色返回**完整**权限点列表：admin 20 项（全部）、dispatcher 16 项、monitor 6 项。
+上例为 admin，**不要把它当作固定清单照抄** —— 权限点增删只需改 `enums.ts`。
 
 错误：`AUTH.LOGIN_FAILED` / `AUTH.USER_DISABLED` / `AUTH.ACCOUNT_LOCKED`。
 
@@ -355,7 +397,7 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 | `GET /api/sites/{id}` | 详情（含绑定节点坐标） |
 | `POST /api/sites` | 创建：`code/name/type/nodeId?/x?/y?/remark?` |
 | `PUT /api/sites/{id}` | 更新（`code` 不可改） |
-| `PATCH /api/sites/{id}/status` | `{ "status": "disabled" | "enabled" }` |
+| `PATCH /api/sites/{id}/status` | `{ "status": "disabled" / "enabled" }`（二选一） |
 
 #### 3.2.2 车辆 vehicles
 
@@ -365,7 +407,7 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 | `GET /api/vehicles/{id}` | 详情 |
 | `POST /api/vehicles` | 创建：`code/name/type/capacityKg/maxSpeedMps/x/y/battery` |
 | `PUT /api/vehicles/{id}` | 更新基础属性 |
-| `PATCH /api/vehicles/{id}/status` | `{ "status": "disabled" | "enabled" }`；调度占用中禁止置 disabled → `VEHICLE.STATE_CONFLICT` |
+| `PATCH /api/vehicles/{id}/status` | `{ "status": "disabled" / "enabled" }`（二选一）；调度占用中禁止置 disabled → `VEHICLE.STATE_CONFLICT` |
 
 说明：`offline/fault/charging` 等运行态状态由执行器/心跳更新，管理接口不直接改。
 
@@ -745,17 +787,24 @@ query：`type/level/status/objectType/objectId/from/to/page/pageSize`。记录�
 
 ## 4. 事件订阅
 
-渲染层通过 `dispatchApi.on(event, handler)` 订阅；IPC 实现由主进程按会话权限过滤后推送。事件名常量在 `shared/enums`。
+渲染层通过 `dispatchApi.on(event, handler)` 订阅。事件名常量在 `shared/src/enums.ts`。
 
-| 事件 | 载荷要点 | 说明 |
-| --- | --- | --- |
-| `task.changed` | `{ taskId, code, status, transition: {from,to}, vehicleId?, updatedAt }` | 任务任何状态变化 |
-| `vehicle.changed` | `{ vehicleId, code, status, x, y, battery, taskId? }` | 位置/状态/电量变化 |
-| `alert.created` | `{ alertId, type, level, objectType, objectId, message }` | 新告警（角标+toast） |
-| `alert.updated` | `{ alertId, status }` | 告警状态变化 |
-| `map.updated` | `{ eventSeq }` | 通用刷新信号（可触发 overview 拉取） |
-| `execution.progress` | `{ taskId, vehicleId, progress, x, y }` | 高频进度事件（节流 ≥ 250ms） |
-| `settings.changed` | `{ key, value }` | 设置变更广播 |
+**推送按会话权限过滤（D-32）**：`desktop/src/services/event-bus.ts` 的 `EVENT_PERMISSIONS` 规定每个事件
+所需权限点；窗口在登录后绑定会话、登出即降权，**未登录窗口收不到任何登记过权限的事件**。
+未在下表登记权限的事件（如 `map.updated`）视为公开 —— 它只是刷新信号，不含业务对象。
+
+| 事件 | 载荷要点 | 所需权限点 | 说明 |
+| --- | --- | --- | --- |
+| `task.changed` | `{ taskId, code, status, transition: {from,to}, vehicleId?, updatedAt }` | `task:read` | 任务任何状态变化 |
+| `vehicle.changed` | `{ vehicleId, code, status, x, y, battery, taskId? }` | `monitor:read` | 位置/状态/电量变化 |
+| `alert.created` | `{ alertId, type, level, objectType, objectId, message }` | `alert:read` | 新告警（角标+toast） |
+| `alert.updated` | `{ alertId, status }` | `alert:read` | 告警状态变化 |
+| `execution.progress` | `{ taskId, vehicleId, progress, x, y }` | `monitor:read` | 高频进度事件（节流 ≥ 250ms） |
+| `settings.changed` | `{ key, value }` | `settings:read` | 设置变更广播 |
+| `map.updated` | `{ eventSeq }` | —（公开） | 通用刷新信号（可触发 overview 拉取） |
+
+> 事件日志（`event_log`）**照写不误**，权限过滤只作用于**推送** —— 服务端真相不受影响。
+> 新增事件必须同时登记 `EVENT_PERMISSIONS`，否则 `desktop/src/services/event-bus.test.ts` 会失败。
 
 监听须知：渲染层应缓存事件号去重；高频事件（execution.progress / vehicle.changed）节流合并；离线/断连时以 `monitor.refreshIntervalMs` 定时兜底。
 
@@ -763,4 +812,19 @@ query：`type/level/status/objectType/objectId/from/to/page/pageSize`。记录�
 
 ## 5. 种子数据（演示）
 
-首次启动 seed（幂等）：3 个账号（admin/dispatcher/monitor，默认密码见 design §3.7）；一张园区路网（10-16 节点、双向边、2 站点 + 1 充电桩）；3 辆车（agv/carrier/drone 各一）；若干任务模板。另提供演示动作「一键推进/一键重置演示数据」（写入日志与审计，仅开发与演示用途）。
+首次启动 seed（幂等，`desktop/src/db/seed.ts`；**实测值以 `npm run db:seed` 输出为准**）：
+
+| 数据 | 实测数量 | 说明 |
+| --- | ---: | --- |
+| `nodes` / `edges` | 12 / 34 | 4×3 网格路网，双向边 |
+| `sites` | 3 | 2 个 `depot` + 1 个 `charging` |
+| `vehicles` | 3 | agv / carrier / drone 各 1 |
+| `task_templates` | 2 | 任务模板 |
+| `users` | 3 | admin / dispatcher / monitor |
+| `settings` | 9 | 见 `design.md` §4.10 键目录 |
+| `tasks` / `routes` / `alerts` | 1 / 1 / 1 | **演示执行数据**（D-26）：一条 `running` 任务 + 其路线 + 一条告警，AGV-01 同步置 `busy` |
+
+账号与默认密码由 `shared/src/constants.ts` 的 `SEED_ACCOUNTS` 定义（admin / dispatcher / monitor，各角色权限点见 §3.1.1）。
+
+> **尚未实现**：设计早期设想的「一键推进 / 一键重置演示数据」入口**在代码中不存在**，属计划项，不要在 UI 里当作既有能力引用。
+> 当前如需重置演示库，用 `npm run db:reset`（删库后重新 migrate + seed）。

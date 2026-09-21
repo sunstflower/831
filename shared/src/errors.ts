@@ -113,6 +113,7 @@ export const ERROR_CODES = {
   'MAP.LANE_COUNT_MISMATCH': { source: 'validation', severity: 'warning', message: '行内 `num_lanes` 与 `roadType` 声明值不一致', httpStatus: 200 },
   'MAP.GEOJSON_MISMATCH': { source: 'validation', severity: 'warning', message: 'GeoJSON 与 CSV 不一致（CSV 为准）', httpStatus: 200 },
   'MAP.OBSTACLE_EDGE_UNLINKED': { source: 'validation', severity: 'warning', message: '`construction` 障碍未关联任何边', httpStatus: 200 },
+  'MAP.OBSTACLES_UNAVAILABLE': { source: 'validation', severity: 'warning', message: '障碍物来源 `campus.add.xml` 缺失，`obstacles[]` 只能为空', httpStatus: 200 },
   'MAP.ROAD_TYPE_INFERRED': { source: 'validation', severity: 'warning', message: '`roadType` 缺失，按限速推断得到', httpStatus: 200 },
   'MAP.ONE_WAY_EDGE': { source: 'validation', severity: 'info', message: '单向边且无反向边（合法，疑似编辑遗漏）', httpStatus: 200 },
   // ---- F3 车辆参数 ----

@@ -1,14 +1,16 @@
 # 数据库设计（SQLite）
 
 > 版本：v1.0 · 配套：`design.md` §6（字段语义唯一来源）、`docs/api.md` §1（枚举与单位）
-> 用途：P1 直接落 `desktop/db/migrations/0001_init.sql`；本文给出建表、索引、约束、seed 规则与常用查询。
+> 用途：建表、索引、约束、seed 规则与常用查询的**唯一来源**。
+> 文件位置：`desktop/migrations/0001_init.sql`（**实际路径**；早期文档曾写作 `desktop/db/migrations/`，已更正）。
 > 命名映射：DB 用 `snake_case`，API/TS 用 `camelCase`（Repository 负责转换，`map-underscore-to-camel-case` 约定）。
+> **文档边界**：本文件只负责「数据表 DDL、索引、字段约束、迁移编号」。其余事实按 [`docs/api.md`](./api.md) §0「文档事实单一来源」引用，**不复述可漂移的数值**。
 
 ## 1. 通用约定
 
 1. 主键一律 `id TEXT PRIMARY KEY`（UUID v4；种子用 `seed-*` 固定串）。
 2. 时间一律 TEXT，ISO 8601 UTC 毫秒，如 `2026-09-14T09:00:00.000Z`。
-3. 枚举一律 TEXT，取值与 `shared/enums` 一致；关键状态列加 `CHECK` 约束，双层兜底（服务层状态机 + DB 约束）。
+3. 枚举一律 TEXT，取值与 `shared/src/enums.ts` 一致；关键状态列加 `CHECK` 约束，双层兜底（服务层状态机 + DB 约束）。
 4. 布尔用 `INTEGER` + `CHECK (col IN (0,1))`。
 5. 单位固定：距离米、时长秒、速度 m/s、载重千克、电量 0-100（见 api §1.4）。
 6. 外键默认 `PRAGMA foreign_keys = ON`；删除策略遵循 design §6.3（主数据软删，草稿任务可物理删）。
@@ -336,7 +338,7 @@ CREATE INDEX IF NOT EXISTS idx_event_ts                ON event_log(ts);
 
 ## 4. 种子数据（seed 规则）
 
-seed 由代码执行（`desktop/db/seed.ts`），**幂等**：全部使用固定 id，写入用 `INSERT OR IGNORE`；连续执行两次结果一致。
+seed 由代码执行（`desktop/src/db/seed.ts`），**幂等**：全部使用固定 id，写入用 `INSERT OR IGNORE`；连续执行两次结果一致。
 
 | 数据 | 内容 | 固定 id 示例 |
 | --- | --- | --- |
@@ -388,8 +390,18 @@ ORDER BY ts;
 
 ## 6. 迁移与演进规则
 
-1. 迁移文件命名 `NNNN_描述.sql`，只增不改：已发布迁移禁止修改，变更走新文件。
+1. 迁移文件命名 `NNNN_描述.sql`，位于 **`desktop/migrations/`**，只增不改：已发布迁移禁止修改，变更走新文件。
+
+   **已登记编号（唯一来源，其它文档不得自行编号）**：
+
+   | 文件 | 内容 | 状态 |
+   | --- | --- | --- |
+   | `0001_init.sql` | 首期 16 张业务表 + `schema_version`、18 条索引 | 已落地 |
+   | `0002_data_import.sql` | 四类导入数据文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）所需的新表与新列 | **草案，待评审**；表/列建议见 `docs/data-interfaces.md` §10，订单领域见 `docs/order-data-map-design.md` §3 |
+
+   > 早期草案中的 `0002_seed.sql`（SQL 种子）与 `0002_order_ingestion.sql` 均已**作废** ——
+   > 前者被代码侧 seed 取代，后者合并进 `0002_data_import.sql`（避免两个同号迁移）。
 2. 迁移器在一个事务中执行单个文件；成功写 `schema_version(version, description, applied_at)`。
 3. 破坏性变更（删列/改类型）用「新表 + 数据搬迁 + 改名」三步，并在 `AGENTS.md` 记录决策。
-4. 新增枚举值需同步 `shared/enums`、`design.md`、`docs/api.md` 与 DB `CHECK`（新迁移重建约束）。
+4. 新增枚举值需同步 `shared/src/enums.ts`、`design.md`、`docs/api.md` 与 DB `CHECK`（新迁移重建约束）。
 5. 统计数据（二期）只加视图或聚合查询，不改动首期业务表语义。

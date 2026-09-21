@@ -10,8 +10,8 @@
     "renderer"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace renderer",
-    "dev:electron": "concurrently -k -n renderer,electron -c cyan,magenta \"npm run dev --workspace renderer\" \"wait-on tcp:5173 && npm run start --workspace desktop\"",
+    "dev": "npm run build:shared && npm run dev --workspace renderer",
+    "dev:electron": "npm run build:shared && npm run build:desktop && concurrently -k -n renderer,electron -c cyan,magenta \"npm run dev --workspace renderer\" \"wait-on tcp:5173 && npm run start --workspace desktop\"",
     "build:shared": "npm run build --workspace shared",
     "build:desktop": "npm run build --workspace desktop",
     "build:renderer": "npm run build --workspace renderer",

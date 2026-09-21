@@ -1,9 +1,12 @@
 # 无人物流调度管理软件 · 架构图集
 
-> 版本：v1.1（2026-09-21）
+> 版本：v1.1（生成日期 2026-09-21）
+> 事实口径：图中数字是**生成日的快照**，**与来源文档冲突时一律以来源为准**（对应关系见 [`docs/api.md`](./api.md) §0）。
 > 用途：可直接导出为 PPT / Word / PDF / 图片的 Mermaid 架构图集合。
 > 关联：[`design.md`](../design.md) §2 · [`docs/api.md`](./api.md) · [`docs/database.md`](./database.md) · [`docs/build-plan.md`](./build-plan.md)
 > 问题与待决项汇总见 [`docs/issues.md`](./issues.md)（Issue Register）。
+> **文档边界**：本文件只负责「既有设计与代码的**可视化视图**」—— **无权威定义**，与其它文档冲突时一律以对方为准。
+> 图内数字属 [`docs/api.md`](./api.md) §0 所列的「图表视图」例外：仅作汇报展示，**以来源文档为准**。
 
 ## 图例与阅读说明
 
@@ -126,8 +129,8 @@ flowchart LR
   end
 
   subgraph BR["浏览器 · 独立开发形态"]
-    B1["同一份 React 代码 【设计中】"]
-    B2["MockAdapter 内存 + localStorage 【设计中】"]
+    B1["同一份 React 代码 【已实现】"]
+    B2["MockAdapter 纯内存（无 localStorage）【已实现】"]
   end
 
   DB[("desktop/.data/app.db 【已实现】")]
@@ -659,11 +662,11 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph SHARED["shared · 契约唯一来源"]
-    S1["enums/dispatch.ts<br/>strategy / rejectReason 【设计中】"]
-    S2["types/dispatch.ts<br/>DTO 与快照类型 【设计中】"]
+    S1["src/enums.ts<br/>strategy / rejectReason 【设计中】"]
+    S2["src/types.ts<br/>DTO 与快照类型 【设计中】"]
   end
 
-  subgraph DOMAIN["desktop/domain/dispatch 【设计中】"]
+  subgraph DOMAIN["desktop/src/domain/dispatch 【设计中】"]
     D0["dispatch.service.ts<br/>编排：鉴权 → 快照 → 算法 → 事务 → 日志/审计/事件"]
     D1["snapshot.ts<br/>buildSnapshot 组装与构图"]
     D2["evaluate.ts<br/>约束评估 + 代价计算"]
@@ -672,14 +675,14 @@ flowchart TB
     D5["errors.ts<br/>M4 错误码"]
   end
 
-  subgraph ALGO["desktop/algorithms/dispatch 【设计中】"]
+  subgraph ALGO["desktop/src/algorithms/dispatch 【设计中】"]
     A0["index.ts<br/>runDispatch(snapshot, strategy)"]
     A1["greedy.ts<br/>贪心，默认"]
     A2["hungarian.ts<br/>匈牙利指派，不可行格为无穷"]
     A3["types.ts<br/>算法层内部输入输出"]
   end
 
-  subgraph REPO["desktop/db/repositories 【设计中】"]
+  subgraph REPO["desktop/src/db/repositories 【部分实现】"]
     RP["task / vehicle / graph / restriction<br/>dispatch-plan / route / dispatch-log"]
   end
 
@@ -772,7 +775,7 @@ flowchart TB
   OV["GET /api/map/overview 【已实现】<br/>nodes · edges · sites · vehicles · tasks · routes · alerts · eventSeq"]
   OV2["可选 include=orders,orderEndpoints<br/>订单起终点图层【设计中】"]
 
-  subgraph MAP["renderer/map/（【已实现】，React Flow）"]
+  subgraph MAP["renderer/src/map/（【已实现】，React Flow）"]
     direction TB
     HOOK["useMapOverview<br/>拉取 + 事件刷新 + 轮询兜底"]
     TOFLOW["model/toFlow.ts · 纯函数<br/>overview + 图层可见性 + 选中态 → nodes/edges"]
@@ -838,7 +841,7 @@ flowchart TB
 flowchart LR
   subgraph DONE["【已实现】已落地且有实测支撑"]
     D1["shared 枚举 8 类<br/>权限点 20 个"]
-    D2["错误目录 123 条<br/>导入域 89 条"]
+    D2["错误目录 124 条<br/>导入域 90 条"]
     D3["SQLite 连接与事务"]
     D4["迁移 0001 幂等"]
     D5["seed 可重入"]
@@ -967,7 +970,7 @@ flowchart TB
 | `UDM_DB_PATH` | `desktop/.data/app.db` | 数据库路径，测试用 `:memory:` |
 | `UDM_RENDERER_URL` | `http://localhost:5173` | 开发期加载的渲染层地址 |
 | `VITE_PORT` | `5173` | 渲染层 dev 端口，严格占用 |
-| `VITE_API_ADAPTER` | `mock` | `mock` / `ipc` / `http` |
+| `VITE_API_ADAPTER` | **按 preload 桥判定** | `mock` / `ipc` / `http`；未设置时有桥→`ipc`、无桥→`mock`（D-22） |
 | `VITE_API_BASE_URL` | `/api` | 仅 http 适配器使用 |
 
 > **日志与隐私**：SQLite 已开启 WAL、外键与 `busy_timeout = 5000ms`。`audit_logs` 会记录操作者与 before/after，落地真实数据前需确认**不写入敏感信息**（提交纪律「禁止项」第 4 条）。
