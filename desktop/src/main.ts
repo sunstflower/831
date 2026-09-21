@@ -51,7 +51,7 @@ function createWindow() {
 app.whenReady().then(() => {
   const db = bootstrapDatabase();
   const sessions = new SessionStore();
-  const bus = new EventBus(db);
+  const bus = new EventBus(db, sessions);
   const router = createRouter(createApiRoutes({ db, sessions, bus }), {
     db,
     sessions,
@@ -60,8 +60,20 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('udm:invoke', (_event, request: { path: string; payload?: Record<string, unknown>; token?: string }) =>
-    router.invoke(request)
+  ipcMain.handle(
+    'udm:invoke',
+    async (event, request: { path: string; payload?: Record<string, unknown>; token?: string }) => {
+      const result = await router.invoke(request);
+      // 会话与窗口绑定：窗口在登录前创建，只有登录成功后才具备接收领域事件的权限；
+      // 登出即刻降权。否则任何窗口都能收到与其角色无关的业务事件（ISS-009）。
+      if (request.path === '/api/auth/login' && result.code === 0) {
+        const token = (result.data as { token?: string } | undefined)?.token ?? null;
+        bus.bindSession(event.sender, token);
+      } else if (request.path === '/api/auth/logout') {
+        bus.bindSession(event.sender, null);
+      }
+      return result;
+    }
   );
 
   const window = createWindow();

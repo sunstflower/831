@@ -1,8 +1,9 @@
 # 无人物流调度管理软件 · 架构图集
 
-> 版本：v1.0（2026-09-14）
+> 版本：v1.1（2026-09-21）
 > 用途：可直接导出为 PPT / Word / PDF / 图片的 Mermaid 架构图集合。
 > 关联：[`design.md`](../design.md) §2 · [`docs/api.md`](./api.md) · [`docs/database.md`](./database.md) · [`docs/build-plan.md`](./build-plan.md)
+> 问题与待决项汇总见 [`docs/issues.md`](./issues.md)（Issue Register）。
 
 ## 图例与阅读说明
 
@@ -75,7 +76,7 @@ flowchart TB
   UI["<b>展示层 · 渲染进程 renderer（设计中）</b><br/>React 页面 / 组件 · 地图画布 React Flow · 表格 / 表单 / 弹窗"]
   ST["<b>状态层（设计中）</b><br/>全局状态 会话 / 角色 / 筛选 / 主题 · 页面态 · 事件订阅缓存"]
   ADP["<b>服务适配器 · 同一契约三种实现（部分实现）</b><br/>IpcAdapter 生产形态 · HttpAdapter 预留【二期】 · MockAdapter 浏览器独立开发"]
-  GW["<b>接入层【已实现】</b><br/>IPC Router 注册表 + 鉴权 + traceId · API Routes 7 条"]
+  GW["<b>接入层【已实现】</b><br/>IPC Router 注册表 + 鉴权 + traceId · API Routes 8 条"]
   BIZ["<b>业务层（认证已实现，其余设计中）</b><br/>认证与会话 · 任务 / 车辆 / 站点 / 模板 · 调度编排 M4 · 路径服务 M5 · 告警 / 监控 / 执行 M7 M8"]
   ALG["<b>算法层 · 纯函数，禁止访问数据库（设计中）</b><br/>A* / Dijkstra · 贪心 / 匈牙利 / 遗传【二期】 · 代价函数 / 约束评估"]
   DATA["<b>数据层 · 主进程独占【已实现】</b><br/>SQLite node:sqlite · Repository 查询仓库 部分 · 迁移 / 种子 · 审计 / 事件日志"]
@@ -388,7 +389,7 @@ stateDiagram-v2
 
 ---
 
-## 6. 数据模型 · 17 张业务表【已实现】
+## 6. 数据模型 · 16 张业务表【已实现】
 
 > 完整 DDL 见 [`docs/database.md`](./database.md)；此处只表达**关系与分组**，字段级细节以 DDL 为准。
 
@@ -568,7 +569,7 @@ erDiagram
 
 | 项 | 数量 | 说明 |
 | --- | --- | --- |
-| 业务表 | 17 | 另有 `schema_version` 用于迁移追踪 |
+| 业务表 | 16 | 另有 `schema_version` 用于迁移追踪；**合计 17 张表**（实测，2026-09-20 修正） |
 | 索引 | 18 | 覆盖任务状态与优先级、边起点、派发占用区间、告警去重、审计与轨迹时间序 |
 | seed 数据 | 12 节点 · 34 边 · 3 站点 · 3 车辆 · 2 模板 · 3 账号 · 9 设置 | 4×3 网格路网，步长 20m，双向边 |
 
@@ -762,16 +763,16 @@ flowchart TB
 
 > `M11` / `M12` 为二期预留。`M7` 首期用**本地模拟执行器**（定时步进 + 轨迹采样），二期以真实协议替换执行器但**不改上层契约**（D-10）。
 
-### 8.2 地图渲染链路（M6 · React Flow 方案 【设计中】）
+### 8.2 地图渲染链路（M6 · React Flow 方案 【已实现】）
 
 > 选型与实现细节见 [`module-M6-map.md`](./module-M6-map.md)。此图只表达**数据流与职责边界**。
 
 ```mermaid
 flowchart TB
-  OV["GET /api/map/overview 【设计中】<br/>nodes · edges · sites · vehicles · tasks · routes · alerts · eventSeq"]
-  OV2["可选 include=orders,orderEndpoints<br/>订单起终点图层"]
+  OV["GET /api/map/overview 【已实现】<br/>nodes · edges · sites · vehicles · tasks · routes · alerts · eventSeq"]
+  OV2["可选 include=orders,orderEndpoints<br/>订单起终点图层【设计中】"]
 
-  subgraph MAP["renderer/map/（全部【设计中】，React Flow）"]
+  subgraph MAP["renderer/map/（【已实现】，React Flow）"]
     direction TB
     HOOK["useMapOverview<br/>拉取 + 事件刷新 + 轮询兜底"]
     TOFLOW["model/toFlow.ts · 纯函数<br/>overview + 图层可见性 + 选中态 → nodes/edges"]
@@ -781,13 +782,16 @@ flowchart TB
     ET["edges/ · 2 类边<br/>net 基础边 · route 高亮边"]
   end
 
-  EV["事件 UDM:Event<br/>vehicle.changed · execution.progress<br/>task.changed · alert.* · map.updated"]
+  EV["事件 UDM:Event 【已实现】<br/>vehicle.changed · execution.progress<br/>task.changed · alert.* · map.updated"]
+  BOUND["事件分层【已实现】<br/>结构类→重拉快照 · 位置类→只写 ref"]
   SEL["全局 selection<br/>（对象类型 + ID）"]
   LIST["任务列表 / 详情 / 告警中心"]
 
   OV --> HOOK
   OV2 -.-> HOOK
-  EV --> HOOK
+  EV --> BOUND
+  BOUND --> HOOK
+  BOUND -. 位置不触发重渲染 .-> TOFLOW
   HOOK --> TOFLOW
   PROJ --> TOFLOW
   SEL --> TOFLOW
@@ -808,43 +812,55 @@ flowchart TB
 2. 地图只渲染 `routes`，**不自行搜索路径** —— 禁行规则与可达性判定只在 M5。
 3. 车辆位置以事件为权威、插值仅补帧且**禁止外推**；所有选中/缩放/图层开关都是页面态。
 
-**M6 实现缺口**（截至本文档更新日）：
+**事件分层**（实测事故后的硬约束，见 `renderer/src/map/hooks/useMapOverview.ts`）：
+
+| 事件类别 | 事件 | 处理方式 |
+| --- | --- | --- |
+| 结构类 | `map.updated` · `task.changed` · `alert.created` · `alert.updated` | 重新拉取 `overview`（节流 250ms） |
+| 位置类 | `vehicle.changed` · `execution.progress` | **只写入 `positionsRef`**，由 `updateNode` 定向更新，不触发容器重渲染 |
+
+把位置类事件也接成全量重拉，会每秒重建 `nodes`/`edges`，导致 React Flow 反复重挂载、
+**边间歇性渲染不出来**（实测 `edges=0`）。另配合 `model/structural.ts` 的结构签名
+（排除车辆位置、电量取整）避免轮询兜底每秒换引用。
+
+**M6 实现缺口**（截至 2026-09-20）：
 
 | 缺口 | 说明 |
 | --- | --- |
-| `map/overview` 服务端未实现 | M6 接口在 `docs/api.md` §3.6 已成稿，主进程侧尚未落地 |
-| renderer 无入口 | 连 `src/main.tsx` 都没有，整层未实现 |
+| `include=orders,orderEndpoints` 未实现 | 参数与类型已就位；订单摄入 `0002_data_import` 落地后接入，**未匹配地区的订单不上图** |
+| `/api/map/tracks/{vehicleId}` 未实现 | 轨迹回放图层（`docs/api.md` §3.6.2）尚无服务端与前端 |
 | `EventBus` 未按会话权限过滤 | 与第 10 章同一问题，M6/M8 落地时一并补 |
-| 组件测试 setup 阻塞 | `tests/setup.ts` 缺依赖导致 0 测试可收集，且 jsdom 还需 `ResizeObserver` stub |
+| 车辆运行态推进未实现 | 车辆位置目前只在 `vehicle.changed` 事件到达时变化；尚无模拟执行器持续产生事件，故静止车辆不动 |
 
-### 8.3 已实现 vs 待实现（截至 2026-09-14 实测）
+### 8.3 已实现 vs 待实现（截至 2026-09-21 实测）
 
 ```mermaid
 flowchart LR
   subgraph DONE["【已实现】已落地且有实测支撑"]
     D1["shared 枚举 8 类<br/>权限点 20 个"]
-    D2["错误目录 34 条"]
+    D2["错误目录 123 条<br/>导入域 89 条"]
     D3["SQLite 连接与事务"]
     D4["迁移 0001 幂等"]
     D5["seed 可重入"]
     D6["IPC Router 鉴权 + traceId"]
     D7["登录 / 登出 / 会话"]
     D8["审计写入"]
-    D9["事件总线落库"]
-    D10["health / settings / users 接口"]
+    D9["事件总线落库 + 按权限过滤"]
+    D10["8 条接口<br/>health / auth×3 / settings×2 / users / map.overview"]
+    D11["renderer 全套<br/>入口 / 三层适配器 / store / 路由 / 页面"]
+    D12["M6 地图<br/>React Flow 路网 + 车辆图层"]
+    D13["测试基线<br/>18 套件 110 用例全绿"]
   end
 
   subgraph TODO["【设计中】待实现"]
-    T1["renderer 全部<br/>入口 / 适配器 / 页面 / 地图"]
     T2["M2 站点车辆路网 CRUD"]
     T3["M3 任务状态机"]
     T4["M4 调度引擎"]
     T5["M5 路径规划与图搜索"]
-    T6["M6 地图图层"]
     T7["M7 执行器与监控"]
     T8["M8 告警闭环"]
     T9["M10 设置写接口"]
-    T10["测试 setup 修复"]
+    T10["导入管线与 0002 迁移"]
   end
 
   DONE -.下一阶段.-> TODO
@@ -879,11 +895,12 @@ flowchart LR
   P5 -.- G5
   P6 -.- G6
 
-  BLOCK["【阻塞】当前阻塞<br/>tests/setup.ts 缺依赖<br/>5 个测试套件全部无法收集"]
-  BLOCK -.必须先解.-> P2
 ```
 
-> **P1 剩余缺口**：`renderer` 无 `src/main.tsx`，导致 `npm run build` 失败、`npm run dev:electron` 必然白屏；`tests/setup.ts` 缺 `@testing-library/jest-dom`，导致 `npm test` 跑 0 个测试。
+> **历史注记（2026-09-20 已解除）**：本图此前标注两个 P1 阻塞 —— `renderer` 缺 `src/main.tsx`（导致 `npm run build` 失败、`dev:electron` 白屏）、
+> `tests/setup.ts` 缺 `@testing-library/jest-dom`（导致 `npm test` 跑 0 个用例）。两者均已修复，现基线为 `npm test` 18 套件 110 用例全绿、`npm run build` 通过。
+>
+> **P1 剩余缺口**：7 个业务页仍为 `PlaceholderPage`（M1-M5 / M8-M10），见 `docs/issues.md` ISS-010。
 
 ---
 
@@ -894,8 +911,8 @@ flowchart LR
   SRC["业务动作<br/>任务状态变化 / 车辆移动 / 告警创建"] --> EMIT["EventBus.emit<br/>type, payload, object 可选"]
   EMIT --> LOG["INSERT event_log<br/>seq 自增，payload 存 JSON 【已实现】"]
   LOG --> SEQ["取得 eventSeq"]
-  SEQ --> PUSH["遍历 targets<br/>webContents.send udm:event 【已实现】"]
-  PUSH --> RENDER["渲染层 dispatchApi.on<br/>按事件名过滤 【设计中】"]
+  SEQ --> PUSH["按会话权限过滤后推送<br/>webContents.send udm:event 【已实现】"]
+  PUSH --> RENDER["渲染层 dispatchApi.on<br/>按事件名过滤 【已实现】"]
   RENDER --> DEDUP["按 eventSeq 去重与节流 【设计中】"]
   DEDUP --> UI["更新 store 与视图 【设计中】"]
 

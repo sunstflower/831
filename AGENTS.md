@@ -5,29 +5,44 @@
 ## 项目快照
 
 - **项目**：无人物流调度管理软件（`/Users/sunsetflower/myJobs/js/831`）。
-- **阶段**：**P1 地基进行中（渲染层尚未接通）**。文档（设计 / 接口 / M4 开发详档 / 数据库 / 构建计划 / 订单接入设计）已成稿；代码已落地 `shared/`（枚举 · 类型 · 错误目录 · 常量，错误码 34 条）与 `desktop/`（`node:sqlite` 连接 · 迁移 · seed · IPC Router · 会话 · 审计 · 事件总线 · 7 条接口：health / auth.login / auth.logout / auth.session / settings / settings.schema / users）；`renderer/` 仅有 Vite 配置、`index.html` 与 `src/vite-env.d.ts`，**缺 `src/main.tsx` 及业务页面、适配器、store、路由**，故 Vite 能启动但拿不到入口模块，`npm run build` 在 renderer 阶段失败。
+- **阶段**：**P1 地基已通 + M6 地图已实现（三层链路端到端可跑）**。代码已落地三端：
+  - `shared/`：枚举 · 类型（含 `MapOverview` 系列快照契约）· **错误目录 `ERROR_CODES` 123 条**（34 运行时 + 89 导入域；**唯一登记处**，见 D-33）· 常量（含 `SEED_IDS` 演示任务/路线/告警）。
+  - `desktop/`：`node:sqlite` 连接（`createRequire` 惰性加载，见下）· 迁移 · seed（含演示执行数据）· IPC Router · 会话 · 审计 · **事件总线（按会话权限过滤，D-32）** · **8 条接口**：health / auth.login / auth.logout / auth.session / settings / settings.schema / users / **map.overview**；新增 `repositories/map.repo.ts`（快照读取层）。
+  - `renderer/`：**已补齐入口与全部业务代码** —— `src/main.tsx`（HashRouter，Electron `file://` 必需）、三层适配器（mock / ipc / http）、zustand store（session / selection）、路由与页面（登录 / 工作台 / 地图 / 其余 7 个占位页）、**React Flow 地图**（`map/` 下 model / nodes / edges / hooks / stage / style 全套）。
+  - `npm run build` 与 `npm test` 均已通过（详见「验证基线」）。
 - **形态**：本地优先桌面应用 —— Electron 主进程（SQLite + 领域服务 + 算法）+ React 渲染层 + 三层服务适配器（IPC / 本地 HTTP / Mock）。
-- **技术栈（`node_modules` 实测版本）**：Electron 44.3.0 · React / React-DOM 18.3.1 · react-router-dom 6.30.6 · **Vite 6.4.3（renderer 独立安装）+ Vite 5.4.21（根，Vitest 侧）** · TypeScript 5.9.3 · **Node 内置 `node:sqlite`（见 D-14，非 better-sqlite3）** · zustand 5.0.15 · Vitest 2.1.9 · bcryptjs 2.4.3 · @testing-library/react 16.3.3 · jsdom 25.0.1 · concurrently 9.2.4 · wait-on 8.0.5；运行时 Node v25.8.2 / npm 11.11.1。
-- **仓库状态**：已完成 `git init`，当前基线提交为 `29143cc`（`first commit`）；工作区有两处未提交改动 —— 本文件修改 + 未跟踪的 `docs/order-data-map-design.md`；`package-lock.json` 已纳入版本控制。开发库 `desktop/.data/app.db` 已由本次 `db:migrate` 创建（此前不存在，且被 `.gitignore` 的 `.data/` / `*.db` 排除）。
-- **验证基线（2026-09-14 复测，20:16-20:18）**：
-  - ✅ `npm run db:migrate`：应用迁移 `0001`，seed 写入 nodes 12 · edges 34 · sites 3 · vehicles 3 · templates 2 · users 3 · settings 9，生成 `desktop/.data/app.db`。
-  - ✅ `npm run db:seed`：幂等复跑，各表新增均为 0。
-  - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace 各自 exit 0。
-  - ✅ `npm run dev --workspace renderer`：Vite 6.4.3 在 107ms 内就绪并响应 `http://localhost:5173/`。
-  - ❌ `npm test`：5 个套件全部在收集前失败，`tests/setup.ts` 无法解析 `@testing-library/jest-dom/vitest`（未安装、未在 package.json 声明，lock 中亦无条目）；当前 0 测试真正执行。
-  - ❌ `npm run build`：`build:shared` / `build:desktop` 通过；`build:renderer` 失败 —— `[vite:build-html] Failed to resolve /src/main.tsx from renderer/index.html`。
-  - ⚠️ dev server 对 `/src/main.tsx` 返回 SPA 兜底的 `index.html`（200 + `text/html`）而非 JS 模块，与上一条同因：入口文件缺失。
-  - ✅ 数据模型实测：`0001_init.sql` 建 17 张业务表 + `schema_version`，18 条索引，与 `docs/database.md` §2 / §3 一致。
+- **技术栈（`node_modules` 实测版本）**：Electron 44.3.0 · React / React-DOM 18.3.1 · **`@xyflow/react` 12.11.6（仅 renderer；见 D-21）** · react-router-dom 6.30.6 · **Vite 6.4.3（renderer 独立安装）+ Vite 5.4.21（根，Vitest 侧）** · TypeScript 5.9.3 · **Node 内置 `node:sqlite`（见 D-14，非 better-sqlite3）** · zustand 5.0.15（`@xyflow/react` 另带嵌套 zustand 4.5.7，两者并存、互不影响）· Vitest 2.1.9 · bcryptjs 2.4.3 · @testing-library/react 16.3.3 · **@testing-library/jest-dom 6.10.0** · jsdom 25.0.1 · concurrently 9.2.4 · wait-on 8.0.5；运行时 Node v25.8.2 / npm 11.11.1。
+- **仓库状态**：已完成 `git init`，当前基线提交为 `66fa7d2`（`reactflow commit`，历史 `29143cc` → `7dcc211` → `66fa7d2`）；工作区有大量未提交改动（渲染层全套、`shared/` 与 `desktop/` 多项、文档与 `docs/issues.md`）；`package-lock.json` 已纳入版本控制。开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除。**未提交改动清单见 `docs/issues.md` ISS-029。**
+- **验证基线（2026-09-21 复测，P1 收口会话）**：
+  - ✅ `npm test`：**18 个套件 / 110 个用例全通过**（本轮新增 `errors.catalog.test.ts` 5 条、`event-bus.test.ts` 8 条、`mock-parity.test.ts` 3 条）。
+  - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace 全部 exit 0。
+  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 0.42 kB + CSS 24.45 kB（gzip 4.51 kB）+ JS 394.11 kB（gzip 128.75 kB）。
+  - ✅ 错误码闭环：`ERROR_CODES` **123 条唯一**；`docs/api.md` 与 `docs/data-interfaces.md` 中出现的 code **0 处未登记**（由 `errors.catalog.test.ts` 持续断言）。
+  - ✅ 权限过滤行为（单测覆盖）：未登录窗口收到 0 条登记过权限的事件；monitor 只收到 `alert.created`；dispatcher 收到 task/vehicle/alert；`map.updated` 仍放行；`event_log` 照写不误。
+  - ⚠️ 未执行（原因）：`npm run dev:electron`。本轮改动涉及主进程事件推送路径，该链路需人工开窗目视；上一次端到端实测结论见下方历史基线，本轮未重跑。
+
+- **历史基线（2026-09-20 实测，渲染层与 M6 落地会话）** —— 保留供对照，勿当作最新结果：
+  - ✅ `npm test`（当时）：15 个套件 / 94 个用例全通过。
+  - ✅ `npm run db:migrate` / `db:seed`：迁移幂等；seed 写入 nodes 12 · edges 34 · sites 3 · vehicles 3 · templates 2 · users 3 · settings 9 · tasks 1 · routes 1 · alerts 1（演示执行数据）。
+  - ✅ `npm run dev:electron`：Electron 主进程成功启动、打开 `desktop/.data/app.db`、迁移 `none`、seed 幂等（各表新增 0）。
+  - ✅ **Electron 端到端（真实 `ipc` 适配器 + 真实 SQLite）**：登录 → 地图页渲染出 **20 节点 / 39 边（34 路网 + 5 路线高亮）/ 3 站点 / 3 车辆 / 2 任务端点 / 5 条路线标签 / 20 个迷你图方块**，与 seed 完全一致；无控制台错误。
+  - ✅ **生产形态 `file://`**：无 `.env` 时**自动选中 `ipc` 适配器**（靠 preload 桥判定，D-22），渲染结果与 dev 一致。
+  - ✅ **浏览器 Mock 形态**：渲染结果与 ipc 形态**逐项相同**（20/39/5/20），证明三层适配器行为一致。
+  - ✅ **交互实测**：点选车辆 → 选中态与图例正确；点空白清空；图层开关关掉「路网节点」→ 节点 20→8、边 39→0，恢复后回到 20/39 且**选中态不丢**。
+  - ✅ **CSS 修复前后对比（真实 Electron 取值）**：路线高亮边 `stroke` 由 `rgb(177,177,183)`/`1px` 修正为 `rgb(56,189,248)`/`4px`；路网边修正为 `rgb(71,85,105)`/`1.5px`；节点选中 `box-shadow` 由 `none` 修正为 `rgba(56,189,248,0.55) 0 0 0 3px`；迷你图背景由默认浅色修正为 `rgb(30,41,59)`。
+  - ✅ `docs/architecture.md` 23 张 Mermaid 全部渲染成功（`npx -y @mermaid-js/mermaid-cli`，exit 0）。
+
 - **文档**：
   - [`design.md`](./design.md)：设计文档（架构 / 模块目标 / 要求规范 / 数据模型 / 状态机 / 算法）。
   - [`docs/api.md`](./docs/api.md)：接口文档（全量契约 / 错误码 / 事件）。
   - [`docs/module-M4-dispatch.md`](./docs/module-M4-dispatch.md)：模块开发文档（调度引擎 M4，面向开发）。
-  - [`docs/module-M6-map.md`](./docs/module-M6-map.md)：模块开发文档（地图渲染 M6，React Flow 方案；含选型实测数据、数据映射、Handle 策略、性能护栏、测试与打包口径，**方案待评审**）。
+  - [`docs/module-M6-map.md`](./docs/module-M6-map.md)：模块开发文档（地图渲染 M6，React Flow 方案；**已实现**，含选型实测数据、数据映射、Handle 策略、性能护栏、测试与打包口径；剩余未决项见其 §12）。
   - [`docs/database.md`](./docs/database.md)：SQLite 建表 DDL / 索引 / seed / 迁移规则。
   - [`docs/build-plan.md`](./docs/build-plan.md)：P1-P6 构建计划与阶段验收门。
   - [`docs/order-data-map-design.md`](./docs/order-data-map-design.md)：订单数据接入与地图生成设计（CSV 导入 / 地区目录 / 订单数据文档 / 地图联动，**设计态，尚无实现**）。
   - [`docs/architecture.md`](./docs/architecture.md)：架构图集（23 张 Mermaid，可直接导出 PPT / Word / PDF / 图片；含实现状态标记与导出命令）。
-  - [`docs/data-interfaces.md`](./docs/data-interfaces.md)：数据文件接口规范（订单 CSV / 仿真地图 / 车辆参数 / 算法配置的导入契约 + 统一导入管线，**草案，调研中**）。
+  - [`docs/data-interfaces.md`](./docs/data-interfaces.md)：数据文件接口规范（订单 CSV / 仿真地图 / 车辆参数 / 算法配置的导入契约 + 统一导入管线，**草案，调研中**）。**v0.3 已按真实样本逐字段核对 F1/F2/F3 三章**；F4 章仍为 v0.2（样本未纳入，见 §12 Q16）。实测速查见其 §13。
+  - [`docs/issues.md`](./docs/issues.md)：**项目问题汇总（Issue Register，持续更新）** —— 全项目唯一的「问题/风险/待决」清单，跨文档汇总并定级（P1-P3）+ 状态跟踪；含「已解决问题」备查表。**每次提交前必须同步**。
   - [`docs/requirement-raw.md`](./docs/requirement-raw.md)：原始需求存档。
   - [`README.md`](./README.md)：项目说明。
 
@@ -35,16 +50,16 @@
 
 | 位置 | 已有内容 | 缺口 |
 | --- | --- | --- |
-| `shared/src/` | `enums.ts`（角色/状态/优先级/错误原因/20 个权限点 + `ROLE_PERMISSIONS` 映射）、`types.ts`（信封、分页、DTO、调度预览类型）、`errors.ts`（`ERROR_CODES` 34 条 + `DomainError`/`ok`/`fail`/`fromError`）、`constants.ts`（`APP_NAME`、分页默认、`DISPATCH_COST_WEIGHTS`、`MIN_BATTERY_PERCENT`、`SEED_ACCOUNTS`/`SEED_IDS`、`SETTINGS_SCHEMA` 9 项） | 业务实体类型（task/site/vehicle/route 完整模型）、`DispatchSnapshot` 等算法类型、M2 之后模块的 DTO |
-| `desktop/src/db/` | `index.ts`（`DatabaseSync` 连接、WAL/外键/busy_timeout、`run`/`get`/`all`/`tx`、`defaultDbPath`）、`migrate.ts`（按序单事务 + `schema_version` 幂等）、`seed.ts`（4×3 网格路网 12 节点 / 34 边、3 站点、3 车辆、2 模板、3 账号、9 设置）、`repositories/`（users / settings / audit） | M2/M3/M4/M5/M6 各模块 Repository；seed 仅覆盖演示最小集 |
-| `desktop/src/ipc/` | `router.ts`（注册表 + 鉴权/权限前置校验 + `traceId` + 统一信封兜底）、`api.ts`（7 条路由，其中 `/api/health`、`/api/auth/login` 为 public） | 其余 M2-M10 接口；分页/参数校验工具仍内联在 `api.ts` |
-| `desktop/src/services/` | `auth.ts`（登录 / 锁定策略）、`password.ts`（bcryptjs）、`session.ts`（内存会话）、`audit.ts`（审计写入）、`event-bus.ts`（`webContents` 推送领域事件） | 领域服务层（任务/调度/路线/告警/监控）整体未开工 |
+| `shared/src/` | `enums.ts`（角色/状态/优先级/错误原因/20 个权限点 + `ROLE_PERMISSIONS`）、`types.ts`（信封、分页、DTO、调度预览类型、**`MapOverview` 快照契约 8 个接口**）、`errors.ts`（**123 条**：34 运行时 + 89 导入域；**唯一登记处**，D-33。含 `DomainError`/`ok`/`fail`/`fromError`）、`errors.catalog.test.ts`（命名/severity/文档闭环断言）、`constants.ts`（`APP_NAME`、分页默认、`DISPATCH_COST_WEIGHTS`、`MIN_BATTERY_PERCENT`、`SEED_ACCOUNTS`/`SEED_IDS`（含演示任务/路线/告警 id）、`SETTINGS_SCHEMA` 9 项） | 业务实体完整模型（task/site/vehicle 的 CRUD DTO）、`DispatchSnapshot` 等算法类型、M2 之后模块的 DTO |
+| `desktop/src/db/` | `index.ts`（`DatabaseSync` 连接、WAL/外键/busy_timeout、`run`/`get`/`all`/`tx`、`defaultDbPath`）、**`sqlite.ts`（`createRequire` 惰性加载 `node:sqlite`，规避 vite-node 解析缺陷）**、`migrate.ts`（按序单事务 + `schema_version` 幂等）、`seed.ts`（4×3 路网 12 节点/34 边、3 站点、3 车辆、2 模板、3 账号、9 设置、**1 演示任务 + 1 路线 + 1 告警，并把 AGV-01 置忙**）、`repositories/`（users / settings / audit / **map**） | M2/M3/M4/M5/M7/M8 各模块 Repository；seed 的 `restrictions`/`vehicle_tracks` 仍为空 |
+| `desktop/src/ipc/` | `router.ts`（注册表 + 鉴权/权限前置 + `traceId` + 统一信封兜底）、`api.ts`（**8 条路由**，`/api/health`、`/api/auth/login` 为 public） | 其余 M2-M10 接口；分页/参数校验工具仍内联在 `api.ts` |
+| `desktop/src/services/` | `auth.ts`（登录/锁定策略）、`password.ts`（bcryptjs）、`session.ts`（内存会话）、`audit.ts`（审计写入）、`event-bus.ts`（**按会话权限过滤后**推送领域事件，D-32；含 `EVENT_PERMISSIONS`）、`event-bus.test.ts` | 领域服务层（任务/调度/路线/告警/监控）整体未开工；**无持续产生 `vehicle.changed` 的执行器**（故车辆静止） |
 | `desktop/src/cli/db.ts` | `migrate` / `seed` / `reset`（reset 删 `-wal`/`-shm` 后重建） | — |
 | `desktop/preload.cjs` | `window.dispatchApi.invoke/on`（`udm:invoke` / `udm:event`，contextIsolation 开启） | — |
-| `renderer/` | `index.html`（引用不存在的 `/src/main.tsx`）、`vite.config.ts`（`base: './'`、端口 `VITE_PORT`、严格端口）、`src/vite-env.d.ts` | **`src/main.tsx` 及全部业务代码**：适配器（mock/ipc/http）、store、路由、页面、地图图层 |
-| `tests/setup.ts` | 全局 setup（当前唯一内容是一行 `@testing-library/jest-dom/vitest`） | 该依赖缺失导致全部套件失败；无跨包集成/E2E 测试 |
+| `renderer/src/` | **全套已落地**：`main.tsx`（HashRouter，Electron `file://` 必需）、`api/`（client 契约 + `ipc`/`http`/`mock` 三层适配器 + `types.ts` 再导出 shared + `mock-data.ts` 与 seed 同源 + **`mock-parity.test.ts` 锁死三层错误码一致**）、`store/`（session / selection）、`app/`（路由 + `RequireSession`）、`components/AppLayout`、`pages/`（登录 / 工作台 / 占位页）、`map/`（model 6 + nodes 5 + edges 2 + hooks 4 + stage + style）、`test/dom-stubs.ts` | 任务/调度/告警等业务页仍为占位；地图缺轨迹回放、订单端点图层；无跨包 E2E 测试 |
+| `tests/setup.ts` | 全局 setup（一行 `@testing-library/jest-dom/vitest`，依赖已补齐） | ✅ 已解锁：18 套件 / 110 用例全通过；jsdom 所需的 `ResizeObserver`/`matchMedia` stub 放在 `renderer/src/test/dom-stubs.ts` 里按需引入，**不进全局 setup**（否则 node 环境的 desktop 用例会被污染） |
 
-> 测试现状：现有 5 个测试文件（`shared/src/enums.test.ts`、`shared/src/errors.test.ts`、`desktop/src/db/db.test.ts`、`desktop/src/ipc/router.test.ts`、`desktop/src/services/auth.test.ts`）内容已写好，只因 setup 依赖缺失而全部无法收集；`renderer/` 目前 0 个测试文件。
+> 测试现状：**18 个测试文件 / 110 用例全通过** —— `shared/`（enums、errors、**errors.catalog**）+ `desktop/`（db、auth、router、map.repo、**services/event-bus**）+ `renderer/`（api/index、api/mock-data、**api/mock-parity**、map/model 的 ids/projection/structural/motion/toFlow、map/MapView.tsx、map/hooks/useVehicleMotion）。
 
 ## 角色与权限摘要（实现必须遵守）
 
@@ -63,6 +78,9 @@
 1. 通读本文件「工作日志」尾部与 `design.md` / `docs/api.md`，确认当前进度与未决事项。
 2. 对照 `design.md` 模块需求条目（`Req-*`）核对本次改动范围，确保有需求依据；无依据的改动先评审再动工。
 3. 完成代码/文档改动并**自测通过**（运行相关测试/冒烟，记录命令与结果）。
+3.5 **同步问题清单** [`docs/issues.md`](./docs/issues.md)：本次修掉的问题改状态为「已解决」并在其 §2 追加一行；
+   本次新发现的问题按格式新增（编号顺延）；工作日志条目中**引用相关 `ISS-xxx` 编号**。
+   两边分工：本文件记「什么时候发生了什么」，`issues.md` 记「现在还剩什么问题」。
 4. 在本文件「工作日志」**追加一条完整记录**，必须包含：
    - 日期与标题；
    - 本次范围与目标（对应阶段/模块/需求条目）；
@@ -72,6 +90,10 @@
    - 遇到的困难与解决方案（若有，同步「困难与问题记录」）；
    - 遗留问题与下一步。
 5. 确认 `docs` 与实现一致（接口、枚举、状态机若变化必须回写文档）。
+5.5 **错误码只改一处**（D-33）：新增/改名错误码必须**先改 `shared/src/errors.ts`**，再同步 `docs/api.md` §2 与
+   `docs/data-interfaces.md` §8。反向操作（先写文档）会让 `npm test` 变红 —— `shared/src/errors.catalog.test.ts`
+   会断言「文档里出现的每个 code 都已登记」。若确实需要一条只用于示例、并非 code 的 token，加入该测试的
+   `DOC_ONLY_TOKENS` 白名单，而不是绕过断言。
 6. 只有完成上述步骤后才允许执行 `git commit`；commit message 使用 `类型(模块): 摘要`，如 `feat(dispatch): apply 派发生效流程`。
 
 ### 禁止项
@@ -80,32 +102,52 @@
 - 禁止为了「先跑通」绕过状态机校验、审计留痕或文档同步。
 - 禁止引入与设计冲突的新枚举/新状态而不更新 `design.md` 与 `docs/api.md`。
 - 禁止把密钥、真实设备地址等敏感信息写入任何文档或代码。
+- 禁止建立**第二套错误码目录**或给同一概念起第二个 code（D-33）；唯一的登记处是 `shared/src/errors.ts`。
+- 禁止在 `docs/data-interfaces.md` §8 直接新增 code 而不先改 `shared/src/errors.ts`（会导致 `npm test` 失败）。
+- 禁止新增领域事件却不登记 `EVENT_PERMISSIONS`（`event-bus.test.ts` 会断言已声明事件都有权限映射）；此前事件通道曾全量群发（ISS-009）。
+- 禁止删除 `docs/issues.md` 中已解决的条目（改状态、保留原文 —— 已排除的问题对后来者最有价值）。
+- 禁止在 `docs/issues.md` 之外另建问题/风险清单（会造成第二份真相，与本项目两次去重的教训相悖）。
+- 禁止在未登记 `severity` 的情况下新增导入域错误码；`severity` 是调用点属性，不得为「同概念两种严重度」拆成两个 code。
+- 禁止删除 `docs/issues.md` 中已解决的问题条目（改状态、保留原文——已排除的问题对后来者最有价值）。
+- 禁止在 `docs/issues.md` 之外另建问题/风险清单（会造成第二份真相，与本项目两次去重的教训相悖）。
 
 ## 设计决策记录
 
-| 编号 | 决策 | 理由 / 备注 |
-| --- | --- | --- |
-| D-01 | 技术栈定为 Electron + React + SQLite 的本地优先桌面应用，三层适配器统一契约 | 匹配需求文档 2.2；渲染层可独立 Mock 运行 |
-| D-02 | 任务状态在原始 7 态上显式增加 `paused`（running 的暂停位不做隐式字段） | 保证状态机迁移可显式校验、UI/日志清晰 |
-| D-03 | 算法层纯函数 + 输入快照（DispatchSnapshot），预览不落业务库 | 满足「算法输出不污染业务数据、先预览后生效」 |
-| D-04 | 路线/计划版本化：apply 才写 `dispatch_plans` 与 `routes`，旧计划置 superseded 不删除 | 可对比、可复核、可回放 |
-| D-05 | 坐标统一平面 `{x,y}` 米制，禁止内部混用经纬度 | 简化离线演示；二期再做真实地图转换层 |
-| D-06 | SQLite 仅主进程访问，渲染层永不直连 | 数据一致性 + 权限边界 |
-| D-07 | 删除策略：站点/车辆/节点/边一律软删（disabled），草稿任务可物理删除 | 保留审计与引用完整性 |
-| D-08 | 权限校验双轨制：前端隐藏 + 主进程服务端强制 | 防绕过 |
-| D-09 | 告警五类 + 去重窗口 + 状态机（new→acknowledged→processing→resolved→archived） | 满足来源/级别/时间/对象/状态基线 |
-| D-10 | 执行流首期用「本地模拟执行器」，二期以真实协议替换执行器且不改上层契约 | 先闭环再真实设备 |
-| D-11 | 权限点 `dispatch:read`（调度日志只读）与 `execution:start`（开始执行）在接口文档补充并生效 | 便于 dispatcher 自查调度记录并启动执行（待评审确认） |
-| D-12 | M4 落地口径：代价权重 P4 用常量不进设置表；preview 输入规模限制 taskIds≤50、车辆≤30；apply 用「条件 UPDATE 当乐观锁」防并发双派 | 控制匈牙利复杂度与并发一致性；二期再迁移权重到系统设置 |
-| D-13 | 工程形态采用根级 npm workspaces（`shared/ desktop/ renderer/`，与 design §2.4 一致）；适配器由 `VITE_API_ADAPTER=mock / ipc / http` 切换；迁移单事务 + `schema_version` 幂等，开发库固定 `desktop/.data/app.db` | 本地一键构建、类型零成本共享；渲染层不被原生依赖阻塞 |
-| D-14 | 数据库实现采用 Node 内置 `node:sqlite` `DatabaseSync`，不引入 better-sqlite3 | 与当前 Node/Electron 运行时及零原生额外依赖目标一致；如更换驱动必须同步 `desktop/src/db/index.ts`、迁移/事务测试与构建文档 |
-| D-15 | 订单接入引入独立「地区目录」（`regions` / `region_aliases` / `region_dataset_versions`），不复用业务 `sites` 承担外部地址别名；匹配优先级为「标准编码 → 规范化名称 → 别名 → 归一化唯一命中」，多候选/无候选一律进失败明细，禁止自动猜测 | 外部地址别名数量与语义远多于业务站点；匹配结果需可复核（保存 `inputValue`/`matchType`/`confidence`/`datasetVersion`）。见 `docs/order-data-map-design.md` §3 |
-| D-16 | CSV 导入按 `contentSha256 + mappingVersion` 幂等，重复上传默认不重复建任务；导入分「预检预览（零副作用）+ 确认导入」两步，单行失败不回滚其它合法行，仅批次级系统错误整体回滚 | 满足「先预览后生效」与部分成功反馈；避免重复导入污染任务表。见 `docs/order-data-map-design.md` §2/§4.3 |
-| D-17 | 四类数据文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）共用一套导入契约：统一 JSON 信封 `schemaVersion+kind+meta+data`、统一 `ImportIssue` 错误模型、统一 `mode`（validateOnly/merge/replace/appendOnly）与幂等键 `contentSha256+schemaVersion+mappingVersion+targetScope` | 管线与错误模型完全一致，前端只需一套导入向导；避免四套各自为政的导入语义。见 `docs/data-interfaces.md` §2。**待评审** |
-| D-18 | 文件内一律用业务 `code` 引用、不使用数据库 ID；引用必须能在同一文件内解析（`merge` 模式可放宽为库内解析） | ID 由系统生成，外部文件无法预知；用 code 才能让地图/车队文件自洽、可手写、可 diff。见 `docs/data-interfaces.md` §4.2 |
-| D-19 | 车辆参数文件**只承载物理参数与服务能力**，禁止出现运行态字段（status/x/y/currentNodeId/battery/loadKg）；出现即报错阻断，不静默忽略 | 静默忽略会让使用者误以为配置生效；运行态由调度与执行器独占管理。见 `docs/data-interfaces.md` §5.1 |
-| D-20 | 算法配置以「导入型配置集 + 版本化（active/superseded）」落地，不接管运行时 `settings` 热更新；与 `settings` 重叠项以 `settings` 优先并给 info 提示 | 兼顾 D-12（P4 权重走常量）与仿真可复现诉求；不静默覆盖用户显式设置过的项。见 `docs/data-interfaces.md` §6.4 |
-| D-21 | M6 地图渲染改用 **React Flow（`@xyflow/react` v12，仅 renderer 依赖）** 替换原「自研 SVG/Canvas 平面图层」；`map/overview` 为画布唯一数据入口；地图只渲染路线不自行搜索路径；车辆位置以事件为权威、插值仅补帧且禁止外推；图层开关用 `hidden` 而非过滤元素 | React Flow 是节点/边图渲染器，与 D-05 的平面 `{x,y}` 米制路网模型天然匹配，且视口/命中/标签/箭头等均为其成熟能力，省去自研；**M6 尚未实现，属零迁移成本替换**。实测：Vite 6 构建通过、体积 +187 KB（gzip +61 KB）、产物无 Worker/WASM/动态 import、Electron `loadFile` 正常渲染、2000 节点+3910 边 20 Hz 刷新仍 60 fps。见 `docs/module-M6-map.md`。**待评审** |
+| 编号 | 决策 | 理由 / 备注 | 状态 |
+| --- | --- | --- | --- |
+| D-01 | 技术栈定为 Electron + React + SQLite 的本地优先桌面应用，三层适配器统一契约 | 匹配需求文档 2.2；渲染层可独立 Mock 运行 | 已定 |
+| D-02 | 任务状态在原始 7 态上显式增加 `paused`（running 的暂停位不做隐式字段） | 保证状态机迁移可显式校验、UI/日志清晰 | 已定 |
+| D-03 | 算法层纯函数 + 输入快照（DispatchSnapshot），预览不落业务库 | 满足「算法输出不污染业务数据、先预览后生效」 | 已定 |
+| D-04 | 路线/计划版本化：apply 才写 `dispatch_plans` 与 `routes`，旧计划置 superseded 不删除 | 可对比、可复核、可回放 | 已定 |
+| D-05 | 坐标统一平面 `{x,y}` 米制，禁止内部混用经纬度 | 简化离线演示；二期再做真实地图转换层 | 已定 |
+| D-06 | SQLite 仅主进程访问，渲染层永不直连 | 数据一致性 + 权限边界 | 已定 |
+| D-07 | 删除策略：站点/车辆/节点/边一律软删（disabled），草稿任务可物理删除 | 保留审计与引用完整性 | 已定 |
+| D-08 | 权限校验双轨制：前端隐藏 + 主进程服务端强制 | 防绕过 | 已定 |
+| D-09 | 告警五类 + 去重窗口 + 状态机（new→acknowledged→processing→resolved→archived） | 满足来源/级别/时间/对象/状态基线 | 已定 |
+| D-10 | 执行流首期用「本地模拟执行器」，二期以真实协议替换执行器且不改上层契约 | 先闭环再真实设备 | 已定 |
+| D-11 | 权限点 `dispatch:read`（调度日志只读）与 `execution:start`（开始执行）在接口文档补充并生效 | 便于 dispatcher 自查调度记录并启动执行（待评审确认） | 待评审 |
+| D-12 | M4 落地口径：代价权重 P4 用常量不进设置表；preview 输入规模限制 taskIds≤50、车辆≤30；apply 用「条件 UPDATE 当乐观锁」防并发双派 | 控制匈牙利复杂度与并发一致性；二期再迁移权重到系统设置 | 已定 |
+| D-13 | 工程形态采用根级 npm workspaces（`shared/ desktop/ renderer/`，与 design §2.4 一致）；适配器由 `VITE_API_ADAPTER=mock / ipc / http` 切换；迁移单事务 + `schema_version` 幂等，开发库固定 `desktop/.data/app.db` | 本地一键构建、类型零成本共享；渲染层不被原生依赖阻塞 | 已定 |
+| D-14 | 数据库实现采用 Node 内置 `node:sqlite` `DatabaseSync`，不引入 better-sqlite3 | 与当前 Node/Electron 运行时及零原生额外依赖目标一致；如更换驱动必须同步 `desktop/src/db/index.ts`、迁移/事务测试与构建文档 | 已定 |
+| D-15 | 订单接入引入独立「地区目录」（`regions` / `region_aliases` / `region_dataset_versions`），不复用业务 `sites` 承担外部地址别名；匹配优先级为「标准编码 → 规范化名称 → 别名 → 归一化唯一命中」，多候选/无候选一律进失败明细，禁止自动猜测 | 外部地址别名数量与语义远多于业务站点；匹配结果需可复核（保存 `inputValue`/`matchType`/`confidence`/`datasetVersion`）。见 `docs/order-data-map-design.md` §3 | 待评审 |
+| D-16 | CSV 导入按 `contentSha256 + mappingVersion` 幂等，重复上传默认不重复建任务；导入分「预检预览（零副作用）+ 确认导入」两步，单行失败不回滚其它合法行，仅批次级系统错误整体回滚 | 满足「先预览后生效」与部分成功反馈；避免重复导入污染任务表。见 `docs/order-data-map-design.md` §2/§4.3 | 待评审 |
+| D-17 | 四类数据文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）共用一套导入契约：统一 JSON 信封 `schemaVersion+kind+meta+data`、统一 `ImportIssue` 错误模型、统一 `mode`（validateOnly/merge/replace/appendOnly）与幂等键 `contentSha256+schemaVersion+mappingVersion+targetScope` | 管线与错误模型完全一致，前端只需一套导入向导；避免四套各自为政的导入语义。见 `docs/data-interfaces.md` §2。**待评审** | 待评审 |
+| D-18 | 文件内一律用业务 `code` 引用、不使用数据库 ID；引用必须能在同一文件内解析（`merge` 模式可放宽为库内解析） | ID 由系统生成，外部文件无法预知；用 code 才能让地图/车队文件自洽、可手写、可 diff。见 `docs/data-interfaces.md` §4.2 | 待评审 |
+| D-19 | 车辆参数文件**只承载物理参数与服务能力**，禁止出现运行态字段（status/x/y/currentNodeId/battery/loadKg）；出现即报错阻断，不静默忽略 | 静默忽略会让使用者误以为配置生效；运行态由调度与执行器独占管理。见 `docs/data-interfaces.md` §5.1 | 待评审 |
+| D-20 | 算法配置以「导入型配置集 + 版本化（active/superseded）」落地，不接管运行时 `settings` 热更新；与 `settings` 重叠项以 `settings` 优先并给 info 提示 | 兼顾 D-12（P4 权重走常量）与仿真可复现诉求；不静默覆盖用户显式设置过的项。见 `docs/data-interfaces.md` §6.4 | 待评审 |
+| D-21 | M6 地图渲染改用 **React Flow（`@xyflow/react` v12，仅 renderer 依赖）** 替换原「自研 SVG/Canvas 平面图层」；`map/overview` 为画布唯一数据入口；地图只渲染路线不自行搜索路径；车辆位置以事件为权威、插值仅补帧且禁止外推；图层开关用 `hidden` 而非过滤元素 | React Flow 是节点/边图渲染器，与 D-05 的平面 `{x,y}` 米制路网模型天然匹配，且视口/命中/标签/箭头等均为其成熟能力，省去自研；提出时 M6 尚未实现，属**零迁移成本替换**（现已按此落地）。实测：Vite 6 构建通过、体积 +187 KB（gzip +61 KB）、产物无 Worker/WASM/动态 import、Electron `loadFile` 正常渲染、2000 节点+3910 边 20 Hz 刷新仍 60 fps。见 `docs/module-M6-map.md`。剩余未决项仅为 Q-1（React Flow 署名策略），见 `docs/issues.md` ISS-019 | 已定 |
+| D-22 | 渲染层适配器默认值按「有没有 preload 桥」判定（有桥 → `ipc`，无桥 → `mock`），**不再**一律默认 `mock` | 打包后的 Electron 用 `loadFile` 加载产物，构建时通常不带 `.env`，`VITE_API_ADAPTER` 为 `undefined`；若默认 mock，桌面端会**静默显示假数据**（不读 SQLite、不报错），是最难排查的一类问题。实测生产 `file://` 形态下已自动选中 `ipc`。见 `renderer/src/api/index.ts` | 已定 |
+| D-23 | 地图事件**分层处理**：结构类事件（`map.updated`/`task.changed`/`alert.*`）重拉快照并节流 250ms；位置类事件（`vehicle.changed`/`execution.progress`）**只写入 `positionsRef`（ref）**，由 `updateNode` 定向更新，绝不进入 React state | 把位置类事件也接成全量重拉，会每秒重建 `nodes`/`edges`，使 React Flow 反复重挂载，**边间歇性渲染不出来**（实测 `edges=0`）；另引入 `model/structural.ts` 结构签名（排除车辆位置、电量取整）避免轮询兜底每秒换引用。见 `docs/module-M6-map.md` §11.5 | 已定 |
+| D-24 | `GET /api/map/overview` 的 `eventSeq` 取 `sqlite_sequence`（**单调水位线**），而非 `MAX(event_log.seq)` | 实测：插入两条事件后删掉最高位那条，`MAX(seq)` 从 2 回退到 1；渲染层用该值丢弃重放/乱序事件，一旦回退就会把旧事件当新事件重放。`event_log.seq` 为 AUTOINCREMENT，`sqlite_sequence` 记录历史分配过的最大值，删除行不会减小 | 已定 |
+| D-25 | 快照中的**派生字段在读取层计算**，不冗余落库：车辆的 `taskId` 由 `tasks.assigned_vehicle_id` 反查；路线的 `status` 由 `dispatch_plans.status` 派生（`routes` 表**没有** status 列） | 冗余列会在改派/重算时产生两处不一致（与 D-07 引用完整性同思路）。实测踩坑：`routes` 无 `status` 列，若照文档想当然写 SQL 会直接报错；`dispatch_plans.status='applied'` 需映射为路线的 `active` | 已定 |
+| D-26 | seed 增加**一条自洽的演示执行数据**（任务 `running` + 路线 + 告警，并把 AGV-01 置 `busy`、`load_kg` 与任务一致） | 真实业务中 `tasks`/`routes` 初始为空、由调度流程产生，导致地图上永远只有路网，**路线高亮与车辆动画没有任何可见样本**。演示数据必须状态自洽（不能 running 任务挂 idle 车），且路线每一段都必须是库中真实存在的边。见 `docs/database.md` §4 | 已定 |
+| D-27 | `mock-data.ts` 的演示数据**改为从 `shared` 的 `SEED_IDS` 与 seed 同规则派生**，并用测试直接比对「mock 快照 == seed 库经 `getMapOverview` 的快照」 | 实测事故：mock 手写了 `seed-n-N1`/`seed-veh-AGV-01`，真实 seed 生成 `seed-n01`/`seed-veh-agv01`；两边形状相似但不相等，浏览器里一切正常，**切到 Electron 后选中态、事件匹配、告警角标全部静默失效** | 已定 |
+| D-28 | 导入契约区分**原生形态**（数据方实际交付：地图 4 文件包 / 车辆 YAML / 26 或 32 列 CSV）与**标准形态**（系统内部单 JSON 信封或规范化 CSV）；「原生 → 标准」的适配是导入器职责，前端只消费标准形态与 `ImportIssue`；多文件输入的幂等键为**全部输入文件按名排序后的哈希合并** | 实测样本根本不是单文件信封：`1_仿真地图/` 是 3 CSV + 1 GeoJSON 的工程目录，`3_车辆参数/vehicle_params.yaml` 顶层是 `meta`+`fleet`+`vehicles{}`。要求数据方改造工具链不现实，而让前端感知原生差异会把 4 套解析逻辑塞进渲染层。只哈希主文件会漏掉站点/GeoJSON 变更。见 `docs/data-interfaces.md` §2.2/§4.1.1 | 待评审 |
+| D-29 | 订单时间采用**「当日秒数」口径**（`*_s` 列为权威，基准日由批次参数 `serviceDate` 决定，默认导入当天），文本列仅展示；文本与秒数比对**按分钟下取整**（实测 197/200 行秒数非 60 整数倍）。订单 `priority` 的 `1/2/3` 显式映射为 `normal/high/urgent`，并**同时保存 `priority_raw`** | 样本全列无日期、无时区（`order_time=08:07:06` / `order_time_s=29226`），ISO 8601 会把「无日期」的仿真数据强行钉到某日，破坏「同一文件重跑得到相同调度输入」的可复现前提（§2.7）。数值优先级与内部四值枚举数量级接近但不相等，直接透传会错位且丢失可追溯性。见 `docs/data-interfaces.md` §3.3/§3.4 | 待评审 |
+| D-30 | 地图站点改为**边绑定 + 泊位**模型：`sites` 新增 `edge_id`/`lane_id`/`berth_start_pos_m`/`berth_end_pos_m`/`berth_length_m`/`berth_capacity`/`category`，`node_id` **改为可空**（双写过渡）；节点新增 `node_type`，边新增 `road_type`/`num_lanes`/`priority`，并新增 `road_types` 与 `obstacles` 表 | 实测 13/13 站点都绑定在**边**上（`edge_id` + 车道 + 泊位区间 55–85 m + 容量 4/6），既有 `sites.node_id` 模型无法表达「只能停 4 台车」，而泊位容量正是 M7 泊位占用约束的输入。保留 `node_id` 可空而非改成边绑定并二选一，是为了不打断已通过的 M6 渲染与 seed。见 `docs/data-interfaces.md` §4.3/§4.7 | 待评审 |
+| D-31 | 车辆参数单位口径统一为 **kWh/km**（废弃 Wh/km 的 `consumptionWhPerKm`/`batteryCapacityWh`，改用 `energyConsumptionKwhPerKm`/`batteryCapacityKwh`/`socMinPct`）；样本自带的 **9 条 `consistency_rules` 由服务端求值**、错误码由系统固定（不从文件读）；`[A/B/C/D]` 可信级别**随参数落库并在 UI 展示、可筛选，但不阻断导入** | 样本口径是 `energy_consumption_kwh_per_km`（0.155）× 里程，与 2026-09-15 记录的 `kmToWh` 量纲错误同属一类问题，必须一次定死单位。规则表达式若交前端或数据方求值会引入第二套实现，两边迟早不一致。218 个数值字段中 132 个（60.6%）是 `[D]` 级工程假设，不展示就等于把假设当实测，但报错会阻断正常使用。见 `docs/data-interfaces.md` §5.4/§5.7/§5.9 | 待评审 |
+| D-32 | `EventBus` **按会话权限过滤后再推送**（deny-by-default），事件落 `event_log` 不受过滤影响；`EVENT_PERMISSIONS` 显式登记「事件类型 → 所需权限点」，未登记的类型视为公开；窗口在 `attach` 时绑定会话、登录/登出经 `bindSession` 升降权；`EventBus` 构造器要求 `sessions` 必填 | D-08 定了「权限双轨制」，但事件通道此前是**绕过接口层强制校验的旁路**：`emit()` 对全部 `webContents` 无条件群发，第二个窗口就能收到与其角色无关的业务对象事件（ISS-009）。deny-by-default 而非 allow-by-default，是因为漏登记一个新事件的后果（收不到）远比漏过滤一个敏感事件的后果（越权）轻。见 `desktop/src/services/event-bus.ts` | 已定 |
+| D-33 | 错误码**唯一登记处**为 `shared/src/errors.ts` 的 `ERROR_CODES`；命名统一为 **`域.原因`** 两段式（对应 Google AIP-193 `ErrorInfo` 的 `domain`+`reason`），域按**业务概念**而非「文件来源」划分；**同一概念只允许一个 code**；`severity`（error/warning/info）是单次问题出现的属性、不是 code 的身份，故同一 code 可在不同调用点有不同 severity（如 `GRAPH.EMPTY` 导入预检 warning、调度预览 error） | 项目曾同时存在两套目录（34 条 vs 97 条，**零重叠**），两份文档各自声称「唯一登记处」，同一概念两个名字（`GRAPH.EMPTY` vs `MAP.EMPTY_GRAPH`）。前端按 code 做文案映射，两套 key 会直接打挂本地化（ISS-001）。AIP-193 明确：同一个 `(reason, domain)` 对**必须**用于同一个错误、且**不得**用于不同错误 —— 即「概念唯一」优先于「文件族前缀统一」。合并后 123 条（34 运行时 + 89 导入域），并以 `shared/src/errors.catalog.test.ts` 把该规定变成可执行断言（文档里出现未登记 code 会 `npm test` 失败） | 已定 |
 
 ## 困难与问题记录
 
@@ -113,14 +155,14 @@
 | --- | --- | --- | --- |
 | 2026-09-07 | 原始需求文档落在误建目录 `/Users/sunsetflower/myJobs/js/831:n`（文件名带冒号） | 建目录时误输入 `:n` | 已迁移至本仓库 `docs/requirement-raw.md` 并删除误建目录 |
 | 2026-09-07 | 使用 `apply_patch` 写入大段中文 Markdown 时偶发「空行无补丁前缀」报错 | 空行缺少 `+` 前缀，补丁原子回滚 | 已按行加前缀分段写入；后续大文件改动沿用分段写入法 |
-| 2026-09-14 | `npm test` 的 5 个测试套件均在收集前失败 | `tests/setup.ts` 引用了 `@testing-library/jest-dom/vitest`，但依赖中未安装或未声明 | 当前测试基线记录为失败；补齐依赖后重跑全量测试，并评估是否将 setup 拆为 renderer 专用 |
-| 2026-09-14 | renderer 没有 `src/main.tsx` | 只有 Vite 壳层文件，`index.html` 已指向不存在的入口 | P1 下一步补 React 入口、适配器与最小健康页，再验证 `npm run dev`、`npm run build` |
-| 2026-09-14 | `design.md` §2.3 仍写作 `better-sqlite3`，与实现及 D-14 不一致 | 文档阶段选型未随 P1 实现更新 | 后续同步 `design.md`、`docs/database.md` 与 README，统一为 Node 内置 `node:sqlite` |
-| 2026-09-14 | `docs/build-plan.md` §2 前置条件与 §7 风险表仍以 `better-sqlite3` + `@electron/rebuild` 为前提 | 同上，构建计划未随 D-14 更新 | 后续把两条改为「无原生编译依赖」，并把「ABI 不匹配」风险替换为 `node:sqlite` 相关风险（如 Node 版本下限、Electron 内置 Node 版本） |
+| 2026-09-14 | `npm test` 的 5 个测试套件均在收集前失败 | `tests/setup.ts` 引用了 `@testing-library/jest-dom/vitest`，但依赖中未安装或未声明 | **已解决（2026-09-20）**：补齐依赖；实际还有第二个原因（`node:sqlite` 在 vite-node 下不可解析），见本表 2026-09-20 对应行。现 15 套件 / 94 用例全通过 |
+| 2026-09-14 | renderer 没有 `src/main.tsx` | 只有 Vite 壳层文件，`index.html` 已指向不存在的入口 | **已解决（2026-09-20）**：补齐入口与全套渲染层（适配器 / store / 路由 / 页面 / React Flow 地图），`npm run build` 与 Electron 端到端均已通过 |
+| 2026-09-14 | `design.md` §2.3 仍写作 `better-sqlite3`，与实现及 D-14 不一致 | 文档阶段选型未随 P1 实现更新 | **已解决（2026-09-20）**：`design.md` 数据层行已统一为 Node 内置 `node:sqlite` |
+| 2026-09-14 | `docs/build-plan.md` §2 前置条件与 §7 风险表仍以 `better-sqlite3` + `@electron/rebuild` 为前提 | 同上，构建计划未随 D-14 更新 | **已解决（2026-09-20）**：§2 改为「无原生编译依赖」，§7 风险替换为 `node:sqlite` 版本下限与 vite-node 解析风险 |
 | 2026-09-14 | `renderer/` 同时存在嵌套 `node_modules`（Vite 6.4.3），根 `node_modules` 为 Vite 5.4.21 | renderer 依赖未完全提升；两套 Vite 并存 | 属正常 workspaces 现象，但需注意：`renderer/vite.config.ts` 由 Vite 6 执行，根 `vitest.config.ts` 由 Vite 5 执行；排查构建/测试问题时要区分版本 |
-| 2026-09-14 | `npm run build` 在 renderer 阶段失败，`npm run dev` 看似正常但拿不到入口 | `renderer/index.html` 引用 `/src/main.tsx`，该文件不存在；dev server 用 SPA 兜底返回 `index.html`，被误判为 200 成功 | 已记录为真实基线；P1 补齐 `src/main.tsx` 后重跑 `npm run build` 与浏览器冒烟 |
-| 2026-09-14 | `npm run dev:electron` 端到端链路从未验证 | renderer 无入口，Electron 加载 `http://localhost:5173` 必然白屏 | 待 renderer 入口 + `ipc` 适配器就位后验证；验证前不得声称桌面端可用 |
-| 2026-09-15 | 能耗估算缺乏量纲正确的模型：代码注释中出现 `kmToWh(总里程)`，把「里程」直接当「耗电」 | 设计阶段只有「按里程估算」一句，未定义单位与电池容量口径 | 已在 `docs/data-interfaces.md` §5.4 固定为「每公里耗电 Wh × 里程」并引入 `batteryCapacityWh`；缺容量时退化为百分比近似并给 warning。实现 M4 时需按此口径改写 |
+| 2026-09-14 | `npm run build` 在 renderer 阶段失败，`npm run dev` 看似正常但拿不到入口 | `renderer/index.html` 引用 `/src/main.tsx`，该文件不存在；dev server 用 SPA 兜底返回 `index.html`，被误判为 200 成功 | **已解决（2026-09-20）**：入口已补齐，`npm run build` 三端全通（renderer JS 379.34 kB / gzip 124.00 kB） |
+| 2026-09-14 | `npm run dev:electron` 端到端链路从未验证 | renderer 无入口，Electron 加载 `http://localhost:5173` 必然白屏 | **已解决（2026-09-20）**：已端到端验证 —— 登录 → 地图渲染 20 节点 / 39 边 / 5 路线标签，与 seed 一致；生产 `file://` 形态亦通过 |
+| 2026-09-15 | 能耗估算缺乏量纲正确的模型：代码注释中出现 `kmToWh(总里程)`，把「里程」直接当「耗电」 | 设计阶段只有「按里程估算」一句，未定义单位与电池容量口径 | 已在 `docs/data-interfaces.md` §5.4 固定为「每公里耗电 × 里程」并给缺容量时的退化口径 + warning。**⚠️ 本行的 `Wh/km` 与 `batteryCapacityWh` 口径已被 2026-09-21 的 D-31 取代为 `kWh/km` 与 `batteryCapacityKwh`（以样本为准）**；实现 M4 时按 §5.4 现行版本改写 |
 | 2026-09-15 | 算法配置存在两处可改同一参数的隐患（`settings` 表 vs 导入型配置集） | D-12 决定权重走常量、D-20 引入配置集，二者边界未定义 | 已定为「重叠项以 `settings` 优先 + info 提示」（`docs/data-interfaces.md` §6.4）；**待评审** |
 | 2026-09-15 | 导入进度无承载通道：现有事件总线仅有 `task.changed` 等业务事件，不适合承载批次进度 | 导入为长耗时操作，IPC 默认等待不足 | 记为待评审问题 Q6（倾向先轮询 `GET /api/imports/{id}`），未擅自新增事件名 |
 | 2026-09-20 | Chrome 直接打开 `file://` 产物时 React Flow 不渲染，一度疑似打包缺陷 | Chromium 以 CORS 规则拦截 `file://` 下的 ES module 脚本；用最小复现（纯 `type="module"` 脚本 BLOCKED、同内容的传统 `<script src>` 正常）确认与 React Flow 无关 | **已排除**：真实 Electron 44 用 `loadFile()` 实测渲染正常（视口/节点/边/边路径 DOM 齐全）。验收请用 `dev:electron` 或 `vite preview`，不要用 Chrome 开 `file://`。兜底为单文件 IIFE 构建（实测在 `file://` 下可渲染）。见 `docs/module-M6-map.md` §11 |
@@ -128,7 +170,108 @@
 | 2026-09-20 | `@xyflow/react` 自带 `zustand@4.5.7`，与项目 `zustand@5.0.15` 并存两份 | React Flow 的 `dependencies` 固定 `zustand ^4.4.0`，npm 无法将其提升为根的单版本 | **属正常现象**，两者互不干扰（React Flow 只用自己那份）；排查版本问题需注意 `renderer/node_modules/@xyflow/react/node_modules/zustand`。已记入文档，与既有「两套 Vite」同类 |
 | 2026-09-15 | 迁移编号可能冲突：`order-data-map-design.md` 建议 `0002_order_ingestion.sql`，`data-interfaces.md` 建议 `0002_data_import.sql` | 两份设计分别编号，均未落地 | **已解决**：统一为 `0002_data_import.sql`，`0002_order_ingestion.sql` 作废（见本文件 Q7 与两文档去重说明） |
 
+| 2026-09-20 | `npm test` 的 5 个套件修完 setup 依赖后**仍全失败**：`Failed to load url sqlite` | 存在**两个**独立原因，此前只发现第一个：① `tests/setup.ts` 缺 `@testing-library/jest-dom`；② `node:sqlite` 在 Vite 5 / vite-node 下无法解析 —— vite-node 的内置模块白名单是打包时固化的（`prefixedBuiltins` 仅硬编码 `node:test`），且 `nodeBuiltins = builtinModules.filter(id => !id.includes(':'))`；Node 25 只在**带前缀**形式暴露 `node:sqlite`（`builtinModules` 无裸名 `sqlite`），于是前缀被剥成裸 `sqlite` 后查不到。另实测 esbuild 在任何 target 下都**不会**改写 `node:` 前缀，故非转译问题 | **已解决**：① 补 `@testing-library/jest-dom@^6.6.3`（实装 6.10.0）；② 新增 `desktop/src/db/sqlite.ts`，用 `createRequire(import.meta.url)('node:sqlite')` 惰性加载（`require` 不参与 Vite 静态解析）。已在真实 Electron 44.3.0（内置 Node 24.20.0）下复测通过 |
+| 2026-09-20 | 表数量口径自检不一致：`db.test.ts` 期望 17 张业务表，实测 16 | 原口径把 `schema_version` 也算进了业务表；实际业务表 16 张 + `schema_version` = 17 张表 | **已解决**：修正测试为 16 并新增「精确表集合」断言；同步 `docs/architecture.md`（§6 标题与表）、`docs/database.md` §2 规模说明、`README.md`、本文件项目快照。**历史工作日志行按「只追加不篡改」原则保留原文** |
+| 2026-09-20 | 地图渲染后**边全部消失**（`edges=0`），5 秒后才出现 | `vehicle.changed` 每秒触发一次全量快照重拉 → `nodes`/`edges` 每秒被重建 → React Flow 重新测量节点，测量完成前不渲染边 | **已解决**：事件分层（D-23），位置类事件只写 `positionsRef`；并加 `model/structural.ts` 结构签名避免轮询每秒换引用。实测修复后 250ms 内即出现 39 条边 |
+| 2026-09-20 | `<MiniMap>` **一个方块都不画**，只剩空框 + 遮罩，且不报错；`resize` / `zoomIn` / `fitView` 均无法恢复 | React Flow 只为「有尺寸」的节点画方块（`nodeHasDimensions` 读 `measured?.width ?? width ?? initialWidth`）。实测画布渲染完成后用户节点的 `measured` 仍未落位。已用最小复现（官方推荐写法）确认**非本项目配置问题** | **已解决**：`model/toFlow.ts` 给每类节点补 `initialWidth`/`initialHeight`（`NODE_SIZE`，与 CSS 对应；不能用 `width`/`height`，避免与真实测量竞争）。实测 `minimap-node` 0 → 20；已加回归用例。见 `docs/module-M6-map.md` §11.5.1 |
+| 2026-09-20 | 路线高亮**视觉上完全看不出**，但页面不报错 | `.udm-edge-route.is-active path` 这类「祖先 + 后代」选择器永远匹配不到：`<BaseEdge>` 把 `className` **拼到 `<path>` 自身**（`cc(['react-flow__edge-path', props.className])`），并不存在外层 `<g class="udm-edge-route">`。同类死选择器还有 `.react-flow__node.is-selected`（React Flow 用的是 `selected`） | **已解决**：改为 `.react-flow__edge-path.udm-edge-route.is-active` 与 `.react-flow__node.selected`。实测路线 `stroke` 由 `rgb(177,177,183)`/`1px`（默认灰）变为 `rgb(56,189,248)`/`4px`，节点选中光晕由 `none` 变为有效。见 `docs/module-M6-map.md` §11.5.2/§11.5.3 |
+| 2026-09-20 | 深色画布上 `Controls`/`MiniMap` 是**一块白方块** | 两者用 React Flow 自带浅色默认样式，且不提供深色变量 | **已解决**：`style/map.css` 显式覆盖为 `theme.css` 变量；`MiniMap` 另传 `bgColor`/`maskColor`/`nodeColor`（按图层配色） |
+| 2026-09-20 | 生产形态（`loadFile`）会**静默使用假数据** | 打包构建不带 `.env`，`VITE_API_ADAPTER` 为 `undefined`，原逻辑默认落 `mock` | **已解决**：默认值按「有没有 preload 桥」判定（D-22），并用 `api/index.test.ts` 锁死。实测生产 `file://` 形态自动选中 `ipc` |
+| 2026-09-20 | seed 写入的路线 `edge_ids` 全部指向**不存在的边**（`seed-e-n01-n05`），无任何报错 | `edges.id` 里的 code 是**大写**（`seed-e-N01-N05`），节点 id 是小写（`seed-n01`）；`edge_ids` 是 JSON 文本列、**没有外键保护**，写错不报错，只在前端按 `edgeIds` 高亮时静默匹配不上 | **已解决**：改为用节点序号推导 `nodeCode()`；并在 `db.test.ts` 新增断言「每一段边都存在且相邻节点真实连通」 |
+| 2026-09-20 | mock 快照与真实 seed 库的数据**形状相同但内容不同**（id 不一致） | `mock-data.ts` 声称与 `seed.ts` 保持一致，但是**手抄**的 id（`seed-n-N1` vs `seed-n01`、`seed-veh-AGV-01` vs `seed-veh-agv01`），电量与车辆状态也未同步 | **已解决**：mock 改为从 `SEED_IDS` 与 seed 同规则派生（D-27），并新增「mock 快照 == seed 库快照」的逐字段比对用例与「边按 id 排序」对齐，防止再次漂移 |
+| 2026-09-20 | `design.md` §2.3 与 `docs/build-plan.md` §2/§7 仍以 `better-sqlite3` + `@electron/rebuild` 为前提 | 文档阶段选型未随 D-14 更新（自 2026-09-14 起挂账） | **已解决**：`design.md` 数据层行改为 Node 内置 `node:sqlite`；`build-plan.md` 前置条件改为「无原生编译依赖」，风险表替换为 `node:sqlite` 版本下限与 vite-node 解析风险 |
+| 2026-09-20 | `README.md` 状态段仍写「P0 文档阶段 / 尚未 git init」 | 长期未同步（自 2026-09-14 起挂账） | **已解决**：改为「P1 地基已通 + M6 地图已实现」，补三端现状、命令与测试数 |
+| 2026-09-20 | 车辆在地图上**不会移动**（位置恒定） | 无任何组件持续产生 `vehicle.changed`（模拟执行器属 M7，尚未开工）；前端补帧逻辑本身已实现并单测覆盖 | **未解决（待 M7）**：记为待评审 Q-6，执行器落地后接入；不得为了「看起来会动」在前端伪造位置 |
+| 2026-09-21 | `docs/data-interfaces.md` 的 F1/F2/F3 三章字段契约与真实样本**大面积不符** | 三章写于 2026-09-15，当时**没有样本文件**，字段是按「通用订单/地图/车辆」的常识推演的：把时间假设成 ISO 8601、把优先级假设成 `low/normal/high/urgent`、把站点假设成节点绑定、把能耗假设成 Wh/km | **已解决**：按 `第三次课_数据准备/` 三类样本逐字段重写（§3/§4/§5），并新增 §13 实测速查表与 D-28…D-31。教训：**没有样本时不要写「字段级契约」**，应只写管线与错误模型；字段表一旦被下游当依据，重写成本远高于留白 |
+| 2026-09-21 | 样本订单 `tw_start` 文本与 `tw_start_s` 秒数**对不上**（197/200 行） | 文本是**分精度**（`08:21`），秒数列可含非零秒（30066 = 08:21:06）。若按「秒级严格相等」校验，会把 197/200 行误判为错误数据 | **已解决**：契约明确「比对按分钟下取整」（§3.3），并把「实际存在非零秒」写进 §13 速查，避免实现时按直觉写严格相等 |
+| 2026-09-21 | `campus.geojson` 一度被怀疑是 **WGS84 经纬度** | 文件**没有 `crs` 成员**，而坐标形如 `[[0,0],[150,0]]`、量级 0–760。已知样本场景是 760 m 见方的校园，若按经纬度解析会得到「0 度附近一张空白图」，且不报任何错 | **已确认非问题**：平面米制，与 D-05 一致。已在契约中把 `meta.coordinateSystem` 固定为 `planar-meters` 并在非该值时直接拒绝（`MAP.COORDINATE_SYSTEM_UNSUPPORTED`），把这类静默错误变成显式报错 |
+
+| 2026-09-21 | 全项目存在**两套错误码目录**（34 条 vs 97 条，**零重叠**），且两份文档各自声称「唯一登记处」 | 「文档先行」阶段两份文档各写一套命名，均按「文件族」而非「业务概念」划分前缀；`data-interfaces.md` 是后写的、自称唯一，但实现与测试早已锁在 `errors.ts` 上 | 定 D-33：以 `shared/src/errors.ts` 为唯一登记处，两套合并为 123 条；命名统一为 `域.原因`（AIP-193 口径）；冲突时保留**更通用**的名字（`GRAPH.EMPTY` 胜过 `MAP.EMPTY_GRAPH`）。新增 `errors.catalog.test.ts` 把「文档中每个 code 都必须已登记」变成断言 · 出处：`shared/src/errors.ts` / `docs/api.md` §2 / `docs/data-interfaces.md` §8（ISS-001） |
+| 2026-09-21 | 「导入时 warning、运行时 error」是否应拆成两个 code | 直觉上「严重度不同就该有不同 code」，但这正是本次要修的错误的翻版（同概念两个名字/两个 key，前端文案映射照样打挂） | 定 `severity` 为**调用点属性**：目录里存 `severity` 作为默认值，`ImportIssue.severity` 可覆盖；同一 code 只有一条登记记录，测试断言其唯一性 · 出处：`shared/src/errors.ts`（D-33） |
+| 2026-09-21 | `EventBus` 把领域事件**无条件群发给所有窗口**，绕过 D-08 的服务端权限校验 | `emit()` 遍历 `this.targets` 直接 `send`，`attach()` 不绑定会话，事件类型也没有权限映射概念 | 定 D-32：`EVENT_PERMISSIONS` 显式登记「事件→权限点」，`attach(target, token)` / `bindSession()` 绑定会话，**未登录窗口收不到任何登记过权限的事件**；`event_log` 照写不误（只过滤推送） · 出处：`desktop/src/services/event-bus.ts`（ISS-009） |
+| 2026-09-21 | mock 适配器返回主进程并不存在的错误码 `AUTH.INVALID_CREDENTIALS`，浏览器正常、Electron 下会静默失配 | mock 的失败助手 `failure(code: string, ...)` 接收任意字符串，未把 code 约束到 `ERROR_CODES` 的类型上；页面只读 `message` 所以看不出问题 | 删除该助手，改用 `fromCatalog(code: ErrorCode)` 并从目录取 `source`/`message`；新增 `mock-parity.test.ts` 锁死三层适配器错误码一致。**属 ISS-001 审计的附带产出** · 出处：`renderer/src/api/mock.ts`（ISS-030） |
+| 2026-09-21 | 用脚本改写 `shared/src/errors.ts` 时**重复插入**整块 code（一度出现 212 个键、123 条唯一） | 生成脚本不幂等却被执行了两次；没有在插入前做存在性检查 | `git checkout` 回滚后重跑，并在每个插入点加 `assert` 防重；写入后用「唯一键数 == 总键数」自检。**教训：生成脚本必须自带幂等断言，不能依赖「只跑一次」** · 出处：`shared/src/errors.ts`（本轮） |
+| 2026-09-21 | `docs/api.md` §2 原先只登记 33 条，`API.ROUTE_NOT_FOUND` 已实现且被 `router.test.ts` 断言却漏登 | §2 是手写维护的表，实现先加了 code 但没回写文档 | §2 改为**从 `ERROR_CODES` 派生的完整表**（34+89），并由 `errors.catalog.test.ts` 断言「文档中出现但未登记 → 测试失败」，此类漏登不会再发生 · 出处：`docs/api.md` §2（ISS-002） |
+| 2026-09-21 | 一度以为 `UGV-L` 的 `kerb_weight_kg = 500`（与 `UGV-S` 同值）是笔误 | 逐行核对 `vehicle_params.yaml` 后发现该值标为 `[B]` 并附推导说明：源报道给出的是「满载质量 1000 kg」，样本按 50% 拆分为整备质量 | **已修正自己的判断**：契约中明确标注「有意为之，不要当笔误改掉」。教训：怀疑样本前先读该字段的 `[A/B/C/D]` 标注与 `references` 摘录——样本对**每个**字段都给了出处 |
+| 2026-09-21 | 自检时发现我在文档里写的「Solomon 56 个已转 CSV」「Li & Lim 各 52–55 行」**是错的** | 实际 `2_订单数据集/solomon/` 里只有 `solomon_c101_orders.csv` **1 个** CSV（另有 56 个 JSON 算例）；`li_lim_pdptw/` 的 56 个 CSV 行数范围是 **50–55**（分布 50×6/51×22/52×7/53×17/54×3/55×1） | **已修正**：两处均为我在本次核对中的笔误，已在 §3.1 与 §13.2 更正并注明真实分布。说明「凭印象写数字」在数据类文档里是最危险的习惯，必须逐个 `ls`/`wc` 复核 |
+| 2026-09-21 | 样本三件套（地图/订单/车辆）是否自洽，原本只能靠人工核对 | 三方引用的正确性分散在各自的列里（订单端点 ⊂ 站点、站点边 ⊂ 路网边、车辆限速键 == 道路类型） | **已实测自洽**：6 项交叉检查全部通过（0 偏差），已写入 §2.7 作为场景包校验的**验收基线**。实现时若对样本报出这些 error，应先怀疑校验代码而不是数据 |
+
 ## 工作日志
+
+### 2026-09-21 — P1 收口：错误码单一登记处（D-33）+ 事件总线权限过滤（D-32）✅
+
+- **范围与目标**：按「选定其中一个错误码、放弃另一个；其它问题以业界/大厂规范为准且必须解决冲突」处理 P1 与相关 P2。
+  本次**含业务代码改动**（`shared/` · `desktop/` · `renderer/`），非纯文档条目。对应 `docs/issues.md` 的
+  `ISS-001` / `ISS-009`（P1）与 `ISS-002`…`ISS-008`（P2/P3），另新发现并修掉 `ISS-030`。
+- **变更清单**：
+  - `shared/src/errors.ts`：`ERROR_CODES` **34 → 123 条**（新增 89 条导入域 code），新增 `ErrorSeverity` 与 `ErrorDefinition.severity?`；
+    `NODE.NOT_FOUND` / `EDGE.NOT_FOUND` 的 message 加注「导入时指引用的编码/边无法解析」，使其同时覆盖运行时与导入两处语义。
+  - `shared/src/errors.catalog.test.ts`（**新增**，5 条断言）：命名两段式、source/httpStatus/message 完整性、
+    severity 仅导入域、**文档中出现的 code 必须已登记**、导入域四类齐备且废弃码不复活。
+  - `renderer/src/api/mock-parity.test.ts`（**新增**，3 条断言）：mock 与主进程错误码一致（ISS-030 的回归锁）。
+  - `renderer/src/api/mock.ts`：删除自造的 `failure()`，改用 `fromCatalog(code: ErrorCode)` 并从 `ERROR_CODES` 取 source/文案
+    —— 修掉 mock 返回 `AUTH.INVALID_CREDENTIALS`（目录中不存在）而主进程返回 `AUTH.LOGIN_FAILED` 的静默失配。
+  - `desktop/src/services/event-bus.ts`：新增 `EVENT_PERMISSIONS`（事件→权限点）、`attach(target, token?)` / `bindSession()`，
+    `emit()` 由「无条件群发」改为 **deny-by-default 过滤后推送**；`sessions` 构造参数改为**必填**。
+  - `desktop/src/services/event-bus.test.ts`（**新增**，8 条用例）：未登录 / monitor / dispatcher / 登出降权 / 公开事件 /
+    日志照写 / 已销毁窗口 / 权限映射完备性。
+  - `desktop/src/main.ts`：`EventBus` 注入 `sessions`；`udm:invoke` 在登录成功与登出后调用 `bindSession` 同步窗口身份。
+  - `desktop/src/ipc/router.test.ts`：构造 `EventBus` 时传入 `sessions`。
+  - `package.json`：`engines.node` `>=20.11` → **`>=22.5`**。
+  - `docs/api.md` §2 **重写**：2.1 运行时业务错误码（34 条，按域分组）/ 2.2 导入域错误码（89 条，带 severity）/
+    2.3 调度拒绝原因；声明 `shared/src/errors.ts` 为唯一登记处。`API.ROUTE_NOT_FOUND` 随之登记（ISS-002）。
+  - `docs/data-interfaces.md` §8 **重写**为注册表的按章视图（不再是独立目录），移除「唯一登记处」声明；
+    正文旧命名同步：`MAP.EMPTY_GRAPH`→`GRAPH.EMPTY`、`MAP.GRAPH_DISCONNECTED`→`GRAPH.DISCONNECTED`、
+    `MAP.ISOLATED_NODE`→`GRAPH.ISOLATED_NODE`、`MAP.EDGE_NODE_NOT_FOUND`→`NODE.NOT_FOUND`、
+    `MAP.SITE_EDGE_NOT_FOUND`→`EDGE.NOT_FOUND`、`ORDER.ROUTE_NOT_FOUND`→`ROUTE.NOT_FOUND_PATH`。
+  - `docs/order-data-map-design.md` / `docs/issues.md`：同步上述改名。
+  - `docs/architecture.md`：§8.3 更新为「截至 2026-09-21」，移除【阻塞】节点与「P1 剩余缺口」段（改为历史注记）；
+    §10 事件流补上「按会话权限过滤后推送」。
+  - `docs/build-plan.md` §2/§7、`docs/module-M6-map.md` 头部与 §1.1：同步 Node 下限与 M6 已实现的状态。
+  - `docs/issues.md`：`ISS-001`…`ISS-009` 标记 `已解决` 并逐条补「解决」段；新增 `ISS-030`；
+    §0 总览与 §0.1 处理顺序更新；§2 已解决表追加 7 行。
+  - 本文件：项目快照、文档索引、代码现状地图同步；决策表新增 **D-32 / D-33** 与独立「状态」列。
+- **关键设计决策**：
+  - **D-33（错误码唯一登记处与命名口径）** —— 选定 `shared/src/errors.ts`，废弃 `data-interfaces.md` §8 的独立目录。
+  - **D-32（`EventBus` 按会话权限过滤）** —— 补齐 D-08 在事件通道上的缺口。
+  - 冲突消解口径（本次的判据，后续沿用）：
+    1. **以业界规范为准**：错误码取 Google AIP-193（`ErrorInfo` 的 `domain` + `reason`，且明确「同一 `(reason, domain)` 对必须用于同一错误、不得用于不同错误」）
+       → 因此「同一概念一个 code」优先于「同一文件族统一前缀」。
+    2. **以已实现、已被测试锁定的为准**：`errors.ts` 已类型化并被 `errors.test.ts` 锁定，`api.md` 是既有对外契约，改动面最小。
+    3. **两份来源冲突时，保留更通用的那个名字**：`GRAPH.EMPTY`（图的性质）胜过 `MAP.EMPTY_GRAPH`（限定地图文件）；
+       `NODE.NOT_FOUND`（运行时也会用）胜过 `MAP.EDGE_NODE_NOT_FOUND`（只在导入时出现）。
+    4. **不让同一概念留下第二个名字**：改名后正文、图、其它文档一并同步，并由测试兜住（不存在「两边都留着」的中间态）。
+- **验证与测试结果（2026-09-21 实测）**：
+  - ✅ `npm test`：**18 套件 / 110 用例全绿**（本条目前 15 套件 / 94 用例；新增 `errors.catalog.test.ts` 5 条、
+    `event-bus.test.ts` 8 条、`mock-parity.test.ts` 3 条）。
+  - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace 全部 exit 0。
+  - ✅ `npm run build`：`build:shared` / `build:desktop` / `build:renderer` 全部通过；renderer 产物 394.11 kB（gzip 128.75 kB）。
+  - ✅ 错误码闭环（脚本 + 测试双重校验）：`ERROR_CODES` **123 条唯一**；`docs/api.md` 与 `docs/data-interfaces.md` 中出现的
+    code **0 处未登记**（豁免项为 §8 明示「不作为 code 使用」的 3 条速记前缀与 2 条废弃码说明）。
+  - ✅ 表格/围栏完整性：`AGENTS.md` / `docs/issues.md` / `docs/api.md` / `docs/data-interfaces.md` 逐块列数一致（0 处不齐）。
+  - ✅ 权限过滤行为实测（单测覆盖）：未登录窗口收到 0 条登记过权限的事件；monitor 只收到 `alert.created`；
+    dispatcher 收到 task/vehicle/alert；`map.updated` 仍放行；`event_log` 照写不误。
+  - 未执行：`npm run dev:electron`（本次改动涉及主进程事件推送，但该链路需人工开窗目视，未在本条目内做端到端冒烟）。
+- **遇到的困难与解决方案**：
+  1. **同一概念两套命名（6 处）**，直接改名会打断既有测试与文档。解法：先定「谁更通用」的判据（决策 3），
+     把「并入既有 code」与「纯改名」分开处理，改名后用脚本全库扫描确认无残留，再用 `errors.catalog.test.ts` 把口径锁死。
+  2. **`severity` 到底属于 code 还是属于调用点** —— 若按「导入 warning / 运行时 error」拆成两个 code，
+     就正好重犯本次要修的错误（同一概念两个名字）。解法：定为**调用点属性**，作为 `ErrorDefinition.severity` 的**默认值**存放，
+     `ImportIssue.severity` 可覆盖；`errors.catalog.test.ts` 断言同一 code 只登记一次。
+  3. **`EventBus` 过滤后「静默丢事件」比「越权」更难排查** —— 若 `sessions` 可选且被省略，全部事件会被静默丢弃。
+     解法：构造参数改为**必填**，把运行时故障提前成编译期错误；并规定未登记的**新**事件默认放行（收不到新事件不影响安全，漏过滤敏感事件才是越权）。
+  4. **`apply_patch` 写大段中文仍易失败**：本轮所有大改动改用 `/tmp/*.py` 生成后写入，避免补丁围栏问题（沿用既有经验）。
+  5. 脚本两次执行导致 `shared/src/errors.ts` 出现**重复插入**（212 行 `'XXX': {` 键、123 条唯一）。已 `git checkout` 回滚后重跑，
+     并在每次插入前加 `assert` 防重。**教训：幂等性要显式断言，不能依赖「只跑一次」**。
+- **遗留问题与下一步（按优先级）**：
+  1. **评审仍待办**：`ISS-017`（D-11 / D-15…D-20 / D-28…D-31）与 `ISS-018`（Q1-Q16）合并评审 —— 这是导入模块（`ISS-013`）开工前的唯一阻塞，属**等人的决策**。
+  2. **未实现的导入链路**：`0002_data_import.sql` 迁移、导入/导出接口（`ISS-013` / `ISS-014`）——错误码口径已收口，可直接按 `data-interfaces.md` §8 动工。
+  3. **其余 P2**：`ISS-011`（map overview 的 `include` 参数）、`ISS-012`（轨迹回放）、`ISS-016`（车辆状态机迁移表）、`ISS-024`（`sites` 边绑定迁移）。
+  4. **提交**：工作区仍有大量未提交改动（`ISS-029`）。按纪律本条目已记录，可据此提交；建议拆两次
+     —— `refactor(shared): 统一错误码登记处`（含导入域 89 条 + 测试）与 `fix(desktop): 事件总线按权限过滤`，文档随各自提交。
+  5. `docs/architecture.md` 待补一张「四类数据文件导入」流程图（依赖 F4 章核对完成，见 `ISS-020`）。
+  6. 本轮另**登记**了一条与本次改动无关的既有缺陷：`ISS-031`（`docs/api.md`/`docs/module-M4-dispatch.md` 有两处 Markdown 表格
+     被单元格内的裸竖线截断）。按纪律「不修无关缺陷、但要登记」，未在本条目内修改。
 
 ### 2026-09-07 — P0 文档阶段：设计文档 + 接口文档 + 本文件定稿 ✅
 
@@ -329,3 +472,140 @@
   3. **前置阻塞未变**：`tests/setup.ts` 缺 `@testing-library/jest-dom` 导致 5 个既有套件无法收集；M6 渲染层测试依赖此项先修复（且需补 `ResizeObserver` stub）。
   4. 既有待办仍在：`design.md` §2.3 的 `better-sqlite3`（本次**仅改了地图行**，数据层行仍待按 D-14 修正）、`docs/build-plan.md` §2/§7、`README.md` 状态段与运行命令、D-15…D-20 评审。
   5. 按纪律：本次**未提交**，等评审后再统一提交。
+
+### 2026-09-20 — 修复测试阻塞 + 实现渲染层与 React Flow 地图（P1 地基打通 · M6 落地）⏳（未提交）
+
+- **范围与目标**：按需求「用 React Flow 做配送车辆地图以更好地可视化路线」把 M6 从**方案**推进到**可运行实现**，同时解掉长期挂账的测试阻塞。对应阶段：P1 地基收口 + M6 实现；需求条目：Req-M6-1/2/3/4/5（路由与选中、事件刷新、图层开关、单一数据入口）。
+- **变更清单**：
+  - **解阻塞（测试）**：`tests/setup.ts` 依赖补 `@testing-library/jest-dom`；新增 `desktop/src/db/sqlite.ts`（`createRequire` 惰性加载 `node:sqlite`），`db/index.ts` 改用它 —— 这是让 5 个套件能真正跑起来的**第二个**原因。
+  - **主进程**：新增 `desktop/src/db/repositories/map.repo.ts`（`getMapOverview` 快照读取层）；`desktop/src/ipc/api.ts` 新增 `GET /api/map/overview`（`map:read` 权限）；8 条接口。
+  - **shared**：`types.ts` 新增 `MapOverview` 与 8 个快照子类型（唯一契约来源）；`constants.ts` 的 `SEED_IDS` 补演示任务/路线/告警 id。
+  - **seed**：新增 `seedDemoExecution`（演示任务 + 路线 + 告警，并把 AGV-01 置 `busy`、`load_kg` 同步）；`SeedSummary` 增 `tasks`/`routes`/`alerts`。
+  - **渲染层（从 0 到 1，此前完全为空）**：`main.tsx`（HashRouter）、`api/`（client 契约 + ipc/http/mock 三层 + `types.ts` 再导出 shared + `mock-data.ts` 与 seed 同源）、`store/`（session / selection）、`app/`（路由 + `RequireSession`）、`components/AppLayout`、`pages/`（登录 / 工作台 / 占位页）、`map/`（model：projection/ids/layers/toFlow/motion/structural；nodes 5 类；edges 2 类；hooks 4 个；stage；style）、`test/dom-stubs.ts`。
+  - **测试**：新增 `desktop/src/db/repositories/map.repo.test.ts`（8）、`renderer/src/api/mock-data.test.ts`（7）、`renderer/src/api/index.test.ts`（2）、`renderer/src/map/MapView.test.tsx`（5）与 map/model 5 个纯函数套件；`db.test.ts` 与 `router.test.ts` 各补断言。
+  - **文档同步**：`docs/architecture.md`（§8.2 状态改为【已实现】、新增事件分层节点与实现缺口表、`API Routes 8 条`）；`docs/module-M6-map.md`（新增 §11.5 实现期实测五条结论、Q-5/Q-6）；`design.md` 数据层行；`docs/build-plan.md` §2/§7；`README.md` 状态段与文档入口；`docs/database.md` §4 seed 表新增演示数据行；本文件（快照 / 代码现状地图 / 验证基线 / D-22…D-27 / 14 条问题记录）。
+- **关键设计决策**：新增 **D-22**（适配器默认值按 preload 桥判定）、**D-23**（地图事件分层：结构类重拉 / 位置类只写 ref）、**D-24**（`eventSeq` 用 `sqlite_sequence` 单调水位线）、**D-25**（派生字段在读取层算，不冗余落库）、**D-26**（seed 增加自洽的演示执行数据）、**D-27**（mock 演示数据从 `SEED_IDS` 派生并与真实快照做等价断言）。D-22…D-27 均**待评审**。
+- **验证与测试结果（实测）**：
+  - ✅ `npm test`：**15 套件 / 94 用例全通过**（会话开始时为 68/70，其中 2 个失败是 jsdom 限制造成的断言写法问题，已改为按 DOM 结构等待）。
+  - ✅ `npm run typecheck`（三 workspace）与 `npm run build` 全部 exit 0。
+  - ✅ `npm run db:migrate` / `db:seed`：迁移幂等；seed 结果 `tasks 1 · routes 1 · alerts 1` 新增，复跑各表新增 0。
+  - ✅ **Electron 端到端（真实 ipc 适配器 + 真实 SQLite）**：登录 → 地图 **20 节点 / 39 边（34 路网 + 5 路线）/ 3 站点 / 3 车辆 / 2 任务端点 / 5 路线标签 / 20 迷你图方块**，与 seed 一致，无控制台错误。
+  - ✅ **生产 `file://` 形态**（`win.loadFile('renderer/dist/index.html')`，无 `.env`）：自动选中 `ipc`，渲染结果与 dev 相同。
+  - ✅ **浏览器 mock 形态**：渲染结果与 ipc **逐项相同**（20/39/5/20），三层适配器行为一致。
+  - ✅ **交互**：点车辆选中（图例「已选中：vehicle · AGV-01」，7s 后保持）、点空白清空、图层开关 20→8→20 且选中不丢。
+  - ✅ `node:sqlite` 在 Electron 44.3.0（内置 Node 24.20.0）正常；`docs/architecture.md` 23 张 Mermaid 全部渲染成功。
+  - 未执行（原因）：无。
+- **遇到的困难与解决方案**（均记入「困难与问题记录」，此处摘关键四条）：
+  1. **测试仍全红，但换了一个错**：修完 setup 依赖后变成 `Failed to load url sqlite`。逐层排查 vite-node 源码，确认其内置模块白名单是打包时固化的、且会剥掉 `node:` 前缀，而 Node 25 的 `node:sqlite` **只有带前缀**形式。改用 `createRequire` 惰性加载（并保留还原条件注释），Electron 下复测通过。
+  2. **边会间歇性消失（`edges=0`）**：`vehicle.changed` 每秒触发全量快照重拉 → 每秒重建 `nodes`/`edges` → React Flow 重新测量。修复为事件分层 + 结构签名（D-23）。**这条恰好是我自己在 `docs/module-M6-map.md` §9 写下的护栏，首版实现却违反了它** —— 文档是对的。
+  3. **路线高亮「看不出来」但不报错**：`<BaseEdge>` 把 `className` 拼在 `<path>` 自身，`.udm-edge-route.is-active path` 是死选择器；同类问题还有 `.react-flow__node.is-selected`（React Flow 用 `selected`）。改用「同元素多类」写法后实测 `stroke` 与 `box-shadow` 才真正生效。
+  4. **迷你图一个方块都不画**：React Flow 只为「有尺寸」的节点画方块，而用户节点的 `measured` 在渲染后仍未落位。用**官方推荐写法的最小复现**确认不是本项目配置问题后，给节点补 `initialWidth/initialHeight`（实测 0 → 20）。
+- **遗留问题与下一步**：
+  1. **D-15…D-27 全部待评审**；本条目未提交，等评审后统一提交。
+  2. 地图缺口：`include=orders,orderEndpoints`（待订单摄入 `0002_data_import`）、`/api/map/tracks/{vehicleId}` 轨迹回放、`EventBus` 未按会话权限过滤。
+  3. **车辆在地图上静止**：无组件持续产生 `vehicle.changed`（模拟执行器属 M7），已记为待评审 Q-6；不在前端伪造位置。
+  4. 业务页仍为占位（任务 / 调度 / 告警 / 基础数据 / 设置 / 用户），下一步按 M2 → M3 → M4 推进。
+
+### 2026-09-21 — 按真实样本核对并重写订单 / 地图 / 车辆三章接口契约（`docs/data-interfaces.md` v0.2 → v0.3） ✅
+
+- **范围与目标**：读取 `/Users/sunsetflower/myJobs/data/第三次课_数据准备/` 中的 `1_仿真地图`、`2_订单数据集`、`3_车辆参数` 三类数据（**用户明确限定只这三类**），逐字段核对既有接口文档，把「凭常识推演的字段契约」改写为「与真实文件一致」。
+  本条目**仅改文档，不含业务代码改动**；`4_调度约束` / `5_数据校验` / `6_数据说明文档` 与 `scripts/`、`docs/` **未纳入**（F4 章因此保持 v0.2，已列为待评审 Q16）。
+- **变更清单**：
+  - `docs/data-interfaces.md`（1117 → 1928 行，v0.2 → v0.3）：
+    - **头部**：版本/状态/样本依据/范围声明；去重表补入「错误码登记处」与 `module-M6-map.md` 归属；新增「地区目录在本样本上无实例，仍属未验证」的待办。
+    - **§0 阅读提示**：四类文件表补「实测样本形态 vs 系统侧标准形态」两列；新增样本**三层来源**表（① 真实基准 ② 文献参数 ③ 仿真构造）。
+    - **§2.2 信封**：区分**原生形态 / 标准形态**；`kind` 补 `orders`（原缺）；新增 `meta.sourceFiles`、`meta.coordinateSystem`；说明 F3 样本无 `kind`/`data` 的适配方式；新增 `IMPORT.SCHEMA_VERSION_ASSUMED`（样本本就不含版本字段）。
+    - **§2.5 幂等**：多文件输入的 `contentSha256` 改为「全部输入文件按名排序后逐个哈希再合并」，批次记录逐文件留痕。
+    - **§2.7 场景包**：明确一个完整场景是 **6 份文件**；新增三件套自洽性 **6 项实测基线**表（全部 0 偏差）。
+    - **§3 F1 订单（整章重写，11 小节）**：三类数据集与来源分层；**26 列**字段契约 + `li_lim` 32 列变体；**当日秒数时间口径**（含分精度比对规则、跨日、`order_time` 晚于时间窗）；**优先级 1/2/3 → normal/high/urgent 映射**（附实测分布 159/13/28 与 `priority_raw` 保留）；**订单类型 ↔ 端点 `DEPOT` 不变量**（实测 200/200 成立）；派生列定位为「校验而非信任」；`data_origin` 前缀约定。
+    - **§4 F2 地图（整章重写，8 小节）**：明确输入是 **4 文件包**（3 CSV + GeoJSON）而非单 JSON；`roadTypes` **road_type ↔ 限速/车道/优先级**映射表；**站点改为边绑定**（`edge_id` + 车道 + 泊位区间 + 泊位容量）；`_R` 反向边约定与 `bidirectional` 三种写法的落库结果；障碍物分「仅渲染 / 生成禁行」两类；`roadType` 缺失的保守推断；图结构校验 9 项（附实测）；**§4.7 与既有数据模型的差异表**（7 处列级变更建议）。
+    - **§5 F3 车辆（整章重写，10 小节）**：与既有 `vehicles` 表的字段对应表；**38 字段逐字段契约**（按 8 组分类）；**能耗单位改为 kWh/km**（废弃 Wh/km 口径）并说明为何首期不做载重修正；三种速度语义辨析；`fleet` 与 `vehicles` 的一致性约束；与地图的 5 项交叉校验；**9 条 `consistency_rules` 的错误码/severity 分级表**；**§5.8 跨文件单位口径对照表**（升 vs 立方米等）；`[A/B/C/D]` 溯源处理（含 60.6% `[D]` 级的实测占比）。
+    - **§7 接口**：各 kind 专属 options 扩至 `priorityMapping`/`serviceDate`/`sourceBundle`/`inferRoadTypes`/`executeConsistencyRules`/`keepProvenance` 并逐项释义；导出能力补 `?format=csv-bundle` 与「JSON ↔ CSV 包必须无损」要求。
+    - **§8 错误码（整章重写）**：12 → **97 条**，按 通用/订单/地图/车辆/算法/路径/场景 分组；新增 **§8.8 分维度速查表**（文件级/结构级/引用级/语义级/数据质量级）；登记 2 条废弃码。
+    - **§9 前端落地要点**：组件表新增 5 个（来源徽标 / 地图包选择 / 泊位表 / 一致性规则面板 / 可信级别筛选）；新增 **§9.5 五条前端专属约定**（F-1…F-5）。
+    - **§10 数据模型**：新增「本次核对新增/变更的列」表（`orders` 6 列 + `road_types`/`obstacles`/`vehicle_type_params`/`vehicle_param_provenance` 四张新表 + `nodes`/`edges`/`sites` 变更），并给出迁移影响面提示。
+    - **§11 测试清单**：C1-C7 / O1-O18 / M1-M20 / V1-V18 / A1-A6 / **W1-W8（前端专项）**；用例编号与断言值直接取自样本实测。
+    - **§12 待评审**：保留 Q1-Q9，新增 **Q10-Q16**（多文件包 / 站点边绑定 / 优先级映射 / 时间口径 / 溯源落库 / 规则求值位置 / F4 待核对）与 **§12.3「无需评审」项**（5 条实测已定论）。
+    - **§13 新增：实测数据速查**（地图 / 订单 / 车辆三张表），既是设计依据也是 §11 的断言值来源。
+- **关键设计决策**：新增 **D-28**（原生形态 vs 标准形态；多文件幂等哈希）、**D-29**（订单当日秒数口径 + 优先级显式映射并保留原值）、**D-30**（站点边绑定 + 泊位模型，`node_id` 保留可空双写过渡）、**D-31**（车辆 kWh/km 单位定死 + `consistency_rules` 服务端求值 + `[A/B/C/D]` 落库展示不阻断）。**四条均待评审**；D-17/D-18/D-19 的既有口径未变（本次只是让字段表与真实文件对齐）。
+- **验证与测试结果（2026-09-21，全部为脚本实测）**：
+  - ✅ **文档结构自检**：代码围栏 30 处（偶数配对）；**96 个 Markdown 表格块列数逐块一致**（0 处不一致）；2 张 Mermaid 图 fence 完整。
+  - ✅ **错误码闭环**：§8 声明 **97 条**；正文引用的 code 与声明集合**完全一致**（0 处「用了未声明」）。过程中修掉 2 处（`SCENARIO.SPEED_LIMIT_CONFLICT` 与 `VEHICLE.SPEED_LIMIT_CONFLICT` 同一语义两个码，已统一为后者并删去前者；`VEHICLE.SITE_TYPE_UNCOVERED` 声明未引用，已在 §5.6 补引）。
+  - ✅ **章节交叉引用**：文中 `§x.y` 引用 **0 处悬空**（逐个比对 91 个标题）。
+  - ✅ **订单样本核对**（`campus_orders.csv` 200 行全量）：`order_id` 无重复；`order_type` 132/40/28；`priority` 159/13/28 且与类型强相关；坐标与站点表 **0 偏差**；`euclid_dist_m`、`min_travel_min` 复算 **0 偏差**；`HH:MM:SS` 与 `order_time_s` **0 偏差**；`tw_start` 文本与秒数列 **197/200 不严格相等**（分精度所致，已据此定契约）；类型 ↔ 端点不变量 **200/200 成立**。
+  - ✅ **地图样本核对**：节点 30（traffic_light 9 / priority 21）；边 90 = 45 正向 + 45 `_R`（反向齐全、无重复、无自环）；**45/45 边长 == 两端欧氏距离**；道路类型 3 种且 90/90 行的限速/车道/优先级与 `campus.typ.xml` 一致；连通分量 1、孤立节点 0；站点 13 个**全部边绑定**且泊位区间在边长内；GeoJSON 133 features 且**无 `crs`、坐标为平面米制**；障碍 15 个 `poly` + 14 个 `parkingArea`。
+  - ✅ **车辆样本核对**：3 车型 × 38 字段；**9 条 `consistency_rules` 三型全部通过**；`fleet` 与 `vehicles` 键一致；`[A/B/C/D]` 统计 A 0 / B 62 / C 24 / D 132（218 个数值字段，60.6% 为工程假设）。
+  - ✅ **三件套自洽性**：6 项交叉检查全部通过（订单端点 ⊂ 站点、订单坐标 == 站点坐标、站点边 ⊂ 路网边、车辆限速键 == 道路类型、最大货重 ≤ 最小车型载重、泊位在边长内）。
+  - ⚠️ **修正了我在本次核对中自身写错的两处**：① 原写「Solomon 56 个已转 CSV」，实际 `solomon/` 内**只有 1 个** CSV（`c101`，另有 56 个 JSON 算例）；② 原写「Li & Lim 各 52–55 行」，实际 56 个文件行数 **50–55**。两处均已更正并写入问题记录。
+  - ✅ `npm test`：**15 套件 / 94 用例全通过**（2.11 s）。本次**无代码改动**，跑一遍是为了确认文档改动没有意外波及既有基线。
+  - 未执行（原因）：`npm run typecheck` / `npm run build`——本次未触碰任何 `.ts`/`.tsx`/配置，`npm test` 已覆盖类型与打包外的实际行为。
+  - 未执行（原因）：`4_调度约束` / `5_数据校验` 的核对——**用户明确限定只读三类数据**，已列为 Q16。
+- **遇到的困难与解决方案**：见「困难与问题记录」新增 7 条，其中方法论上有价值的三条：
+  1. **没有样本时写字段级契约是高风险动作**：本次三章几乎全部重写，根因是 v0.2 在无样本情况下按常识推演字段。结论已写入问题记录——无样本时应只写管线与错误模型，字段表留待有样本后再定。
+  2. **自检发现自己的笔误**：两处数字（Solomon CSV 数量、Li & Lim 行数）是凭印象写的，逐个 `ls`/`wc` 复核后更正。数据类文档中的每个数字都应可追溯到一条命令。
+  3. **「怀疑样本」之前先读样本的溯源标注**：`UGV-L` 的整备质量曾被我判为笔误，实际样本对该值有 `[B]` 级依据与拆分说明。
+- **遗留问题与下一步**：
+  1. **D-28…D-31 与 Q10-Q16 待评审**；本条目**未提交**，等评审后统一提交（按纪律：先记录，后提交）。
+  2. **F4 章需按同样标准核对**：拿到 `4_调度约束/dispatch_constraints.yaml` 后重做一遍（Q16），并让 §6 与 §5 的单位/时间口径对齐。
+  3. **回写其它文档（待评审通过后）**：`docs/database.md`（§10 的新增/变更列 → `0002_data_import.sql` DDL）、`docs/api.md`（97 条错误码 + 导入导出接口）、`design.md`（§6 数据模型 + §3.7 权限矩阵）、`docs/architecture.md`（补一张「订单/地图/车辆三件套导入」流程图）。
+  4. **实现侧待办**：站点边绑定迁移时**不要**在同一迁移里把 `node_id` 改成非空边绑定（会打断 M6 与 seed，见 §4.7 与 §10 的迁移影响面提示）。
+
+### 2026-09-21 — 新建项目问题汇总 `docs/issues.md`（Issue Register），并把它接入提交纪律 ✅
+
+- **范围与目标**：把散落在 `AGENTS.md`「困难与问题记录」、各文档「待评审/风险/缺口」小节、以及源码实测中发现的
+  问题，**汇总为一份可持续维护的清单**，解决「问题散落在 6 份文档、无定级、无法一眼看出还剩什么」的现状。
+  本条目**以文档为主**，另含 2 处代码/配置级问题的**登记**（未修，见 ISS-008 / ISS-009）；不含业务代码改动。
+- **变更清单**：
+  - **新建 `docs/issues.md`**（713 行）：全项目唯一的「问题/风险/待决」清单。
+    - **§0 总览**：29 条的严重度分布（P1 4 / P2 18 / P3 7）与状态分布；**§0.1 建议处理顺序**（5 条）；
+      **§0.2 全部问题索引**（带锚点，可跳转）。
+    - **§1 问题明细**（按 P1/P2/P3 分组，每条含「现象 / 影响 / 建议动作 / 出处」四段 + 严重度/状态/类型/领域四属性）：
+      P1 四条 —— **ISS-001** 错误码两套并存（`api.md` §2 的 34 条 vs `data-interfaces.md` §8 的 97 条，
+      **零重叠**且两份文档各自声称「唯一来源」）、**ISS-009** `EventBus` 未按会话权限过滤（安全边界）、
+      **ISS-017/ISS-018** 决策与开放问题待评审；
+      P2 十八条 —— 4 条文档过期（architecture §8.3 停在 09-14、仍标「【阻塞】tests/setup.ts」、
+      build-plan §4「M6 尚未实现」、module-M6-map 头部「尚未实现」）、设计决策表标注与日志口径不一致（ISS-007）、
+      `engines.node` 与 `node:sqlite` 下限不符（ISS-008）、M2-M10 未开工、`include=orders` 与 `tracks` 未实现、
+      `0002_data_import` 与导入导出接口未实现、车辆状态机缺迁移表、F4 章未按样本核对（ISS-020）、
+      地区目录别名/歧义无样本可验证（ISS-022）、`sites` 边绑定迁移风险（ISS-024）、工作区大量未提交（ISS-029）等；
+      P3 七条 —— `API.ROUTE_NOT_FOUND` 未登记、分页工具内联、`[D]` 级假设占比 60.6%、跨日时间窗、
+      两套 Vite / 两份 zustand、`apply_patch` 中文大文件、Chrome 开 `file://` 的误判。
+    - **§2 已解决问题（20 条，保留备查）**：从 `AGENTS.md` 汇总，保留「现象 → 根因 → 解法 → 出处」。
+    - **§3 如何使用**（评审前 / 开发中 / 提交前三个场景）+ **§4 统计口径说明**（严重度与状态判定标准、不收录什么）。
+  - **接入索引与纪律**：
+    - `README.md` 文档入口表、`design.md` §10.2 文档索引、`docs/architecture.md` 抬头关联行：补入本文件。
+    - `AGENTS.md` 文档索引补入；**提交纪律新增第 3.5 步**（提交前同步 `issues.md` + 工作日志引用 `ISS-xxx`）；
+      **禁止项新增 2 条**（禁止删除已解决条目、禁止另建第二份问题清单）。
+- **关键设计决策**：**无新增 D 编号**。本文件是**既有事实的汇总视图**，不引入新设计；
+  与 `AGENTS.md` 的分工在文件头明确：本文件记「**现在还剩什么问题**」，`AGENTS.md` 记「**什么时候发生了什么**」。
+- **验证与测试结果（2026-09-21 实测）**：
+  - ✅ **文档结构自检**：713 行；**37 个表格块列数逐块一致**（0 处不一致）；无未闭合代码围栏。
+  - ✅ **锚点闭环**：29 个明细小节 ↔ 29 条索引锚点，**0 处悬空**（脚本比对）。
+  - ✅ **编号唯一性**：29 条 `ISS-xxx` 无重复；严重度/状态分布与 §0 总览一致。
+  - ✅ **逐条事实核对**（写入清单的每条都复核过来源，非凭印象）：
+    `shared/src/errors.ts` **34 条**、`docs/api.md` §2 **35 个**（含 2 个误匹配的 `detail.fields`/`data.failed`，实为字段引用 → 故 ISS-002 只登记 `API.ROUTE_NOT_FOUND` 一条）、
+    `docs/data-interfaces.md` §8 **97 条**、两者交集 **0**；`renderer/src/app/App.tsx` **7 个 `PlaceholderPage` 路由**；
+    `desktop/src/ipc/api.ts` **8 条路由**；`package.json` `engines.node = ">=20.11"`；
+    `EventBus.emit()` 对 `targets` **无条件群发**（无权限过滤）；决策表中仅 **D-11/D-17/D-21** 带「待评审」字样，
+    而日志声明 D-15…D-31 待评审（→ ISS-007）。
+  - ✅ `npm test`：**15 套件 / 94 用例全通过**；`npm run typecheck` 三 workspace exit 0；`npm run build` 通过
+    （renderer 产物 JS 379.34 kB / gzip 124.00 kB）——确认本轮文档改动未影响构建基线。
+  - 未修复（本次仅登记）：`ISS-008`（`engines.node`）与 `ISS-009`（`EventBus` 权限过滤）**只登记未改代码**，
+    因为前者涉及运行环境约定、后者属安全边界且需与评审一起定方案，不宜夹在文档提交里顺手改。
+- **遇到的困难与解决方案**：
+  1. **判断「错误码 34 vs 97」是重复还是分叉**：一开始两个数字看起来只是「清单不全」。
+     用脚本取交集后发现 **交集为 0**——不是漏登记，而是**两套命名体系**（`GRAPH.EMPTY` vs `MAP.EMPTY_GRAPH`）。
+     性质完全不同：前者补几行即可，后者必须先定口径。已升级为 **P1 / ISS-001**，并给出两个可选方案与倾向。
+  2. **避免制造「第二份真相」**：本项目已两次因「同一主题两处各写一份」产生分歧（订单文档与接口文档、迁移编号）。
+     故在文件头用一张分工表明确本文件与 `AGENTS.md`/各文档 §12/§7 的边界，并在禁止项里写死「禁止另建第二份清单」。
+  3. **严重度定级不能凭感觉**：把「M2-M10 未开工」这类**计划内**工作与真实缺陷混在一起会让 P1/P2 失去意义。
+     因此新设 `计划内` 与 `已接受（非缺陷）` 两种状态——缺口可见，但不占用优先级的注意力。
+  4. **写清单本身要防「凭印象」**：上一轮刚因凭印象写数字出过两次错（Solomon CSV 数量、Li & Lim 行数）。
+     本次每条都跑脚本复核（含 `renderer` 路由数、`api.ts` 路由数、`engines` 字段、`EventBus` 是否有过滤），
+     并把复核结果写进验证记录。
+- **遗留问题与下一步（按优先级）**：
+  1. **`ISS-001` 必须先定**（错误码口径）：它阻断 `ISS-013`（`0002_data_import`）与 `ISS-014`（导入接口）。
+  2. **`ISS-017` / `ISS-018` 合并评审**（D-17、D-28…D-31 与 Q1-Q16 是一体两面），评审后同步决策表状态列（`ISS-007`）。
+  3. **`ISS-009`（EventBus 权限过滤）** 属安全边界，建议不等到 M8，提前排期。
+  4. 四条**文档过期**（`ISS-003`…`ISS-006`）改动小、收益直接，可随手清掉。
+  5. 本条目**未提交**；按纪律，提交时须一并把 `issues.md` 的状态与本条引用关系对齐。

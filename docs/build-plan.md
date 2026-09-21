@@ -18,10 +18,10 @@
 
 | 项 | 要求 | 验证 |
 | --- | --- | --- |
-| 设计评审 | D-02 / D-11 / D-12 确认（任务 paused 态、权限点、M4 落地口径） | AGENTS「设计决策记录」勾选 |
+| 设计评审 | D-02 / D-11 / D-12 确认（任务 paused 态、权限点、M4 落地口径） | AGENTS「设计决策记录」勾选（评审状态统一见 `docs/issues.md` ISS-017） |
 | 仓库 | `831` 已 `git init`，首条提交包含全部文档 | `git log --oneline` 可见 |
-| 环境 | Node ≥ 20（LTS）、npm ≥ 10；macOS 本地开发 | `node -v` / `npm -v` |
-| 原生编译 | `better-sqlite3` 需匹配 Electron ABI（`@electron/rebuild`）；xcode CLT 可用 | `xcode-select -p` |
+| 环境 | **Node ≥ 22.5**（`node:sqlite` 自 v22.5.0 起内置，见 D-14）、npm ≥ 10；macOS 本地开发 | `node -v` / `npm -v` |
+| 原生编译 | **无**（采用 Node 内置 `node:sqlite`，见 AGENTS D-14，不需要 `@electron/rebuild` / xcode CLT） | `node -v` ≥ 22（`node:sqlite` 内置） |
 | 端口 | 渲染层 dev 默认 `5173`，可通过 `VITE_PORT` 覆盖 | 无占用 |
 
 > 版本策略：本文只给**下限**；P1 首次 `npm install` 后以 `package-lock.json` 锁定精确版本，并回写本表。
@@ -83,7 +83,7 @@ npm run build          # typecheck + vite build + electron-builder（P6 启用�
 - Vite + React Router 页面骨架：登录、监控工作台、地图、任务、调度中心、基础数据、告警、审计、设置（route 清单见 design §7.1）。
 - `api/`：`apiClient` + 三个适配器；页面只依赖 `apiClient`。
 - `store/`：zustand 全局态（会话 / selection / 筛选）+ 事件订阅。
-- `map/`：React Flow（`@xyflow/react` v12，renderer 依赖）地图图层；结构、数据映射与性能护栏见 [`module-M6-map.md`](./module-M6-map.md)。**注意**：M6 尚未实现，属零迁移成本选型（D-21，待评审）。
+- `map/`：React Flow（`@xyflow/react` v12，renderer 依赖）地图图层；结构、数据映射与性能护栏见 [`module-M6-map.md`](./module-M6-map.md)。**M6 已按 D-21 落地并通过构建与测试**（实测见该文档 §1.1 与 §11.5）；D-21 的评审归属见 `docs/issues.md` ISS-017。
 
 ## 5. 数据库迁移与 seed
 
@@ -109,7 +109,8 @@ npm run build          # typecheck + vite build + electron-builder（P6 启用�
 
 | 风险 | 影响 | 缓解 |
 | --- | --- | --- |
-| `better-sqlite3` 与 Electron ABI 不匹配 | 主进程启动即崩 | P1 用 `@electron/rebuild`；浏览器 Mock 模式不受影响 |
+| `node:sqlite` 版本下限 / Electron 内置 Node 版本差异 | 主进程启动即崩 | 实测 Electron 44.3.0 内置 Node 24.20.0、开发机 Node 25.8.2 均可用；`engines.node` 已收紧为 `>=22.5`（`node:sqlite` 自 Node v22.5.0 起可用，v22.13.0 起免 `--experimental-sqlite` 标志） |
+| `node:sqlite` 在 vite-node 下无法解析（`builtinModules` 无裸名 `sqlite`） | 单元测试收集失败 | 已用 `createRequire` 惰性加载（`desktop/src/db/sqlite.ts`），并附还原条件注释 |
 | 主进程与渲染层时序（dev server 未就绪） | 白屏/加载失败 | `wait-on` 等 `5173` 就绪再启 Electron；主进程失败重试一次 |
 | 契约漂移（实现与 api.md 不一致） | 前后端联调返工 | shared 类型唯一来源 + 契约测试（api §1.1 信封逐字段） |
 | 迁移不可重入 | 二次启动失败 | 事务 + `schema_version` + seed 幂等；`db:reset` 兜底 |

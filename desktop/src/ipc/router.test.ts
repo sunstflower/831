@@ -13,7 +13,7 @@ function setup() {
   applyMigrations(db);
   seedDatabase(db);
   const sessions = new SessionStore();
-  const bus = new EventBus(db);
+  const bus = new EventBus(db, sessions);
   const router = createRouter(createApiRoutes({ db, sessions, bus }), { db, sessions });
   return { db, sessions, router };
 }
@@ -52,6 +52,45 @@ describe('ipc router', () => {
     const admin = login(db, sessions, { username: 'admin', password: 'admin123' }, 't-2');
     const allowed = await router.invoke({ path: '/api/users', token: admin.token });
     expect(allowed.code).toBe(0);
+    db.close();
+  });
+
+  it('serves /api/map/overview to all three roles (map:read is granted to each)', async () => {
+    const { db, sessions, router } = setup();
+    for (const [username, password] of [
+      ['admin', 'admin123'],
+      ['dispatcher', 'dispatcher123'],
+      ['monitor', 'monitor123']
+    ] as Array<[string, string]>) {
+      const session = login(db, sessions, { username, password }, `t-map-${username}`);
+      const result = await router.invoke({ path: '/api/map/overview', token: session.token });
+      expect(result.code, `${username} 应能读取地图`).toBe(0);
+      if (result.code === 0) {
+        expect(result.data).toMatchObject({ nodes: expect.any(Array), edges: expect.any(Array), eventSeq: 0 });
+      }
+    }
+    db.close();
+  });
+
+  it('requires a session for /api/map/overview (not public)', async () => {
+    const { db, router } = setup();
+    const result = await router.invoke({ path: '/api/map/overview' });
+    expect(result).toMatchObject({ code: 'AUTH.REQUIRED' });
+    db.close();
+  });
+
+  it('returns the seed snapshot with the same shape the renderer consumes', async () => {
+    const { db, sessions, router } = setup();
+    const admin = login(db, sessions, { username: 'admin', password: 'admin123' }, 't-shape');
+    const result = await router.invoke({ path: '/api/map/overview', token: admin.token });
+    expect(result.code).toBe(0);
+    if (result.code === 0) {
+      const data = result.data as { nodes: unknown[]; edges: unknown[]; sites: unknown[]; vehicles: unknown[] };
+      expect(data.nodes).toHaveLength(12);
+      expect(data.edges).toHaveLength(34);
+      expect(data.sites).toHaveLength(3);
+      expect(data.vehicles).toHaveLength(3);
+    }
     db.close();
   });
 
