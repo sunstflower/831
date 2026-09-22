@@ -17,7 +17,7 @@
   - `npm run build` 与 `npm test` 均已通过（详见「验证基线」）。
 - **形态**：本地优先桌面应用 —— Electron 主进程（SQLite + 领域服务 + 算法）+ React 渲染层 + 三层服务适配器（IPC / 本地 HTTP / Mock）。
 - **技术栈（`node_modules` 实测版本）**：Electron 44.3.0 · React / React-DOM 18.3.1 · **`@xyflow/react` 12.11.6（仅 renderer；见 D-21）** · react-router-dom 6.30.6 · **Vite 6.4.3（renderer 独立安装）+ Vite 5.4.21（根，Vitest 侧）** · TypeScript 5.9.3 · **Node 内置 `node:sqlite`（见 D-14，非 better-sqlite3）** · zustand 5.0.15（`@xyflow/react` 另带嵌套 zustand 4.5.7，两者并存、互不影响）· Vitest 2.1.9 · bcryptjs 2.4.3 · @testing-library/react 16.3.3 · **@testing-library/jest-dom 6.10.0** · jsdom 25.0.1 · concurrently 9.2.4 · wait-on 8.0.5；运行时 Node v25.8.2 / npm 11.11.1。
-- **仓库状态**：已完成 `git init`，当前基线提交为 **`076714e`（`docs build`）** —— 上一轮「文档统一」批次（15 个文件）已提交；历史 `29143cc` → `7dcc211` → `66fa7d2` → `3e33de7` → `121af4d` → `ab9a762` → `076714e`。当前工作区为**本轮 M2 文档批次**：9 份文档修改 + 新增 `docs/module-M2-base-data.md` + `shared/src/errors.ts`（1 行，新增 `RESTRICTION.NOT_FOUND`）。`package-lock.json` 已纳入版本控制；开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除。**未提交改动清单见 `docs/issues.md` ISS-029。**
+- **仓库状态**：已完成 `git init`，当前最新提交为本次「提交后回写」批次（`docs(issues): 提交后回写基线与 ISS-029，工作区清空`），其下为内容批次 **`84fa028`（`docs(base-data): 补 M2 模块开发文档并修两处契约缺陷`）**（10 份文件修改 + 新增 `docs/module-M2-base-data.md`）；历史 `29143cc` → `7dcc211` → `66fa7d2` → `3e33de7` → `121af4d` → `ab9a762` → `076714e` → `84fa028`（→ 本次回写提交）。**工作区已清空（0 处未提交改动）**，`ISS-029` 随之关闭（见 `docs/issues.md` §2）。`package-lock.json` 已纳入版本控制；开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除。
 - **验证基线（2026-09-22 复测；「M2 模块文档 + 契约缺陷修复」会话复跑，三端结论未变）**：
   - > 2026-09-22 复跑：`npm test` 18 套件 / 110 用例通过；`typecheck` 三 workspace exit 0；
   - > `build` 三端通过（renderer JS 394.36 kB / gzip 128.82 kB、CSS 24.45 kB / gzip 4.51 kB）；
@@ -897,7 +897,42 @@
   2. **`module-M2-base-data.md` §11 的 6 个待决项**需评审，其中 Q1（`OBJECT_TYPES` 缺 `restriction` / `task_template`）
      会影响审计写入，**M2 开工前需先定**；若扩枚举，须按 `docs/database.md` §6 规则 4 用新迁移重建 `alerts.object_type` 的 CHECK。
   3. **M1 仍无模块开发文档**（P2 阶段另一项）；若按本次标准做，可与 M2 文档一并评审。
-  4. **本次改动未提交**：工作区含 9 份文档（含 `AGENTS.md` / `README.md` / `design.md`）+ 新增 `docs/module-M2-base-data.md`
-     + `shared/src/errors.ts`（**1 行**：`RESTRICTION.NOT_FOUND`）。基线为 `076714e`（上一轮文档批次已提交）。
-     按提交纪律本条日志即提交前记录；提交时 `shared/src/errors.ts` 必须与 `docs/api.md` §2 **同批**，
-     否则会出现「文档有 code、登记处没有」（建议 commit message：`docs(base-data): 补 M2 模块开发文档并修两处契约缺陷`）。
+  4. **已提交**：`84fa028`（`docs(base-data): 补 M2 模块开发文档并修两处契约缺陷`），含 10 份文档修改
+     + 新增 `docs/module-M2-base-data.md` + `shared/src/errors.ts`（**1 行**：`RESTRICTION.NOT_FOUND`）。
+     `shared/src/errors.ts` 与 `docs/api.md` §2 **同批**提交，未出现「文档有 code、登记处没有」。
+     提交前已跑全量门禁（`npm test` 18 套件 / 110 用例 · `typecheck` 3 workspace · `build` 三端）全通过；
+     提交后工作区干净，基线由 `076714e` 推进到 `84fa028`，`ISS-029` 关闭。
+
+### 2026-09-22 — 提交 M2 文档批次并回写基线：关闭 ISS-029，工作区清空 ✅
+
+- **范围与目标**：把上一轮已按纪律记录的 M2 文档批次**落成提交**，并回写「基线提交号 / 工作区状态」两处事实，
+  关闭 `docs/issues.md` 的 `ISS-029`（工作区长期存在大量未提交改动）。**不含业务代码改动**（`shared/src/errors.ts` 仅 1 行，随上一条日志提交）。
+- **变更清单**：
+  - 提交 `84fa028`（`docs(base-data): 补 M2 模块开发文档并修两处契约缺陷`）：10 份文档修改
+    + 新增 `docs/module-M2-base-data.md` + `shared/src/errors.ts`（`RESTRICTION.NOT_FOUND`）。
+    `errors.ts` 与 `docs/api.md` §2 **同批**提交，满足 D-33「文档有 code、登记处必须有」。
+  - 本文件：**仓库状态**基线由 `076714e` → `84fa028`，并写明工作区已清空；上一条日志的「未提交」段改为「已提交」。
+  - `docs/issues.md`：`ISS-029` 状态 `待办` → `已解决（2026-09-22）`，明细块由 §1.2 迁至 §1.3，§0 总览
+    （已解决 17 → 18 / 待办 10 → 9）、§0.1 处理顺序（`ISS-029` 移出待办表）、§0.2 索引状态、两处小节标题条数、§2 已解决表 各同步一行。
+- **关键设计决策**：无新增 D 编号。本条只做**提交与状态回写**，不引入新口径。
+- **验证与测试结果（2026-09-22 复跑，提交前）**：
+  - ✅ `npm test`：**18 套件 / 110 用例全通过**（`errors.catalog.test.ts` 对文档 code 的闭环断言通过，证明同批提交未产生「有 code 无登记」）。
+  - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace exit 0。
+  - ✅ `npm run build`：三端全通；renderer `index.html` 0.42 kB + CSS 24.45 kB（gzip 4.51 kB）+ JS 394.36 kB（gzip 128.82 kB）。
+  - ✅ **文档结构自检**：14 份 Markdown、**248 个表格块**列数逐块一致、**224 个代码围栏**全部闭合。
+  - ✅ **`docs/issues.md` 闭环**：38 条索引 ↔ 38 条明细 ↔ 38 个锚点，悬空 0 / 未用 0；严重度 5 P1 + 24 P2 + 9 P3 = 38。
+  - ✅ **错误码闭环**：`ERROR_CODES` 125 条唯一；`docs/api.md` §2.1 = 35 行 / §2.2 = 90 行，**0 处未登记**。
+  - ✅ 提交后 `git status --porcelain` 输出为空（工作区干净）。
+- **遇到的困难与解决方案**：
+  1. **「已解决」的状态回写比修问题本身更容易漏**：`ISS-029` 的现象段里写着「工作区有未提交改动」，
+     提交后这句话就变成了**新的漂移**（文档说没提交、实际已提交）。故本条把「回写状态」与「提交」视为同一步，
+     一次性改完 §0 计数 / §0.1 顺序 / §0.2 索引 / 小节标题 / §2 表 五处派生引用 —— 正是 `ISS-033` 踩过的
+     「只改定义处、不回扫派生引用」的坑。
+  2. **`ISS-029` 的迁移会让 P2 小节少一条**：把明细块移到 §1.3 后，§1.2 的标题「本节 19 条」会失真，
+     已一并改为 18 条并列出移出的 6 条已解决 P2，避免「标题条数 ≠ 实际条数」再次发生（`ISS-032` 同类问题）。
+- **遗留问题与下一步**：
+  1. **`ISS-017` / `ISS-018` 仍待评审**（12 项决策 + `data-interfaces.md` §12 的 Q1-Q16），
+     与 `docs/module-M2-base-data.md` §11 的 6 个待决项建议**合并成一次评审**；其中 Q1（`OBJECT_TYPES`
+     缺 `restriction` / `task_template`）是 **M2 开工前必须先定**的项。
+  2. **M1 仍无模块开发文档**（P2 阶段另一项）。
+  3. 下一步业务代码：按 `docs/build-plan.md` §6 的 P2 顺序落地 M1 → M2；开工前先清 Q1。
