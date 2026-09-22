@@ -32,6 +32,7 @@ export const ERROR_CODES = {
   'NODE.NOT_FOUND': { source: 'business', message: '路网节点不存在（导入时指引用的节点编码无法解析）', httpStatus: 404 },
   'EDGE.NOT_FOUND': { source: 'business', message: '路网边不存在（导入时指引用的边无法解析）', httpStatus: 404 },
   'TEMPLATE.NOT_FOUND': { source: 'business', message: '任务模板不存在', httpStatus: 404 },
+  'RESTRICTION.NOT_FOUND': { source: 'business', message: '禁行规则不存在', httpStatus: 404 },
   'BASE.CODE_EXISTS': { source: 'business', message: '编码已存在', httpStatus: 409 },
   'BASE.NODE_IN_USE': { source: 'business', message: '节点被边或站点引用，禁止禁用或删除', httpStatus: 409 },
   'TASK.NOT_FOUND': { source: 'business', message: '任务不存在', httpStatus: 404 },

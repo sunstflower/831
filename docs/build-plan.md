@@ -119,7 +119,7 @@ npm run build          # shared/desktop（tsc）+ renderer（vite build）；打
 | 阶段 | 任务 | 验收命令 | 期望 |
 | --- | --- | --- | --- |
 | P1 地基 | workspaces + shared + desktop/renderer 骨架 + 迁移/seed | `npm run dev:electron` | 窗口打开、`/api/health` 返回 `db:true`；库文件生成 |
-| P2 认证与主数据 | M1 + M2（服务/UI/审计/权限） | `npm test` + 手工走查 | 三角色登录；站点/车辆/路网 CRUD；审计可查 |
+| P2 认证与主数据 | M1 + M2（服务/UI/审计/权限；M2 口径见 [`module-M2-base-data.md`](./module-M2-base-data.md)） | `npm test` + 手工走查 | 三角色登录；站点/车辆/路网 CRUD；审计可查 |
 | P3 任务与地图 | M3 状态机 + M6 静态图层联动 | `npm test` + 手工走查 | 任务创建/提交；地图与列表联动 |
 | P4 算法内核 | M4（按 `module-M4-dispatch.md`）+ M5 + 模拟执行器 | `npm test` | U1-U11 / S1-S8 绿；preview→apply→start 主线通 |
 | P5 监控告警 | M7 + M8 + 事件推送 | `npm test` + 手工走查 | 异常→告警→接管闭环 |

@@ -11,18 +11,22 @@
 
 - **项目**：无人物流调度管理软件（`/Users/sunsetflower/myJobs/js/831`）。
 - **阶段**：**P1 地基已通 + M6 地图已实现（三层链路端到端可跑）**。代码已落地三端：
-  - `shared/`：枚举 · 类型（含 `MapOverview` 系列快照契约）· **错误目录 `ERROR_CODES` 124 条**（34 运行时 + 90 导入域；**唯一登记处**，见 D-33）· 常量（含 `SEED_IDS` 演示任务/路线/告警）。
+  - `shared/`：枚举 · 类型（含 `MapOverview` 系列快照契约）· **错误目录 `ERROR_CODES` 125 条**（35 运行时 + 90 导入域；**唯一登记处**，见 D-33）· 常量（含 `SEED_IDS` 演示任务/路线/告警）。
   - `desktop/`：`node:sqlite` 连接（`createRequire` 惰性加载，见下）· 迁移 · seed（含演示执行数据）· IPC Router · 会话 · 审计 · **事件总线（按会话权限过滤，D-32）** · **8 条接口**：health / auth.login / auth.logout / auth.session / settings / settings.schema / users / **map.overview**；新增 `repositories/map.repo.ts`（快照读取层）。
   - `renderer/`：**已补齐入口与全部业务代码** —— `src/main.tsx`（HashRouter，Electron `file://` 必需）、三层适配器（mock / ipc / http）、zustand store（session / selection）、路由与页面（登录 / 工作台 / 地图 / 其余 7 个占位页）、**React Flow 地图**（`map/` 下 model / nodes / edges / hooks / stage / style 全套）。
   - `npm run build` 与 `npm test` 均已通过（详见「验证基线」）。
 - **形态**：本地优先桌面应用 —— Electron 主进程（SQLite + 领域服务 + 算法）+ React 渲染层 + 三层服务适配器（IPC / 本地 HTTP / Mock）。
 - **技术栈（`node_modules` 实测版本）**：Electron 44.3.0 · React / React-DOM 18.3.1 · **`@xyflow/react` 12.11.6（仅 renderer；见 D-21）** · react-router-dom 6.30.6 · **Vite 6.4.3（renderer 独立安装）+ Vite 5.4.21（根，Vitest 侧）** · TypeScript 5.9.3 · **Node 内置 `node:sqlite`（见 D-14，非 better-sqlite3）** · zustand 5.0.15（`@xyflow/react` 另带嵌套 zustand 4.5.7，两者并存、互不影响）· Vitest 2.1.9 · bcryptjs 2.4.3 · @testing-library/react 16.3.3 · **@testing-library/jest-dom 6.10.0** · jsdom 25.0.1 · concurrently 9.2.4 · wait-on 8.0.5；运行时 Node v25.8.2 / npm 11.11.1。
-- **仓库状态**：已完成 `git init`，当前基线提交为 `ab9a762`（`fix(desktop): 事件总线按会话权限过滤…`；历史 `29143cc` → `7dcc211` → `66fa7d2` → `3e33de7` → `121af4d` → `ab9a762`）；工作区有多份未提交改动（13 份文档 + `.env.example` + `shared/src/errors.ts` + `package.json`）；`package-lock.json` 已纳入版本控制。开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除。**未提交改动清单见 `docs/issues.md` ISS-029。**
-- **验证基线（2026-09-21 复测；P1 收口会话建立，「文档统一」会话复跑门禁，三端结论未变）**：
+- **仓库状态**：已完成 `git init`，当前基线提交为 **`076714e`（`docs build`）** —— 上一轮「文档统一」批次（15 个文件）已提交；历史 `29143cc` → `7dcc211` → `66fa7d2` → `3e33de7` → `121af4d` → `ab9a762` → `076714e`。当前工作区为**本轮 M2 文档批次**：9 份文档修改 + 新增 `docs/module-M2-base-data.md` + `shared/src/errors.ts`（1 行，新增 `RESTRICTION.NOT_FOUND`）。`package-lock.json` 已纳入版本控制；开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除。**未提交改动清单见 `docs/issues.md` ISS-029。**
+- **验证基线（2026-09-22 复测；「M2 模块文档 + 契约缺陷修复」会话复跑，三端结论未变）**：
+  - > 2026-09-22 复跑：`npm test` 18 套件 / 110 用例通过；`typecheck` 三 workspace exit 0；
+  - > `build` 三端通过（renderer JS 394.36 kB / gzip 128.82 kB、CSS 24.45 kB / gzip 4.51 kB）；
+  - > `ERROR_CODES` 125 条唯一（35 运行时 + 90 导入域）；文档结构自检 14 份 Markdown / 248 表格块 / 224 围栏全通过。
+  - > 下列逐项为 2026-09-21 的实测明细，本轮未改动代码，故未重跑 `db:*` 与 Electron 端到端。
   - ✅ `npm test`：**18 个套件 / 110 个用例全通过**（本轮新增 `errors.catalog.test.ts` 5 条、`event-bus.test.ts` 8 条、`mock-parity.test.ts` 3 条）。
   - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace 全部 exit 0。
-  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 0.42 kB + CSS 24.45 kB（gzip 4.51 kB）+ JS 394.11 kB（gzip 128.75 kB）。
-  - ✅ 错误码闭环：`ERROR_CODES` **124 条唯一**；`docs/api.md` 与 `docs/data-interfaces.md` 中出现的 code **0 处未登记**（由 `errors.catalog.test.ts` 持续断言）。
+  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 0.42 kB + CSS 24.45 kB（gzip 4.51 kB）+ JS 394.36 kB（gzip 128.82 kB）。
+  - ✅ 错误码闭环：`ERROR_CODES` **125 条唯一**；`docs/api.md` 与 `docs/data-interfaces.md` 中出现的 code **0 处未登记**（由 `errors.catalog.test.ts` 持续断言）。
   - ✅ 权限过滤行为（单测覆盖）：未登录窗口收到 0 条登记过权限的事件；monitor 只收到 `alert.created`；dispatcher 收到 task/vehicle/alert；`map.updated` 仍放行；`event_log` 照写不误。
   - ✅ **`npm run dev` / `npm run dev:electron` 干净检出可启动**（2026-09-21 修 ISS-034）：两个脚本已前置
     `build:shared`（`dev:electron` 另加 `build:desktop`），不再要求 `dist/` 预先存在。实测：删掉 `shared/dist`
@@ -49,7 +53,7 @@
 
 | 位置 | 已有内容 | 缺口 |
 | --- | --- | --- |
-| `shared/src/` | `enums.ts`（角色/状态/优先级/错误原因/20 个权限点 + `ROLE_PERMISSIONS`）、`types.ts`（信封、分页、DTO、调度预览类型、**`MapOverview` 快照契约 8 个接口**）、`errors.ts`（**124 条**：34 运行时 + 90 导入域；**唯一登记处**，D-33。含 `DomainError`/`ok`/`fail`/`fromError`）、`errors.catalog.test.ts`（命名/severity/文档闭环断言）、`constants.ts`（`APP_NAME`、分页默认、`DISPATCH_COST_WEIGHTS`、`MIN_BATTERY_PERCENT`、`SEED_ACCOUNTS`/`SEED_IDS`（含演示任务/路线/告警 id）、`SETTINGS_SCHEMA` 9 项） | 业务实体完整模型（task/site/vehicle 的 CRUD DTO）、`DispatchSnapshot` 等算法类型、M2 之后模块的 DTO |
+| `shared/src/` | `enums.ts`（角色/状态/优先级/错误原因/20 个权限点 + `ROLE_PERMISSIONS`）、`types.ts`（信封、分页、DTO、调度预览类型、**`MapOverview` 快照契约 8 个接口**）、`errors.ts`（**125 条**：35 运行时 + 90 导入域；**唯一登记处**，D-33。含 `DomainError`/`ok`/`fail`/`fromError`）、`errors.catalog.test.ts`（命名/severity/文档闭环断言）、`constants.ts`（`APP_NAME`、分页默认、`DISPATCH_COST_WEIGHTS`、`MIN_BATTERY_PERCENT`、`SEED_ACCOUNTS`/`SEED_IDS`（含演示任务/路线/告警 id）、`SETTINGS_SCHEMA` 9 项） | 业务实体完整模型（task/site/vehicle 的 CRUD DTO）、`DispatchSnapshot` 等算法类型、M2 之后模块的 DTO |
 | `desktop/src/db/` | `index.ts`（`DatabaseSync` 连接、WAL/外键/busy_timeout、`run`/`get`/`all`/`tx`、`defaultDbPath`）、**`sqlite.ts`（`createRequire` 惰性加载 `node:sqlite`，规避 vite-node 解析缺陷）**、`migrate.ts`（按序单事务 + `schema_version` 幂等）、`seed.ts`（4×3 路网 12 节点/34 边、3 站点、3 车辆、2 模板、3 账号、9 设置、**1 演示任务 + 1 路线 + 1 告警，并把 AGV-01 置忙**）、`repositories/`（users / settings / audit / **map**） | M2/M3/M4/M5/M7/M8 各模块 Repository；seed 的 `restrictions`/`vehicle_tracks` 仍为空 |
 | `desktop/src/ipc/` | `router.ts`（注册表 + 鉴权/权限前置 + `traceId` + 统一信封兜底）、`api.ts`（**8 条路由**，`/api/health`、`/api/auth/login` 为 public） | 其余 M2-M10 接口；分页/参数校验工具仍内联在 `api.ts` |
 | `desktop/src/services/` | `auth.ts`（登录/锁定策略）、`password.ts`（bcryptjs）、`session.ts`（内存会话）、`audit.ts`（审计写入）、`event-bus.ts`（**按会话权限过滤后**推送领域事件，D-32；含 `EVENT_PERMISSIONS`）、`event-bus.test.ts` | 领域服务层（任务/调度/路线/告警/监控）整体未开工；**无持续产生 `vehicle.changed` 的执行器**（故车辆静止） |
@@ -155,6 +159,7 @@
 | D-32 | `EventBus` **按会话权限过滤后再推送**（deny-by-default），事件落 `event_log` 不受过滤影响；`EVENT_PERMISSIONS` 显式登记「事件类型 → 所需权限点」，未登记的类型视为公开；窗口在 `attach` 时绑定会话、登录/登出经 `bindSession` 升降权；`EventBus` 构造器要求 `sessions` 必填 | D-08 定了「权限双轨制」，但事件通道此前是**绕过接口层强制校验的旁路**：`emit()` 对全部 `webContents` 无条件群发，第二个窗口就能收到与其角色无关的业务对象事件（ISS-009）。deny-by-default 而非 allow-by-default，是因为漏登记一个新事件的后果（收不到）远比漏过滤一个敏感事件的后果（越权）轻。见 `desktop/src/services/event-bus.ts` | 已定 |
 | D-33 | 错误码**唯一登记处**为 `shared/src/errors.ts` 的 `ERROR_CODES`；命名统一为 **`域.原因`** 两段式（对应 Google AIP-193 `ErrorInfo` 的 `domain`+`reason`），域按**业务概念**而非「文件来源」划分；**同一概念只允许一个 code**；`severity`（error/warning/info）是单次问题出现的属性、不是 code 的身份，故同一 code 可在不同调用点有不同 severity（如 `GRAPH.EMPTY` 导入预检 warning、调度预览 error） | 项目曾同时存在两套目录（34 条 vs 97 条，**零重叠**），两份文档各自声称「唯一登记处」，同一概念两个名字（`GRAPH.EMPTY` vs `MAP.EMPTY_GRAPH`）。前端按 code 做文案映射，两套 key 会直接打挂本地化（ISS-001）。AIP-193 明确：同一个 `(reason, domain)` 对**必须**用于同一个错误、且**不得**用于不同错误 —— 即「概念唯一」优先于「文件族前缀统一」。合并后 123 条（34 运行时 + 89 导入域；后续按同一登记处继续增加，**当前条数以 `docs/api.md` §2 为准**），并以 `shared/src/errors.catalog.test.ts` 把该规定变成可执行断言（文档里出现未登记 code 会 `npm test` 失败） | 已定 |
 | D-34 | **文档事实单一来源（SSOT）**：`docs/api.md` §0 用一张表把每个易漂移事实指派给**唯一负责文档**（错误码→`shared/src/errors.ts`、接口/事件→`docs/api.md`、DDL→`docs/database.md`、`Req-*`/状态机→`design.md`、导入字段契约→`docs/data-interfaces.md`、脚本/验收→`docs/build-plan.md`、问题→`docs/issues.md`、决策→`AGENTS.md`、索引→`README.md`），其余文档**只能引用 §号、不得复述数值**；每份文档抬头用「**文档边界**」一行自声明其负责范围 | 历史上同一事实最多有**三种写法**（ISS-032：迁移目录、seed 规模、适配器默认值等 12 处），根因不是「写错了」而是**多处各写一份**——同一天在不同文档里写对、也同时写错。单点纠正只能修一次，指派唯一来源才能防复发。这与 D-33（错误码只改一处）是同一原则在不同层面的应用：**每个事实只有一个作者**，其余都是读者。见 `docs/api.md` §0 | 已定 |
+| D-35 | `edges` 新增业务 `code` 列（`TEXT NOT NULL UNIQUE`）作为 D-18 引用的**持久键**：缺省按两端节点 code 推导 `E_<fromCode>_<toCode>`，反向边加 `_R`；`/api/edges` 暴露并支持按 `code` 查询，`code` 创建后不可改。**文件内 `edge_id` 字段语义 = 边的 `code`**（导入器解析为内部 `id` 后落库，如 `sites.edge_id` 列存 id）；库内 JSON 列（`routes.edge_ids`）继续存 **id**，与 `routes.node_ids` 保持一致 | `docs/data-interfaces.md` §4.2/§4.3 要求「文件内一律用 code 引用」（D-18），且样本 `campus_edges.csv` 的 `edge_id` 列映射为 `edges[].code`；`sites.onEdgeCode` / `obstacles.affectsEdgeCodes[]` / `codeOfReverse` / `restrictions` 目标都指向 `edges[].code`。但 `nodes`/`sites`/`vehicles`/`task_templates`/`tasks` **都有 code 列，唯独 `edges` 没有** —— 契约要求一个无处落库的键，`merge` 模式的「库内解析」也无从实现（只能靠 `(from_node_id,to_node_id)` 反推，与文件里的 `code` 无法互相校验）。落库随 `0002_data_import.sql`（加列 + 按 `E_<from>_<to>` 回填既有行），列建议见 `docs/data-interfaces.md` §10。见 `docs/module-M2-base-data.md` §8 | 待评审 |
 
 ## 困难与问题记录
 
@@ -210,6 +215,9 @@
 | 2026-09-21 | `docs/data-interfaces.md` §5.9 把 `[D]` 级占比写成「218 个 / 60.6%」，被当作**车辆文件**的统计 | 218 是 `5_数据校验/数据可信级别.csv` 的**全表行数**，覆盖 `vehicle_params.yaml`(129) + `dispatch_constraints.yaml`(89) **两份**文件 | **已修正**：拆成两列（车辆文件 129 / 样本合计 218），并把「预检报告只报本文件口径」写进契约。教训：**引用汇总表时要先确认它的 `WHERE` 条件**——口径错在文档里表现为「数字没错、含义错了」，比数值错更难发现 |
 | 2026-09-21 | `campus.add.xml` 与错误码 `MAP.OBSTACLES_UNAVAILABLE` 引入后，`ERROR_CODES` 已是 124 条，但多处仍写 123 条 | 条数是「派生事实」：它随登记处变化，却被抄进了快照、验证基线、代码地图、SSOT 表与架构图 | **已修正为 124 条**，并在 `docs/api.md` §2 声明「**条数不在此处固化**」、其它文档改引 §2。与 ISS-032 同类，但这次漂移在**同一文档内部**（定义处改了、引用处没跟上） |
 | 2026-09-21 | 为 `campus.add.xml` 插入用例时占用了已存在的编号，§11.3 出现两条 `M17` | 插入时只看「最后一条是 M20」，没检查想用的号是否已被占用 | **已修正**：新用例编 `M17`，其余顺延为 `M18…M21`。教训：**编号是唯一键，插入前必须 `rg` 全表**——重复编号会让「M17 失败」指向两个用例 |
+| 2026-09-22 | `PATCH /api/vehicles/{id}/status` 的文档取值 `enabled` **不在车辆状态枚举里**，按契约实现会写库失败 | 该段从 `sites` 的启停写法复制而来（`sites`/`nodes`/`edges` 确有 `enabled`），而车辆 7 态没有这个取值；同段落还把「更新基础属性」写成可含 `status` | 改为 `disabled` / `idle`，显式声明「车辆域没有 `enabled`」、占用中停用被拒、`PUT` 不含 `status`。**教训：任何数值/结构清单都查不出这类错 —— 只有把契约与 `enums.ts` / DDL 的 CHECK 逐项对表才会暴露** · 出处：`docs/api.md` §3.2.2（ISS-036） |
+| 2026-09-22 | 差点把「尚未落地」的 `edges.code` 列写进 `docs/database.md` §2 的 `0001_init.sql` DDL | 该节声明与迁移文件一致；我为了记录 D-35 直接改了 DDL，等于宣称该列已存在 | 回滚，改为在 §6 的 `0002_data_import.sql` 登记行注明，并在 `design.md` §6.2 用「**待加列**」区分现有与目标。**教训：新增「尚未实现」的内容时，版式上必须与「已实现」可区分，否则文档会骗人** · 出处：`docs/database.md` §2/§6 · `design.md` §6.2（D-35） |
+| 2026-09-22 | `docs/issues.md` §0.2 的 **37 条索引链接渲染后全部点不动**（源码里看不出异常） | 只写了 `](#iss037)`，但从未写入对应的 `<a id="iss037">`；明细标题渲染出的锚点是 `iss-037-标题…` 形态 | 每条标题前补 `<a id="iss0xx">`（38 个），锚点 ↔ 链接 ↔ 明细三者闭环。**教训：结构自检的覆盖面本身就是风险 —— 之前只查列数/围栏/编号，漏了链接可解析性，已补进脚本** · 出处：`docs/issues.md`（ISS-038） |
 
 ## 工作日志
 
@@ -823,3 +831,73 @@
   3. **`ISS-009`（EventBus 权限过滤）** 属安全边界，建议不等到 M8，提前排期。
   4. 四条**文档过期**（`ISS-003`…`ISS-006`）改动小、收益直接，可随手清掉。
   5. 本条目**未提交**；按纪律，提交时须一并把 `issues.md` 的状态与本条引用关系对齐。
+
+### 2026-09-22 — 为 P2 阶段开工补齐 M2 模块文档；修车辆状态取值缺陷与 issues 索引锚点，暴露 `edges` 缺业务键（ISS-035/036/037/038）✅
+
+- **范围与目标**：`docs/build-plan.md` §6 的 **P2 阶段第一项是「M1 + M2」**，但 `docs/` 下只有 M4 / M6 两份模块开发文档，
+  M2 的口径散落在三份文档里，开工前需自行拼装。本次以「**按规范进行文档内容的修改和补充，为业务代码的实现做准备**」为目标：
+  补齐 M2 模块开发文档，并把编写过程中暴露的**契约缺陷**修掉。**不含业务代码改动**。
+- **变更清单**：
+  - **新增 [`docs/module-M2-base-data.md`](./docs/module-M2-base-data.md)**（310 行，按 `module-M4-dispatch.md` 的格式）：
+    模块定位与边界（明确**不负责**什么）、代码结构规划（`desktop/src/domain/base/` 五个服务 + Repository 划分）、
+    服务契约与事务边界（「读旧值→校验→写表→写审计」，事件与告警评估放**事务提交后**）、
+    **13 级固定校验顺序**、软删与 `BASE.NODE_IN_USE` 的判定范围、审计动作命名（`module=base`）、
+    错误映射表、B1-B16 测试清单、6 步 DoD、6 个待决项（§11）。
+  - **修复 `docs/api.md` §3.2.2（ISS-036）**：`PATCH /api/vehicles/{id}/status` 原写 `{ "status": "disabled" / "enabled" }`，
+    但车辆 7 态枚举**没有 `enabled`**（那是 `sites`/`nodes`/`edges` 的取值）→ 改为 `disabled`（软删）/ `idle`（启用），
+    并写明「车辆域没有 `enabled`」、占用中停用 → `VEHICLE.STATE_CONFLICT`、`PUT /api/vehicles/{id}` **不含 `status`**。
+  - **补登 `RESTRICTION.NOT_FOUND`**：`PUT`/`DELETE /api/restrictions/{id}` 此前没有可用的「不存在」错误码。
+    按 D-33 先写 `shared/src/errors.ts`（**唯一登记处**）→ `docs/api.md` §2.1 → 被 `module-M2-base-data.md` §8 引用。
+    `ERROR_CODES` **124 → 125 条**（35 运行时 + 90 导入域）。
+  - **新增 D-35（`edges` 业务键）**：见下「关键设计决策」。
+  - **`design.md` §4.2 补「车辆状态迁移（M2 拥有的部分）」表**：只列 M2 真正拥有的 `idle ↔ disabled` 两条，
+    并标注 `charging`/`offline`/`fault` 仍待 M7（ISS-016）。
+  - **`docs/issues.md` 索引锚点修复（ISS-038）**：全部 37 条索引链接**渲染后 0 条可跳转**（缺 `<a id="iss0xx">`），
+    已补 38 个显式锚点；并把「锚点可解析」加入结构自检。这是**静默失效**：Markdown 源码看不出问题，
+    历次「列数 / 围栏 / 编号」自检都抓不到。
+  - **索引与口径同步**：`README.md` 文档入口补 M2 文档；`docs/build-plan.md` §6 的 P2 行指向 M2 文档；
+    `docs/architecture.md` 车辆状态机图补 `disabled → idle`、把「M2 与 M7 落地时补写」改为「M2 已定稿、其余待 M7」；
+    `docs/database.md` §6 的 `0002_data_import.sql` 登记行补 `edges.code`；`docs/data-interfaces.md` §10 变更表补 `code` 列；
+    `AGENTS.md`「项目快照 / 代码现状地图 / 验证基线」的错误码条数同步为 125。
+- **关键设计决策**：新增 **D-35**（状态 `待评审`，并入 ISS-017 评审批次，**未改代码**）：
+  `edges` 新增业务 `code` 列（`TEXT NOT NULL UNIQUE`，缺省 `E_<fromCode>_<toCode>`，反向边加 `_R`），
+  作为 D-18「文件内一律用 code 引用」的**持久键**；**文件内 `edge_id` 字段语义 = 边的 `code`**，
+  而库内 JSON 列（`routes.edge_ids`）继续存 **id**（与 `routes.node_ids` 一致）。
+  理由：契约有四处指向 `edges[].code`（`sites.onEdgeCode` / `obstacles.affectsEdgeCodes[]` / `codeOfReverse` / 禁行边目标），
+  且样本 `campus_edges.csv` 的 `edge_id` 列就是它 —— 而 `nodes`/`sites`/`vehicles`/`task_templates`/`tasks` **都有 code 列，唯独 `edges` 没有**。
+  契约要求一个无处落库的键：`merge` 模式的「库内解析」无从实现，反向边 `_R` 约定也无法持久化。
+  同时明确**区分**两个此前含混的概念：文件里的 `edge_id`（= code）与库内 `routes.edge_ids`（= id）。
+- **验证与测试结果（2026-09-22 实测）**：
+  - ✅ `npm test`：**18 个套件 / 110 个用例全通过**（新增的 `RESTRICTION.NOT_FOUND` 未破坏 `errors.catalog.test.ts` 的闭环断言）。
+  - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace exit 0。
+  - ✅ `npm run build`：三端全通；renderer 产物 JS 394.36 kB（gzip 128.82 kB）+ CSS 24.45 kB（gzip 4.51 kB）。
+  - ✅ **错误码闭环**：`ERROR_CODES` **125 条唯一**（脚本核 125 == 35 + 90）；`docs/api.md` §2.1/§2.2 行数 35 / 90，
+    与 §2 抬头「125 条（35 运行时 + 90 导入域）」一致；`docs/api.md` / `docs/data-interfaces.md` 中出现的 code **0 处未登记**。
+  - ✅ **文档结构自检**：14 份 Markdown（原 13 份 + 本轮新增 M2 文档），**248 个表格块**列数逐块一致（0 处不一致）、**224 个代码围栏**全部闭合。
+  - ✅ **`docs/issues.md` 闭环**：38 条索引 ↔ 38 条明细 ↔ 38 个锚点，**重复 0 / 悬空 0 / 未用 0**；
+    严重度 5 P1 + 24 P2 + 9 P3 = 38；状态合计 38；§2 已解决表 33 行。
+  - ✅ **悬空路径扫描**：6 条命中均为**故意保留的历史提及**（`desktop/db/seed.ts` ×3、`shared/i18n/dispatch.ts` ×3，
+    出现在「错误写法 → 实为」的对照里），非新增漂移。
+- **遇到的困难与解决方案**：
+  1. **「文档里写了一个不存在的东西」比「数字写错」更难发现**：`enabled` 那处（ISS-036）单个词，
+     但它会让 M2 的车辆启停按契约实现后**写库必失败**。这类缺陷的任何数值清单都查不出来 ——
+     只有把文档逐条与 `shared/src/enums.ts`、`0001_init.sql` 的 CHECK 对照才会暴露。
+     结论：写模块文档时**必须把契约与枚举/DDL 逐项对表**，这是本次唯一发现该缺陷的方式。
+  2. **差点制造新的漂移**：为记录 D-35 我一度把 `code` 列直接加进 `docs/database.md` §2 的 `0001_init.sql` DDL ——
+     但该节声明「与 `0001_init.sql` 一致」，写了就等于宣称该列已存在。已回滚，改为在 §6 的 `0002_data_import.sql`
+     登记行里注明，并在 `design.md` §6.2 用「**待加列**」显式区分「现有」与「目标」。
+     教训：**新增「尚未实现」的东西时，必须与「已实现」在版式上可区分**，否则文档会骗人。
+  3. **索引锚点是静默失效**：`](#iss037)` 在 Markdown 源码里完全正常，只有渲染后才知道点不动。
+     我是在登记 ISS-037 时顺手验证锚点才发现的 —— 说明**结构自检的覆盖面本身就是一种风险**：
+     之前只查列数/围栏/编号唯一性，就漏掉了链接可解析性。已把该项补进自检。
+  4. **拿不准「M2 文档是否算新设计」**：`design.md` 是 `Req-*` 与状态机的唯一来源（D-34），
+     所以车辆那两条迁移必须写回 `design.md` §4.2，不能只在模块文档里定；模块文档只承载**实现口径**。
+- **遗留问题与下一步**：
+  1. **D-35 待评审**（并入 ISS-017，现为 12 项）；通过后随 `0002_data_import.sql` 加列与回填，届时需重跑全量测试。
+  2. **`module-M2-base-data.md` §11 的 6 个待决项**需评审，其中 Q1（`OBJECT_TYPES` 缺 `restriction` / `task_template`）
+     会影响审计写入，**M2 开工前需先定**；若扩枚举，须按 `docs/database.md` §6 规则 4 用新迁移重建 `alerts.object_type` 的 CHECK。
+  3. **M1 仍无模块开发文档**（P2 阶段另一项）；若按本次标准做，可与 M2 文档一并评审。
+  4. **本次改动未提交**：工作区含 9 份文档（含 `AGENTS.md` / `README.md` / `design.md`）+ 新增 `docs/module-M2-base-data.md`
+     + `shared/src/errors.ts`（**1 行**：`RESTRICTION.NOT_FOUND`）。基线为 `076714e`（上一轮文档批次已提交）。
+     按提交纪律本条日志即提交前记录；提交时 `shared/src/errors.ts` 必须与 `docs/api.md` §2 **同批**，
+     否则会出现「文档有 code、登记处没有」（建议 commit message：`docs(base-data): 补 M2 模块开发文档并修两处契约缺陷`）。

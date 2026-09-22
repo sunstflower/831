@@ -1755,7 +1755,7 @@ stateDiagram-v2
 | `orders` | `priority` 存内部枚举（`normal`/`high`/`urgent`），**同时保存原始 `priority_raw`** | §3.4（映射可复核，映射表变了能回溯） |
 | `road_types`（新） | `code`、`speed_kmh`、`num_lanes`、`priority` | §4.1.2（3 种道路类型） |
 | `nodes` | 新增 `node_type`（`traffic_light` / `priority`） | §4.3 |
-| `edges` | 新增 `road_type`、`num_lanes`、`priority` | §4.3 |
+| `edges` | 新增 `code`（**业务键**，`TEXT NOT NULL UNIQUE`；缺省 `E_<fromCode>_<toCode>`，反向边加 `_R`）、`road_type`、`num_lanes`、`priority` | §4.3 / D-35（§4.2「文件内一律用 code 引用」此前对边无列可落） |
 | `sites` | 新增 `edge_id`、`lane_id`、`berth_start_pos_m`、`berth_end_pos_m`、`berth_length_m`、`berth_capacity`、`category`；`node_id` **改为可空** | §4.7（站点绑定到边） |
 | `obstacles`（新） | `code`、`type`、`shape_json`、`is_routable`、`affects_edge_ids`(JSON) | §4.1.3 |
 | `vehicle_type_params`（新） | 车型 38 字段 + `config_version`、`source_batch_id` | §5.3 |

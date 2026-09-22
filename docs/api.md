@@ -113,8 +113,8 @@
 
 > **全项目唯一登记处**：`shared/src/errors.ts` 的 `ERROR_CODES`（实现即契约）。
 > 本表由该文件与 `shared/src/errors.catalog.test.ts` 的断言共同锁定 —— 文档里出现未登记的 code 会导致 `npm test` 失败。
-> **条数不在此处固化**（易漂移）：实时值 = `Object.keys(ERROR_CODES).length`，当前为 **124 条
-> （34 运行时 + 90 导入域）**；其它文档引用条数时请改引「本文 §2」，不要各自复述（D-34）。
+> **条数不在此处固化**（易漂移）：实时值 = `Object.keys(ERROR_CODES).length`，当前为 **125 条
+> （35 运行时 + 90 导入域）**；其它文档引用条数时请改引「本文 §2」，不要各自复述（D-34）。
 > 数据文件导入域的 code（`IMPORT.*` / `ORDER.*` / `MAP.*` / `VEHICLE.*` / `ALGO.*` / `SCENARIO.*`）见 §2.2。
 
 ### 2.1 运行时业务错误码
@@ -152,6 +152,7 @@
 | `TEMPLATE.NOT_FOUND` | business | 任务模板不存在 | 404 |
 | `BASE.CODE_EXISTS` | business | 编码已存在 | 409 |
 | `BASE.NODE_IN_USE` | business | 节点被边或站点引用，禁止禁用或删除 | 409 |
+| `RESTRICTION.NOT_FOUND` | business | 禁行规则不存在 | 404 |
 
 **任务**
 
@@ -406,10 +407,10 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 | `GET /api/vehicles` | query：`keyword/status/type/page/pageSize` |
 | `GET /api/vehicles/{id}` | 详情 |
 | `POST /api/vehicles` | 创建：`code/name/type/capacityKg/maxSpeedMps/x/y/battery` |
-| `PUT /api/vehicles/{id}` | 更新基础属性 |
-| `PATCH /api/vehicles/{id}/status` | `{ "status": "disabled" / "enabled" }`（二选一）；调度占用中禁止置 disabled → `VEHICLE.STATE_CONFLICT` |
+| `PUT /api/vehicles/{id}` | 更新基础属性（**不含 `status`**） |
+| `PATCH /api/vehicles/{id}/status` | `{ "status": "disabled" }` 停用（D-07 软删）或 `{ "status": "idle" }` 启用（恢复）。取值必须是 §1.5 车辆状态枚举的成员 —— **车辆域没有 `enabled`**（与 `sites` 不同）；调度占用中（`reserved`/`busy`）停用被拒 → `VEHICLE.STATE_CONFLICT` |
 
-说明：`offline/fault/charging` 等运行态状态由执行器/心跳更新，管理接口不直接改。
+说明：`offline/fault/charging` 等运行态状态由执行器/心跳更新，管理接口不直接改；`online`（心跳标志）同样不由本接口维护。启用（`disabled → idle`）的目标状态固定为 `idle`，完整迁移表见 `design.md` §4.2。
 
 #### 3.2.3 路网节点 nodes
 
@@ -425,10 +426,10 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 
 | 方法/路径 | 说明 |
 | --- | --- |
-| `GET /api/edges` | query：`fromNodeId/toNodeId/status/page/pageSize` |
+| `GET /api/edges` | query：`code/fromNodeId/toNodeId/status/page/pageSize`；记录含 `code` |
 | `GET /api/edges/{id}` | 详情 |
-| `POST /api/edges` | `fromNodeId/toNodeId/lengthM?/speedLimitMps?/remark?`；`lengthM` 缺省按坐标欧氏距离自动计算；重复方向对拒绝 |
-| `PUT /api/edges/{id}` | 更新 |
+| `POST /api/edges` | `code?/fromNodeId/toNodeId/lengthM?/speedLimitMps?/remark?`；`code` 缺省按两端节点 `code` 生成 `E_<from>_<to>`，唯一（见 `docs/data-interfaces.md` §4.3、D-35）；`lengthM` 缺省按坐标欧氏距离自动计算；重复方向对拒绝 |
+| `PUT /api/edges/{id}` | 更新（`code` 不可改） |
 | `PATCH /api/edges/{id}/status` | 封路（`disabled`）会触发相关任务告警评估 |
 
 #### 3.2.5 禁行规则 restrictions

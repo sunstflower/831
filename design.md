@@ -355,6 +355,22 @@ interface DomainError {
 
 **验收**：主数据可持久化并可随时查询；新增禁行规则后重新调度/规划路径会规避该边/节点。
 
+**车辆状态迁移（M2 拥有的部分）**：
+
+车辆 7 态中，本模块**只拥有**下表两条迁移；其余由 M4（计划流转）与 M7（运行态心跳）推进，本模块不得代写：
+
+| 从 | 到 | 触发 | 前置 |
+| --- | --- | --- | --- |
+| `disabled` | `idle` | 管理接口启用 | 无未终结任务占用 |
+| `idle` / `charging` / `offline` / `fault` | `disabled` | 管理接口停用（D-07 软删） | 无（`reserved` / `busy` 不在此列，调用即 `VEHICLE.STATE_CONFLICT`） |
+
+> **注意**：车辆域**没有** `enabled` 这个取值（`enabled` 属站点/节点/边）。管理接口只改 `status`，
+> 不写 `battery` / `loadKg` / `online` / `lastHeartbeatAt` 等运行态读数。
+> 上表外的迁移分两类：`reserved` / `busy` / `idle` 之间的流转已由 M4 定义（apply → `reserved`、start → `busy`、
+> recompute → 回收至 `idle`，见 `docs/module-M4-dispatch.md` §10 与 `docs/architecture.md` 车辆状态机图）；
+> `charging` / `offline` / `fault` 的进入与退出仍待 M7 补写（见 `docs/issues.md` ISS-016）。
+> 本模块实现口径见 `docs/module-M2-base-data.md` §6.1。
+
 ### 4.3 任务管理（M3）
 
 **目标**：完成任务从创建到结束的全生命周期管理。
@@ -728,7 +744,7 @@ erDiagram
 
 **nodes（路网节点）**：`id`、`code`(唯一)、`name`、`x`、`y`、`status`(enabled/disabled)、`remark`。
 
-**edges（有向边）**：`id`、`fromNodeId`、`toNodeId`、`lengthM`、`speedLimitMps`(可空，缺省用车辆默认)、`status`(enabled/disabled)、`remark`；唯一约束 `(fromNodeId,toNodeId)`。
+**edges（有向边）**：`id`、`fromNodeId`、`toNodeId`、`lengthM`、`speedLimitMps`(可空，缺省用车辆默认)、`status`(enabled/disabled)、`remark`；唯一约束 `(fromNodeId,toNodeId)`。**待加列**：`code`(唯一，业务键) —— D-35，随 `0002_data_import.sql` 落地，`0001_init.sql` 中尚无该列。
 
 **restrictions（禁行规则）**：`id`、`type`(node/edge)、`targetId`(节点或边 ID)、`startAt`(可空)、`endAt`(可空)、`vehicleType`(可空，空=全部)、`reason`、`status`(active/expired)、`createdAt`、`createdBy`。
 

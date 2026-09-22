@@ -397,7 +397,7 @@ ORDER BY ts;
    | 文件 | 内容 | 状态 |
    | --- | --- | --- |
    | `0001_init.sql` | 首期 16 张业务表 + `schema_version`、18 条索引 | 已落地 |
-   | `0002_data_import.sql` | 四类导入数据文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）所需的新表与新列 | **草案，待评审**；表/列建议见 `docs/data-interfaces.md` §10，订单领域见 `docs/order-data-map-design.md` §3 |
+   | `0002_data_import.sql` | 四类导入数据文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）所需的新表与新列；含 `edges.code`（业务键，D-35） | **草案，待评审**；表/列建议见 `docs/data-interfaces.md` §10，订单领域见 `docs/order-data-map-design.md` §3 |
 
    > 早期草案中的 `0002_seed.sql`（SQL 种子）与 `0002_order_ingestion.sql` 均已**作废** ——
    > 前者被代码侧 seed 取代，后者合并进 `0002_data_import.sql`（避免两个同号迁移）。

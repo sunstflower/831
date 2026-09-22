@@ -22,6 +22,7 @@
 | --- | --- |
 | [`design.md`](./design.md) | 设计文档：架构分层、运行形态、全局规范、10 个首期模块的目标/要求规范/接口概览、数据模型、状态机、算法、里程碑 |
 | [`docs/api.md`](./docs/api.md) | 接口文档：全量接口契约、错误码、事件订阅、种子数据 |
+| [`docs/module-M2-base-data.md`](./docs/module-M2-base-data.md) | 模块开发文档：基础数据 M2（文件划分、校验顺序、软删与引用完整性、审计动作命名、测试清单与 DoD） |
 | [`docs/module-M4-dispatch.md`](./docs/module-M4-dispatch.md) | 模块开发文档：调度引擎 M4（文件划分、类型/方法签名、策略与事务、测试与验收） |
 | [`docs/database.md`](./docs/database.md) | 数据库设计：业务表 DDL（**表数与索引数在本文件**）、索引、种子规则、常用查询、迁移编号与演进规则 |
 | [`docs/architecture.md`](./docs/architecture.md) | 架构图集：Mermaid 架构图集，可导出 PPT / Word / PDF（**图内数字以来源文档为准**） |

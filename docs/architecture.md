@@ -382,13 +382,14 @@ stateDiagram-v2
     reserved --> busy : start 执行 已定义
     busy --> idle : recompute 回收 已定义
     reserved --> idle : recompute 回收 已定义
-    idle --> disabled : 软删 D-07
+    idle --> disabled : 软删 D-07（占用中禁止）
+    disabled --> idle : 管理接口启用（M2）
   }
 ```
 
-> 上图为**已定义迁移**的子集：`charging` / `offline` / `fault` 的进入与退出条件尚未在文档中成稿，故不在此臆测，待 M2 与 M7 落地时补齐完整迁移表。
+> 上图为**已定义迁移**的子集：`charging` / `offline` / `fault` 的进入与退出条件尚未在文档中成稿，故不在此臆测。M2 拥有的两条（`idle ↔ disabled`）已定稿于 `design.md` §4.2；其余待 M7 落地时补齐。
 
-> 车辆 7 态枚举与 CHECK 约束已落地，但**完整迁移表未定稿**：上文仅列出 `module-M4-dispatch.md` §10 与 `docs/api.md` §3.4 已明确定义的迁移（apply → `reserved`、start → `busy`、recompute → 回收至 `idle`）。`charging` / `offline` / `fault` 的进入退出按 M2 与 M7 落地时补写，避免此处先入为主。
+> 车辆 7 态枚举与 CHECK 约束已落地，但**完整迁移表仍未定稿**：上文列出 `module-M4-dispatch.md` §10 与 `docs/api.md` §3.4 已定义的迁移（apply → `reserved`、start → `busy`、recompute → 回收至 `idle`），以及 M2 拥有的 `idle ↔ disabled`（`design.md` §4.2）。`charging` / `offline` / `fault` 的进入退出待 M7 补写，避免此处先入为主（`docs/issues.md` ISS-016）。
 
 ---
 
@@ -841,7 +842,7 @@ flowchart TB
 flowchart LR
   subgraph DONE["【已实现】已落地且有实测支撑"]
     D1["shared 枚举 8 类<br/>权限点 20 个"]
-    D2["错误目录 124 条<br/>导入域 90 条"]
+    D2["错误目录 125 条<br/>导入域 90 条"]
     D3["SQLite 连接与事务"]
     D4["迁移 0001 幂等"]
     D5["seed 可重入"]
