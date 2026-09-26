@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildMockOverview } from '../../api/mock-data';
 import { DEFAULT_VISIBILITY } from './layers';
+import { PIXELS_PER_METER } from './projection';
 import { toFlow } from './toFlow';
 import { netEdgeId, netNodeId, routeSegmentId, siteNodeId, vehicleNodeId } from './ids';
 import type { MapOverview } from '../../api/types';
@@ -110,7 +111,9 @@ describe('toFlow · 坐标与数据缺失处理', () => {
       { id: 's1', code: 'S1', type: 'depot', nodeId: 'n1', x: Number.NaN, y: Number.NaN, status: 'enabled' }
     ];
     const site = toFlow(overview).nodes.find((n) => n.id === siteNodeId('s1'));
-    expect(site?.position).toEqual({ x: 60, y: -120 });
+    // 不要写死像素值：展示比例（PIXELS_PER_METER）是可调常量，
+    // 抄进测试会让「调比例」变成一次假的失败。按常量推导即可。
+    expect(site?.position).toEqual({ x: 20 * PIXELS_PER_METER, y: -40 * PIXELS_PER_METER });
   });
 
   it('站点既无坐标也无绑定节点时不上图（不伪造坐标）', () => {
@@ -144,7 +147,7 @@ describe('toFlow · 坐标与数据缺失处理', () => {
     const overview = buildMockOverview();
     const { nodes } = toFlow(overview, DEFAULT_VISIBILITY, null, { 'seed-veh-agv01': { x: 100, y: 40 } });
     const vehicle = nodes.find((n) => n.id === vehicleNodeId('seed-veh-agv01'));
-    expect(vehicle?.position).toEqual({ x: 300, y: -120 });
+    expect(vehicle?.position).toEqual({ x: 100 * PIXELS_PER_METER, y: -40 * PIXELS_PER_METER });
   });
 
   it('订单端点未匹配时不上图；已匹配则带置信度', () => {

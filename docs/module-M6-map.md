@@ -1,6 +1,6 @@
 # 模块开发文档：地图渲染（M6）· React Flow 方案
 
-> 版本：v1.1 · 面向开发 · 状态：**已实现（待评审项见 §12）**
+> 版本：v1.2 · 面向开发 · 状态：**已实现（待评审项见 §12）**
 > 关联：`design.md` §2.3 / §2.4 / §4.6 · `docs/api.md` §3.6 / §4 · `docs/data-interfaces.md` §10（F2 仿真地图）
 > 定位：把 M6 的地图渲染从「自研 SVG/Canvas 平面图层」替换为 **React Flow（`@xyflow/react` v12）**，
 > 并给出渲染层文件划分、数据映射、动画/性能/测试口径。任何实现偏差必须先回写本文档与 `AGENTS.md`。
@@ -145,6 +145,30 @@ renderer/src/map/
 2. `model/toFlow.ts` 必须是**纯函数**：入参为 `MapOverview` + 图层可见性 + 选中态，出参为 React Flow 的
    `{ nodes, edges }`；不读全局状态、不发请求。这样它可以被单测覆盖（§10）。
 3. 组件不自己 `fetch`：数据只从 `useMapOverview` 进来，保持「一个页面一个数据入口」。
+
+### 3.1 现状（2026-09-25）与样式归属
+
+上表是**规划视图**，实现后有两处变化，按事实如实登记（避免后来者照规划找文件）：
+
+1. **节点/边类型注册表合并**：`stage/nodeTypes.ts` 与 `stage/edgeTypes.ts` 未单独成文件，
+   改为 `nodes/index.ts` 与 `edges/index.ts` 各自导出**模块级常量** `nodeTypes` / `edgeTypes`
+   （约束不变：**禁止**写成内联对象，见 §9 第 1 条）。
+2. **`map/` 下实际多了这些文件**：`model/` 另含 `structural`（结构签名，D-23）、`motion`、
+   `focus`（聚焦压暗）、`metrics`（画布指标）、`detail`（详情卡内容）、`palette`（真色值，供 MiniMap）、
+   `edgeIndex`（边长索引）、`visualization`；`hooks/` 另含 `useMapShortcuts`、`useZoomLevel`；
+   另有 `panels/`（`MetricsBar` / `LayerPanel` / `DetailPanel`）。
+
+**样式归属（D-36）**：`style/map.css` 现在**只保留画布专有样式**（布局、指标条与画布提示这两处浮层、
+图层面板、详情卡、节点与边、选中/压暗效果、React Flow 内置组件的主题接入）。
+原先放在这里的**通用基元已抽到 `renderer/src/styles/ui.css`**：
+`.udm-panel` / `.udm-kv` / `.tone-*` / `.udm-chip` / `.udm-btn--ghost` / `.udm-icon-btn`，
+以及 `.udm-swatch` 的**基类与 6 个图层色变体**全量。
+判定规则是「**被 2 处以上使用 → 归设计系统**」，因为它们同时服务地图与工作台/外壳。
+色值本身仍只在 `theme.css` 定义一次，并由 `palette.test.ts` 断言 CSS 变量与 `model/palette.ts`
+的字面量逐条一致 —— 因此 swatch 搬了文件，颜色来源没变。
+
+> 改样式时的落点选择：**只服务画布 → 本文件的 `map.css`；被两处以上使用 → `styles/ui.css`；
+> 只是换个色值 → `styles/theme.css`（改完让 `palette.test.ts` 告诉你哪里过期了）。**
 
 ## 4. 数据映射（唯一入口：`model/toFlow.ts`）
 

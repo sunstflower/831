@@ -11,6 +11,7 @@ import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import { App } from './app/App';
 import './styles/theme.css';
+import './styles/ui.css';
 import './styles/layout.css';
 
 const container = document.getElementById('root');

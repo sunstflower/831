@@ -1,0 +1,369 @@
+/**
+ * 监控工作台样式。
+ *
+ * 边界：只放工作台**特有的布局与块**（KPI 网格、车队堆叠条、任务行、告警行、预览画布）。
+ * 通用基元（卡片 / 徽标 / 进度条 / 空态）在 `styles/ui.css`，主题变量在 `styles/theme.css`。
+ * 这里不新增色值 —— 状态色一律用 `--udm-ok/warn/danger/accent` 与 `--udm-veh-*`，
+ * 否则「同一个‘故障红’在两处深浅不一」这类问题会反复出现。
+ */
+
+/* ==================== 页面栅格 ==================== */
+
+/**
+ * 三行：KPI → 三栏工作区 → 预览 + 数据源。
+ * KPI 用 `auto-fit` 而非固定 4 列：窄屏下自动折成 2×2，不必写媒体查询。
+ */
+.udm-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--udm-space-4);
+}
+
+.udm-kpis {
+  display: grid;
+  /* 176px 是「1024 窗口 + 216 侧栏 + 页面留白」仍能放下 4 列的下限；
+     取 200px 时 1024 会折成 3+1，第四张孤零零占一行，视觉上像漏了一张。 */
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  gap: var(--udm-space-3);
+}
+
+/** 三栏工作区：任务列表需要更宽（它一行信息最多）。 */
+.udm-dashboard__columns {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.5fr) minmax(260px, 1.1fr);
+  gap: var(--udm-space-3);
+  align-items: start;
+}
+
+/** 预览图要宽，数据源卡片窄。 */
+.udm-dashboard__wide {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: var(--udm-space-3);
+  align-items: start;
+}
+
+@media (max-width: 1280px) {
+  .udm-dashboard__columns {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  .udm-dashboard__wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ==================== KPI 卡 ==================== */
+
+.udm-kpi {
+  padding: var(--udm-space-3) var(--udm-space-4) var(--udm-space-4);
+  gap: var(--udm-space-1);
+  min-width: 0;
+}
+
+.udm-kpi__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--udm-space-2);
+}
+
+.udm-kpi__label {
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+}
+
+.udm-kpi__value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: var(--udm-space-2) 0 var(--udm-space-1);
+  font-size: var(--udm-font-2xl);
+  font-weight: 700;
+  line-height: 1.05;
+  /* 等宽数字：一排卡片的数字才能对齐成列，而不是各占宽窄 */
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-kpi__suffix {
+  font-size: var(--udm-font-md);
+  font-weight: 500;
+  color: var(--udm-text-dim);
+}
+
+.udm-kpi__hint {
+  margin: 0;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+  line-height: 1.5;
+}
+
+/* ==================== 车队分布 ==================== */
+
+.udm-fleet__bar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  margin-bottom: var(--udm-space-3);
+  overflow: hidden;
+  border-radius: 999px;
+  /* 空槽底色：所有车都集中在一种状态时，右侧仍能看出「这是全部」 */
+  background: var(--udm-surface-4);
+}
+
+.udm-fleet__seg {
+  min-width: 4px;
+  border-radius: 2px;
+  background: var(--udm-text-dim);
+}
+
+.udm-fleet__seg--ok { background: var(--udm-ok); }
+.udm-fleet__seg--warn { background: var(--udm-warn); }
+.udm-fleet__seg--danger { background: var(--udm-danger); }
+.udm-fleet__seg--info { background: var(--udm-accent); }
+.udm-fleet__seg--dim { background: var(--udm-veh-offline); }
+
+.udm-fleet__list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--udm-font-sm);
+}
+
+.udm-fleet__list li {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+}
+
+/* 0 台的状态保留但压低：不显示会让人以为「没有这个状态」 */
+.udm-fleet__list li.is-zero {
+  opacity: 0.45;
+}
+
+.udm-fleet__name {
+  color: var(--udm-text);
+}
+
+.udm-fleet__note {
+  padding: 1px 6px;
+  font-size: var(--udm-font-2xs);
+  color: var(--udm-text-dim);
+  border: 1px dashed var(--udm-hairline);
+  border-radius: 999px;
+}
+
+.udm-fleet__count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* ==================== 任务列表 ==================== */
+
+.udm-tasks {
+  display: grid;
+  gap: var(--udm-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.udm-tasks__row {
+  display: grid;
+  gap: 6px;
+  padding-bottom: var(--udm-space-3);
+  border-bottom: 1px dashed var(--udm-hairline);
+}
+
+.udm-tasks__row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.udm-tasks__head {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+}
+
+.udm-tasks__code {
+  font-size: var(--udm-font-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-tasks__vehicle {
+  margin-left: auto;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+  white-space: nowrap;
+}
+
+.udm-tasks__route {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-tasks__arrow {
+  color: var(--udm-accent);
+}
+
+.udm-tasks__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+}
+
+.udm-tasks__progress .udm-progress {
+  flex: 1 1 auto;
+}
+
+.udm-tasks__percent {
+  flex: 0 0 auto;
+  min-width: 34px;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==================== 告警列表 ==================== */
+
+.udm-alerts {
+  display: grid;
+  gap: var(--udm-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.udm-alerts__row {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  padding: 7px var(--udm-space-2);
+  background: var(--udm-surface-3);
+  border-left: 3px solid currentColor;
+  border-radius: var(--udm-radius-sm);
+}
+
+/* 已闭环的告警压暗但仍列出：它们解释了「刚刚发生过什么」 */
+.udm-alerts__row.is-closed {
+  opacity: 0.55;
+}
+
+.udm-alerts__level {
+  flex: 0 0 auto;
+  font-size: var(--udm-font-2xs);
+  font-weight: 700;
+}
+
+.udm-alerts__body {
+  min-width: 0;
+}
+
+.udm-alerts__title {
+  font-size: var(--udm-font-sm);
+  font-weight: 600;
+}
+
+.udm-alerts__object {
+  font-size: var(--udm-font-2xs);
+  color: var(--udm-text-dim);
+}
+
+/* ==================== 地图预览 ==================== */
+
+.udm-preview {
+  display: flex;
+  flex-direction: column;
+}
+
+/**
+ * 画布容器**必须有确定高度**：React Flow 按父容器尺寸测量视口，
+ * 高度为 auto 时会塌成 0 并渲染成空白（地图页靠满高布局天然满足）。
+ */
+.udm-preview__canvas {
+  height: 320px;
+  background: var(--udm-surface-1);
+  border-bottom: 1px solid var(--udm-hairline);
+}
+
+.udm-preview__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--udm-space-2) var(--udm-space-4);
+  margin: 0;
+  padding: var(--udm-space-3) var(--udm-space-4) 0;
+  list-style: none;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+}
+
+.udm-preview__legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.udm-preview__legend .udm-swatch {
+  width: 10px;
+  height: 10px;
+}
+
+.udm-preview__note {
+  margin: 0;
+  padding: var(--udm-space-2) var(--udm-space-4) var(--udm-space-4);
+  font-size: var(--udm-font-2xs);
+  color: var(--udm-text-dim);
+}
+
+/* ==================== 其它 ==================== */
+
+/** 卡片标题右侧的「去完整页面」链接：次要动作不抢主按钮的注意力。 */
+.udm-card__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--udm-accent);
+  font-size: var(--udm-font-xs);
+  text-decoration: none;
+}
+
+.udm-card__more:hover {
+  text-decoration: underline;
+}
+
+/** 列表被截断时的说明行（如实告知还有多少条，不静默截断）。 */
+.udm-list__more {
+  margin: var(--udm-space-3) 0 0;
+  padding-top: var(--udm-space-2);
+  border-top: 1px dashed var(--udm-hairline);
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+}
+
+.udm-sources {
+  font-size: var(--udm-font-sm);
+}
+
+.udm-sources dd code {
+  font-size: var(--udm-font-xs);
+  color: var(--udm-accent);
+}
+
+.udm-sources__note {
+  margin: var(--udm-space-4) 0 0;
+  padding-top: var(--udm-space-3);
+  border-top: 1px dashed var(--udm-hairline);
+  font-size: var(--udm-font-2xs);
+  line-height: 1.6;
+  color: var(--udm-text-dim);
+}

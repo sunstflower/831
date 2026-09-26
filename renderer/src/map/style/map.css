@@ -3,28 +3,65 @@
  *
  * 约束（`docs/module-M6-map.md` §1.3）：不引在线字体、不引图标字体、不用远程图，
  * 全部用 CSS 形状与内联字符，保证 Electron 打包后离线可用。
- */
+ *
+ * 组织方式（自上而下）：
+ *   1. 布局（画布 / 侧栏）
+*   2. 画布内的浮层（`.udm-metrics` / `.udm-canvas-hint`）—— 只服务画布，故留在本文件
+*   3. 图层面板（`.udm-layer-*`）
+*   4. 详情卡（`.udm-detail*`）
+*   5. 画布节点与边
+*   6. 状态效果（选中 / 聚焦压暗 / 弱化）
+*   7. React Flow 内置组件的主题接入
+*
+* **不在这里定义通用基元**：`.udm-btn` / `.udm-panel` / `.udm-kv` / `.tone-*` / `.udm-swatch` /
+* `.udm-chip` / `.udm-icon-btn` 已抽到 `styles/ui.css`（被两处以上使用 → 归设计系统）。
+* 在这里复制一份会让「改一处、另一处没改」的历史问题复发。
+*/
+
+/* ==================== 1. 布局 ==================== */
 
 .udm-map-layout {
   display: grid;
-  grid-template-columns: 1fr 260px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   height: 100%;
   min-height: 0;
+  background: var(--udm-surface-1);
+}
+
+/* 面板收起后把宽度让给画布：地图是主角，侧栏只是辅助 */
+.udm-map-layout.is-collapsed {
+  grid-template-columns: minmax(0, 1fr) 300px;
 }
 
 .udm-map-canvas {
   position: relative;
   min-width: 0;
-  background: var(--udm-bg);
+  background: var(--udm-surface-1);
+}
+
+.udm-map-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--udm-hairline);
+  background: var(--udm-panel);
+  overflow-y: auto;
+}
+
+.udm-map-side__toggle {
+  flex: 0 0 auto;
+  padding: 8px 10px 0;
 }
 
 .udm-map-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   height: 100%;
-  color: var(--udm-text-dim);
   padding: 24px;
+  color: var(--udm-text-dim);
   text-align: center;
 }
 
@@ -32,18 +69,298 @@
   color: var(--udm-danger);
 }
 
-/* ---------- 节点通用 ---------- */
+.udm-map-state__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--udm-text-dim);
+}
+
+/* ==================== 2. 画布内的浮层 ==================== */
+
+/* ---------- 指标条 ---------- */
+
+.udm-metrics {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-md);
+  background: rgba(30, 41, 59, 0.92);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--udm-shadow-2);
+}
+
+.udm-metric {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 6px;
+  padding: 7px 11px;
+  background: transparent;
+}
+
+/* 分组之间的发丝分隔线 */
+.udm-metric + .udm-metric {
+  border-left: 1px solid var(--udm-hairline);
+}
+
+.udm-metric__icon {
+  grid-row: 1 / 3;
+  color: var(--udm-accent);
+}
+
+.udm-metric__value {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.udm-metric__label {
+  font-size: 10px;
+  color: var(--udm-text-dim);
+  white-space: nowrap;
+}
+
+.udm-metric.is-danger .udm-metric__icon,
+.udm-metric.is-danger .udm-metric__value {
+  color: var(--udm-danger);
+}
+
+.udm-metric--dim .udm-metric__value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--udm-text-dim);
+}
+
+/* ---------- 画布底部提示 ---------- */
+
+.udm-canvas-hint {
+  font-size: 11px;
+  color: var(--udm-text-dim);
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-sm);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+/* ---------- 图层面板 ---------- */
+
+.udm-layer-panel {
+  flex: 0 0 auto;
+}
+
+.udm-layer-presets {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+/* 预设行要三等分（`flex: 1` 是**本行的布局意图**，不属于 chip 基类，见 `styles/ui.css`） */
+.udm-layer-presets > .udm-chip {
+  flex: 1;
+}
+
+.udm-layer-group {
+  margin-bottom: 10px;
+}
+
+.udm-layer-group__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.udm-layer-group__title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--udm-text-dim);
+}
+
+.udm-layer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 4px;
+}
+
+.udm-layer-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 4px;
+  border-radius: var(--udm-radius-sm);
+  cursor: pointer;
+}
+
+.udm-layer-item:hover {
+  background: var(--udm-surface-3);
+}
+
+.udm-layer-item:has(input:disabled) {
+  cursor: default;
+}
+
+.udm-layer-item:has(input:disabled):hover {
+  background: transparent;
+}
+
+.udm-layer-item__label {
+  flex: 1;
+  font-size: 12px;
+}
+
+.udm-layer-item:has(input:disabled) .udm-layer-item__label {
+  color: var(--udm-text-dim);
+}
+
+.udm-layer-item__count {
+  font-size: 11px;
+  color: var(--udm-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-layer-item__lock {
+  font-size: 10px;
+  font-style: normal;
+  color: var(--udm-text-dim);
+}
+
+.udm-layer-panel__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.udm-layer-panel__actions > button {
+  flex: 1;
+}
+
+.udm-layer-panel__note {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--udm-text-dim);
+}
+
+/* ---------- 详情卡 ---------- */
+
+.udm-detail {
+  flex: 1 1 auto;
+}
+
+.udm-detail .udm-panel__head {
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.udm-detail__title {
+  min-width: 0;
+}
+
+.udm-detail__title h2 {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--udm-text);
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+.udm-detail__subtitle {
+  font-size: 11px;
+  color: var(--udm-text-dim);
+}
+
+.udm-detail__actions {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.udm-detail__empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--udm-text-dim);
+}
+
+.udm-detail__alerts {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--udm-hairline);
+}
+
+.udm-detail__alerts h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--udm-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.udm-detail__alerts ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.udm-detail__alerts li {
+  padding: 3px 0;
+}
+
+.udm-detail__ok {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--udm-hairline);
+  font-size: 11px;
+  color: var(--udm-text-dim);
+}
+
+/* ==================== 3. 画布节点 ==================== */
+
 .udm-map-canvas .react-flow__node {
   font-size: 10px;
   color: var(--udm-text);
 }
 
+/**
+ * React Flow 默认给每个节点容器加内边距，并按 `width/height` 居中摆放。
+ * 本项目的站点与车辆节点自带文字标签（宽度大、高度小），
+ * 若沿用默认内边距，节点容器会比图形本身大一圈 —— 在 12 节点 / 34 边的密集路网上
+ * 会互相压盖，也会让命中区域与视觉不符。
+ *
+ * 处理：容器收缩为内容尺寸（`width/height: auto` + `padding: 0`），
+ * 由内容自己决定尺寸。这样 `toFlow` 里的 `initialWidth/Height`（缩略图用）
+ * 与实际渲染尺寸才一致。
+ */
+.udm-map-canvas .react-flow__node-site,
+.udm-map-canvas .react-flow__node-vehicle,
+.udm-map-canvas .react-flow__node-net,
+.udm-map-canvas .react-flow__node-taskEndpoint,
+.udm-map-canvas .react-flow__node-orderEndpoint {
+  width: auto;
+  height: auto;
+  padding: 0;
+}
+
+/* ---------- 路网节点 ---------- */
+
 .udm-node-net {
-  width: 22px;
-  height: 22px;
+  position: relative;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: var(--udm-net);
-  border: 1px solid #94a3b8;
+  background: var(--udm-canvas-net);
+  border: 1.5px solid #94a3b8;
+  transition: transform 0.12s ease, border-color 0.12s ease;
 }
 
 .udm-node-net.is-disabled {
@@ -51,84 +368,243 @@
   border-style: dashed;
 }
 
+/* hover 时放大并显示编码：路网节点数量多，标签不能常显 */
+.udm-map-canvas .react-flow__node-net:hover .udm-node-net {
+  transform: scale(1.5);
+  border-color: var(--udm-accent);
+}
+
+.udm-node-net__hover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--udm-text);
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-sm);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.udm-map-canvas .react-flow__node-net:hover .udm-node-net__hover {
+  opacity: 1;
+}
+
+/* ---------- 站点 ---------- */
+
 .udm-node-site {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  background: var(--udm-site);
-  border: 2px solid #c4b5fd;
-  font-weight: 600;
-  color: #1e1b4b;
+  gap: 5px;
+  padding: 3px;
+  border-radius: var(--udm-radius-sm);
+  background: rgba(30, 41, 59, 0.94);
+  border: 2px solid var(--udm-canvas-site);
+  box-shadow: var(--udm-shadow-1);
 }
 
-.udm-node-site.type-charging {
-  background: var(--udm-warn);
-  border-color: #fde68a;
-}
-
-.udm-node-site.type-gate {
-  background: #2dd4bf;
-  border-color: #99f6e4;
-}
-
-.udm-node-site.type-dock {
-  background: #fdba74;
-  border-color: #fed7aa;
-}
-
-.udm-node-vehicle {
+.udm-node-site__glyph {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--udm-panel-2);
-  border: 2px solid var(--udm-veh-idle);
-  font-size: 9px;
-  line-height: 1.1;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1e1b4b;
+  background: var(--udm-canvas-site);
+  border-radius: var(--udm-radius-sm);
 }
 
-.udm-node-vehicle__code {
+/* 站点类型配色：用色相区分，但形状（汉字）始终保留，色觉障碍下仍可读 */
+.udm-node-site.type-charging { border-color: var(--udm-warn); }
+.udm-node-site.type-charging .udm-node-site__glyph { background: var(--udm-warn); color: #422006; }
+.udm-node-site.type-gate { border-color: #2dd4bf; }
+.udm-node-site.type-gate .udm-node-site__glyph { background: #2dd4bf; color: #042f2e; }
+.udm-node-site.type-dock { border-color: #fdba74; }
+.udm-node-site.type-dock .udm-node-site__glyph { background: #fdba74; color: #431407; }
+
+.udm-node-site__label {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  padding-right: 3px;
+}
+
+.udm-node-site__code {
+  font-size: 10px;
   font-weight: 700;
 }
 
-.udm-node-vehicle__battery {
+.udm-node-site__name {
+  font-size: 9px;
+  color: var(--udm-text-dim);
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 车辆 ---------- */
+
+.udm-node-vehicle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 5px;
+  border-radius: var(--udm-radius-md);
+  background: rgba(15, 23, 42, 0.95);
+  border: 2px solid var(--udm-veh-idle);
+  box-shadow: var(--udm-shadow-1);
+  line-height: 1.15;
+}
+
+/* 车头方向指示（当前无朝向数据时不显示，仅为将来的 heading 保留位置） */
+.udm-node-vehicle__glyph {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+  border: 2px solid currentColor;
+  opacity: 0.9;
+}
+
+.udm-node-vehicle__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.udm-node-vehicle__code {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.udm-node-vehicle__status {
+  font-size: 9px;
   color: var(--udm-text-dim);
 }
 
-.udm-node-vehicle__battery.is-low {
+.udm-node-vehicle__battery {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 电量条：形状（长度）+ 数字双编码，不依赖颜色单独传达信息 */
+.udm-node-vehicle__battery-track {
+  position: relative;
+  width: 32px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(148, 163, 184, 0.28);
+  overflow: hidden;
+}
+
+.udm-node-vehicle__battery-fill {
+  display: block;
+  height: 100%;
+  background: var(--udm-ok);
+}
+
+.udm-node-vehicle__battery-value {
+  font-size: 9px;
+  color: var(--udm-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-node-vehicle__battery.is-low .udm-node-vehicle__battery-fill {
+  background: var(--udm-danger);
+}
+
+.udm-node-vehicle__battery.is-low .udm-node-vehicle__battery-value {
   color: var(--udm-danger);
   font-weight: 700;
 }
 
-.udm-node-vehicle.status-idle { border-color: var(--udm-veh-idle); }
-.udm-node-vehicle.status-reserved { border-color: var(--udm-veh-reserved); }
-.udm-node-vehicle.status-busy { border-color: var(--udm-veh-busy); }
-.udm-node-vehicle.status-charging { border-color: var(--udm-veh-charging); }
-.udm-node-vehicle.status-offline { border-color: var(--udm-veh-offline); opacity: 0.75; }
-.udm-node-vehicle.status-fault { border-color: var(--udm-veh-fault); }
-.udm-node-vehicle.status-disabled { border-color: var(--udm-veh-disabled); opacity: 0.6; }
+/* 「已挂任务」小圆点：一眼区分「有活干」与「闲着」 */
+.udm-node-vehicle__task-dot {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--udm-accent);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.9);
+}
 
-.udm-node-endpoint {
+/* 车辆 7 态配色（枚举见 shared/src/enums.ts） */
+.udm-node-vehicle.status-idle { color: var(--udm-veh-idle); border-color: var(--udm-veh-idle); }
+.udm-node-vehicle.status-reserved { color: var(--udm-veh-reserved); border-color: var(--udm-veh-reserved); }
+.udm-node-vehicle.status-busy { color: var(--udm-veh-busy); border-color: var(--udm-veh-busy); }
+.udm-node-vehicle.status-charging { color: var(--udm-veh-charging); border-color: var(--udm-veh-charging); }
+.udm-node-vehicle.status-offline { color: var(--udm-veh-offline); border-color: var(--udm-veh-offline); opacity: 0.78; }
+.udm-node-vehicle.status-fault { color: var(--udm-veh-fault); border-color: var(--udm-veh-fault); }
+.udm-node-vehicle.status-disabled { color: var(--udm-veh-disabled); border-color: var(--udm-veh-disabled); opacity: 0.6; }
+
+/* 执行中的车辆：呼吸光晕，让「正在跑」这件事在整屏里第一眼被看到 */
+@keyframes udm-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(56, 189, 248, 0); }
+}
+
+.udm-node-vehicle.status-busy {
+  animation: udm-pulse 2s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .udm-node-vehicle.status-busy {
+    animation: none;
+  }
+}
+
+/* 故障/离线：加一圈警示描边，避免只靠颜色 */
+.udm-node-vehicle.status-fault,
+.udm-node-vehicle.status-offline {
+  outline: 1px dashed currentColor;
+  outline-offset: 2px;
+}
+
+/* ---------- 任务起终点 / 订单起终点 ---------- */
+
+.udm-node-endpoint,
+.udm-node-order {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   font-size: 9px;
-  border: 1px solid #fff;
+  font-weight: 700;
+  border: 1.5px solid #fff;
+  /* 与站点重合时默认半透明，保证站点仍可点选；hover/选中才实心 */
+  opacity: 0.82;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.udm-map-canvas .react-flow__node-taskEndpoint:hover .udm-node-endpoint,
+.udm-map-canvas .react-flow__node-orderEndpoint:hover .udm-node-order {
+  opacity: 1;
+  transform: scale(1.15);
 }
 
 /* 起终点用形状区分，不只靠颜色（兼顾色觉障碍） */
 .udm-node-endpoint.role-from {
   border-radius: 50%;
-  background: #22c55e;
+  background: var(--udm-canvas-task);
   color: #052e16;
 }
 
@@ -138,17 +614,32 @@
   color: #450a0a;
 }
 
+.udm-node-endpoint__tip {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--udm-text);
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-sm);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.udm-map-canvas .react-flow__node:hover .udm-node-endpoint__tip {
+  opacity: 1;
+}
+
 .udm-node-order {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  font-size: 9px;
-  border: 1px solid #fff;
-  border-radius: 4px;
-  background: #0ea5e9;
-  color: #082f49;
+  border-radius: var(--udm-radius-sm);
+  background: var(--udm-canvas-order);
+  color: #422006;
 }
 
 .udm-node-order.is-low-confidence {
@@ -158,27 +649,11 @@
 
 .udm-node-order.is-route-unavailable {
   border-style: dashed;
-  opacity: 0.7;
-}
-
-/* ---------- 选中态 ----------
- *
- * React Flow 给被选中的节点容器加的是 **`selected`** 类（实测 DOM：
- * `class="react-flow__node react-flow__node-site selected"`），
- * 不是 `is-selected`。此前写的 `.react-flow__node.is-selected` 是死选择器，
- * 实测 `getComputedStyle(...).boxShadow === 'none'`，即那圈光晕从未生效过。
- */
-.udm-map-canvas .react-flow__node.selected {
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.55);
-  border-radius: 6px;
-}
-
-.udm-map-canvas .react-flow__node.selected > div {
-  outline: 2px solid var(--udm-accent);
-  outline-offset: 2px;
+  opacity: 0.6;
 }
 
 /* ---------- 告警角标 ---------- */
+
 .udm-node-alert-badge {
   position: absolute;
   top: -7px;
@@ -193,10 +668,67 @@
   font-weight: 700;
   line-height: 15px;
   text-align: center;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.85);
 }
 
-/* ---------- 边 ----------
+/* ==================== 4. 状态效果 ==================== */
+
+/**
+ * 选中态。
  *
+ * React Flow 给被选中的节点容器加的是 **`selected`** 类（实测 DOM：
+ * `class="react-flow__node react-flow__node-site selected"`），
+ * 不是 `is-selected`。此前写的 `.react-flow__node.is-selected` 是死选择器，
+ * 实测 `getComputedStyle(...).boxShadow === 'none'`，即那圈光晕从未生效过。
+ */
+.udm-map-canvas .react-flow__node.selected {
+  z-index: 1000;
+}
+
+/**
+ * 层级（z-index）：车辆恒在最上层（图层定义要求），
+ * 起终点标记压住站点（否则会被站点块完全盖住无法点选）。
+ * 注意：`toFlow` 已把三者坐标错开（见 `ENDPOINT_OFFSET`），这里是第二道保险。
+ */
+.udm-map-canvas .react-flow__node-net { z-index: 1; }
+.udm-map-canvas .react-flow__node-site { z-index: 2; }
+.udm-map-canvas .react-flow__node-taskEndpoint,
+.udm-map-canvas .react-flow__node-orderEndpoint { z-index: 3; }
+.udm-map-canvas .react-flow__node-vehicle { z-index: 4; }
+
+.udm-map-canvas .react-flow__node.selected > div {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: 2px;
+  box-shadow: var(--udm-shadow-focus);
+}
+
+/**
+ * 聚焦压暗：选中一个实体后，**不属于它上下文**的元素降透明度。
+ *
+ * 这是本页最重要的可读性手段 —— 12 节点 / 34 边的路网上，
+ * 只给选中项描边几乎看不出焦点在哪（实测观感）。
+ * 压暗用 `opacity` 而非 `display:none`，保留图的空间结构作为参照。
+ */
+.udm-map-canvas .react-flow__node.is-dimmed,
+.udm-map-canvas .react-flow__edge.is-dimmed {
+  opacity: 0.18;
+  transition: opacity 0.18s ease;
+}
+
+/* 压暗的节点不响应 hover：避免「已经淡出却还能被点亮」的错乱感 */
+.udm-map-canvas .react-flow__node.is-dimmed:hover > div {
+  outline-color: transparent;
+}
+
+/* 有生效路线时，路网底板变细变淡（把视觉权重让给配送路线） */
+.udm-map-canvas .react-flow__edge-path.udm-edge-net.is-muted {
+  stroke: #334155;
+  stroke-width: 1;
+}
+
+/* ==================== 5. 边 ==================== */
+
+/**
  * ⚠️ 选择器写法有实测约束：React Flow 的 `<BaseEdge>` 会把我们传入的 `className`
  * **拼到 `<path>` 自身**上（见 `@xyflow/react` 的 BaseEdge 实现：
  * `className: cc(['react-flow__edge-path', props.className])`），
@@ -221,8 +753,24 @@
 }
 
 .udm-map-canvas .react-flow__edge-path.udm-edge-route.is-active {
-  stroke: var(--udm-route);
+  stroke: var(--udm-canvas-route);
   stroke-width: 4;
+  /* 行进方向：流光效果让「往哪走」在静止画面里也能读出来 */
+  stroke-dasharray: 10 6;
+  animation: udm-dash 1.2s linear infinite;
+}
+
+@keyframes udm-dash {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .udm-map-canvas .react-flow__edge-path.udm-edge-route.is-active {
+    animation: none;
+    stroke-dasharray: none;
+  }
 }
 
 .udm-map-canvas .react-flow__edge-path.udm-edge-route.is-superseded {
@@ -232,154 +780,87 @@
   opacity: 0.7;
 }
 
+/* 选中/悬停的边加亮，且**不压暗**（保证被选中的路线始终可读） */
+.udm-map-canvas .react-flow__edge.selected .react-flow__edge-path.udm-edge-route {
+  stroke-width: 5.5;
+}
+
+.udm-map-canvas .react-flow__edge.is-dimmed {
+  transition: opacity 0.18s ease;
+}
+
+/* 路线的悬停热区：细线也能稳定命中 */
+.udm-edge-route__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  cursor: pointer;
+}
+
+/* 分段距离标签：按需显示（悬停或选中），避免 5 段标签盖住路网 */
 .udm-edge-route__label {
   position: absolute;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid var(--udm-border);
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: var(--udm-radius-sm);
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid var(--udm-canvas-route);
+  box-shadow: var(--udm-shadow-1);
+  font-size: 10px;
   color: var(--udm-text);
-  font-size: 9px;
+  white-space: nowrap;
   pointer-events: none;
 }
 
-/* ---------- 控件与缩略图 ----------
- *
- * 实测问题：React Flow 自带的 `Controls` / `MiniMap` 用的是**浅色默认主题**，
- * 在深色画布上表现为「白色小方块」与看不清的按钮（截图确认）。
- * React Flow 只在内置样式里提供浅色变量，深色需自行覆盖，
- * 故这里显式对齐 `theme.css` 的变量，避免出现第三套色值。
+.udm-edge-route__label strong {
+  color: var(--udm-canvas-route);
+  font-weight: 600;
+}
+
+.udm-edge-route__label span {
+  color: var(--udm-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==================== 6. React Flow 内置组件接入 ==================== */
+
+/**
+ * 深色主题用官方的 `colorMode="dark"` 切换（见 `FlowCanvas.tsx`），
+ * 这套 `--xy-*-default` 变量由 `@xyflow/react/dist/style.css` 的
+ * `.react-flow.dark` 规则提供，不再手写覆盖 ——
+ * 手写覆盖的问题是与上游样式耦合：升级后变量名变了会静默失效（§11.5.4）。
+ * 这里只做**少量品牌化**（对齐本项目的面板色与圆角），不重复定义颜色。
  */
-.udm-map-canvas .react-flow__controls {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  border: 1px solid var(--udm-border);
-  border-radius: 6px;
+.udm-map-canvas .react-flow__controls,
+.udm-map-canvas .react-flow__minimap {
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-md);
   overflow: hidden;
-}
-
-.udm-map-canvas .react-flow__controls-button {
-  width: 26px;
-  height: 26px;
-  background: var(--udm-panel);
-  border: none;
-  border-bottom: 1px solid var(--udm-border);
-  fill: var(--udm-text);
-  color: var(--udm-text);
-}
-
-.udm-map-canvas .react-flow__controls-button:last-child {
-  border-bottom: none;
-}
-
-.udm-map-canvas .react-flow__controls-button:hover {
-  background: var(--udm-panel-2);
-}
-
-.udm-map-canvas .react-flow__controls-button svg {
-  fill: currentColor;
-  max-width: 12px;
-  max-height: 12px;
+  box-shadow: var(--udm-shadow-2);
 }
 
 .udm-map-canvas .react-flow__minimap {
-  background: var(--udm-panel);
-  border: 1px solid var(--udm-border);
-  border-radius: 6px;
-  overflow: hidden;
+  --xy-minimap-background-color: var(--udm-panel);
+  --xy-minimap-mask-background-color: rgba(11, 18, 32, 0.7);
+  --xy-minimap-mask-stroke-color: var(--udm-accent);
 }
 
-.udm-map-canvas .react-flow__minimap-svg {
-  display: block;
+.udm-map-canvas .react-flow__attribution {
+  /* 保留署名（MIT 要求），但压到不干扰操作的程度 */
+  opacity: 0.35;
+  background: transparent;
 }
 
-/* ---------- 图层面板 ---------- */
-.udm-map-legend {
-  border-left: 1px solid var(--udm-border);
-  background: var(--udm-panel);
-  padding: 14px;
-  overflow-y: auto;
+.udm-map-canvas .react-flow__attribution:hover {
+  opacity: 0.8;
 }
 
-.udm-map-legend h2 {
-  margin: 0 0 10px;
-  font-size: 13px;
-  color: var(--udm-text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.udm-map-legend ul {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-}
-
-.udm-map-legend li label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0;
-  cursor: pointer;
-}
-
-.udm-map-legend li label input:disabled + span {
-  color: var(--udm-text-dim);
-}
-
-.udm-map-legend__hint {
-  color: var(--udm-text-dim);
-  font-size: 11px;
-  font-style: normal;
-}
-
-.udm-map-legend__actions {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-
-.udm-map-legend__actions button {
-  flex: 1;
-  padding: 5px 6px;
-  border: 1px solid var(--udm-border);
-  border-radius: 4px;
-  background: var(--udm-panel-2);
-  color: var(--udm-text);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.udm-map-legend__actions button:hover {
-  border-color: var(--udm-accent);
-}
-
-.udm-map-legend__stats {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 8px;
-  margin: 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--udm-border);
-  font-size: 12px;
-}
-
-.udm-map-legend__stats dt {
-  color: var(--udm-text-dim);
-}
-
-.udm-map-legend__stats dd {
-  margin: 0;
-  text-align: right;
-}
-
-.udm-map-legend__selected {
-  margin: 12px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--udm-border);
-  font-size: 12px;
-  color: var(--udm-accent);
-}
-
-.udm-map-legend__selected.is-empty {
-  color: var(--udm-text-dim);
+/* 窄屏：侧栏收到 240px，仍可用但不抢画布 */
+@media (max-width: 1180px) {
+  .udm-map-layout,
+  .udm-map-layout.is-collapsed {
+    grid-template-columns: minmax(0, 1fr) 240px;
+  }
 }

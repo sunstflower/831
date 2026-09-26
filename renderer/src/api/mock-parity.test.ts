@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ERROR_CODES } from '@udm/shared';
+import { ERROR_CODES, ROLE_PERMISSIONS } from '@udm/shared';
 import { createMockAdapter } from './mock';
 
 /**
@@ -37,5 +37,26 @@ describe('mock 适配器 · 错误码与目录一致', () => {
     const client = createMockAdapter();
     const result = await client.invoke('/api/auth/login', { username: 'admin', password: 'admin123' });
     expect(result.code).toBe(0);
+  });
+
+  it('登录返回的 permissions 与主进程口径一致（按角色派生，不是空数组）', async () => {
+    // 起因（2026-09-25 实测）：mock 曾把三个账号的 permissions 一律写成 []，
+    // 而主进程 `services/auth.ts` 用 `permissionsOf(row.role)`。
+    // 界面若信任 `user.permissions`，两种形态会显示不同的权限数，且都不报错。
+    const client = createMockAdapter();
+    for (const [username, password, role] of [
+      ['admin', 'admin123', 'admin'],
+      ['dispatcher', 'dispatcher123', 'dispatcher'],
+      ['monitor', 'monitor123', 'monitor']
+    ] as const) {
+      const result = await client.invoke('/api/auth/login', { username, password });
+      expect(result.code).toBe(0);
+      if (result.code === 0) {
+        const user = (result.data as { user: { permissions: string[]; role: string } }).user;
+        expect(user.role).toBe(role);
+        expect(user.permissions.slice().sort()).toEqual([...ROLE_PERMISSIONS[role]].sort());
+        expect(user.permissions.length).toBeGreaterThan(0);
+      }
+    }
   });
 });

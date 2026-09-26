@@ -24,6 +24,68 @@
   --udm-veh-offline: #64748b;
   --udm-veh-fault: #f87171;
   --udm-veh-disabled: #475569;
+
+  /* ---------- 面/层次（画布 UI 需要「底板 → 浮层 → 悬浮」三级对比） ---------- */
+  --udm-surface-1: #0b1220;   /* 画布底板（比 --udm-bg 更深，让浮层浮起来） */
+  --udm-surface-2: #1e293b;   /* 面板 */
+  --udm-surface-3: #273449;   /* 面板内的卡片/悬浮 */
+  --udm-surface-4: #334155;   /* 卡片内的强调块 */
+  --udm-hairline: rgba(148, 163, 184, 0.18); /* 发丝分隔线，比实线更轻 */
+
+  /* ---------- 间距/圆角/阴影：统一刻度，避免各处写 3/5/7px 的随机值 ---------- */
+  --udm-radius-sm: 4px;
+  --udm-radius-md: 8px;
+  --udm-radius-lg: 12px;
+  --udm-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --udm-shadow-2: 0 6px 20px rgba(0, 0, 0, 0.45);
+  --udm-shadow-focus: 0 0 0 3px rgba(56, 189, 248, 0.35);
+
+  /* ---------- 画布元素配色：与 `map/model/palette.ts` 必须逐条一致 ----------
+   * `palette.test.ts` 会断言两边吻合；改色时先改这里，再让测试指出过期项。 */
+  --udm-canvas-net: #64748b;
+  --udm-canvas-route: #38bdf8;
+  --udm-canvas-site: #a78bfa;
+  --udm-canvas-task: #4ade80;
+  --udm-canvas-order: #fbbf24;
+  --udm-canvas-vehicle: #38bdf8;
+
+  /* ---------- 排版刻度 ----------
+   * 界面上出现过 10/11/12/13/15/18/20/26px 八种字号，各自随手写的结果是层级感消失。
+   * 这里定 6 档，正文用 md(13)，标题用 lg/xl —— 新增界面时先挑档位，不要再写新数值。 */
+  --udm-font-2xs: 10px;   /* 角标、单位 */
+  --udm-font-xs: 11px;    /* 辅助说明 */
+  --udm-font-sm: 12px;    /* 次要正文、按钮 */
+  --udm-font-md: 13px;    /* 正文（body 默认） */
+  --udm-font-lg: 15px;    /* 卡片标题 */
+  --udm-font-xl: 20px;    /* 页面标题 */
+  --udm-font-2xl: 26px;   /* 指标数字 */
+
+  /* ---------- 间距刻度（4 的倍数） ----------
+   * 与字号同理：避免 3/5/7/9px 这类随机值，让留白有节奏。 */
+  --udm-space-1: 4px;
+  --udm-space-2: 8px;
+  --udm-space-3: 12px;
+  --udm-space-4: 16px;
+  --udm-space-5: 22px;
+  --udm-space-6: 28px;
+
+  /* ---------- 动效 ----------
+   * 统一时长与缓动，避免各处 0.12s/0.15s/0.2s 与 ease/ease-out 混用导致的「抖」。 */
+  --udm-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --udm-dur-fast: 120ms;
+  --udm-dur-base: 200ms;
+
+  /* ---------- 外壳尺寸 ----------
+   * 侧栏两档宽度与顶栏高度被外壳、导航、内容区共用，写死在 3 个地方迟早对不齐。 */
+  --udm-rail-w: 216px;
+  --udm-rail-w-collapsed: 62px;
+  --udm-topbar-h: 52px;
+
+  /* ---------- 层级 ----------
+   * 下拉菜单必须盖住顶栏与侧栏的粘性区域；集中声明以免出现「菜单被内容区切掉」。 */
+  --udm-z-sticky: 10;
+  --udm-z-menu: 40;
+
   color-scheme: dark;
 }
 
@@ -43,4 +105,43 @@ body {
   color: var(--udm-text);
   font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
+}
+
+/**
+ * 无障碍：仅供读屏器的文本。
+ * 图标按钮若没有可见文字，必须提供可读名称（不能只靠 `title`，它不保证被朗读）。
+ */
+.udm-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/** 加载指示器（纯 CSS，无在线资源）。 */
+@keyframes udm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.udm-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--udm-border);
+  border-top-color: var(--udm-accent);
+  border-radius: 50%;
+  animation: udm-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .udm-spinner {
+    animation-direction: reverse;
+    animation-duration: 3s;
+  }
 }

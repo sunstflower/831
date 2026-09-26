@@ -8,13 +8,13 @@
 
 > 本节是**实测快照（2026-09-21）**；最新一次验证命令与结果以 [`AGENTS.md`](./AGENTS.md) 的「验证基线」为准。
 
-- 当前：**P1 地基已通 + M6 地图已实现**（`shared/` · `desktop/` · `renderer/` 三端可跑）。
+- 当前：**P1 地基已通 + M6 地图已实现 + 渲染层设计系统与信息架构到位**（`shared/` · `desktop/` · `renderer/` 三端可跑）。
   - `shared/`：枚举 · 类型 · 错误目录（**唯一登记处**，见 D-33）· 常量。
   - `desktop/`：`node:sqlite` 连接 · 迁移 · seed · IPC Router（鉴权/权限/`traceId`）· 会话 · 审计 · 事件总线 · 主数据与地图快照接口。
-  - `renderer/`：入口 + 三层适配器（`mock` / `ipc` / `http`）· 登录/工作台/地图页 · **React Flow 地图**（路网 + 站点 + 车辆 + 任务起终点 + 路线高亮 + 图层开关 + 迷你图）。
+  - `renderer/`：入口 + 三层适配器（`mock` / `ipc` / `http`）· **设计系统**（`styles/theme.css` 令牌 + `styles/ui.css` 共用基元）· **信息架构**（`app/modules.ts`）· 现代化外壳（分组导航 + 顶栏 + 用户菜单）· 登录页 / **监控工作台** / 地图页 / 未实现模块说明页 · **React Flow 地图**（路网 + 站点 + 车辆 + 任务起终点 + 路线高亮 + 图层开关 + 迷你图）。
 - 具体接口清单、错误码条数、seed 规模、测试用例数等**数值**不在本节复述，按 [`docs/api.md`](./docs/api.md) §0 到负责文档查。
 - 命令：`npm run dev`（浏览器 Mock）· `npm run dev:electron`（Electron 真实链路）· `npm test` · `npm run build` · `npm run db:migrate` / `db:seed` / `db:reset`。
-- 下一步：订单/地图/车辆/算法四类文件的导入管线（[`docs/data-interfaces.md`](./docs/data-interfaces.md)）· M4 调度引擎 · M7 执行与监控。
+- 下一步：订单/地图/车辆/算法四类文件的导入管线（[`docs/data-interfaces.md`](./docs/data-interfaces.md)）· M4 调度引擎 · M7 执行与监控（工作台的指标届时由 `/api/monitor/overview` 供给，当前复用 `map/overview`）。
 
 ## 文档入口
 
@@ -83,6 +83,14 @@ npm run db:reset     # 删库重建并重新 seed（仅开发）
 │   ├── migrations/         # SQL 迁移（0001_init.sql）
 │   ├── preload.cjs         # contextBridge 最小面
 │   └── .data/app.db        # 开发库（gitignore）
-├── renderer/src/           # React 渲染层：api / store / app / pages / components / map / styles
+├── renderer/src/           # React 渲染层
+│   ├── api/                #   三层适配器（mock / ipc / http）与再导出类型
+│   ├── app/                #   路由、会话守卫、modules.ts（信息架构）
+│   ├── components/         #   外壳、品牌标识、用户菜单、内联图标集
+│   ├── pages/              #   登录 / 工作台 / 未实现模块说明页
+│   ├── domain/             #   跨模块共用（枚举 → 中文文案）
+│   ├── dashboard/          #   监控工作台：model / panels / style
+│   ├── map/                #   地图：model / nodes / edges / hooks / stage / panels / style
+│   └── styles/             #   theme.css（令牌）· ui.css（共用基元）· layout.css（外壳）
 └── tests/setup.ts          # 测试全局 setup（用例与被测代码同目录）
 ```

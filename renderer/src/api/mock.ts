@@ -5,24 +5,41 @@
  * 仅实现渲染层当前真正会调用的接口；未实现的路径返回 `API.ROUTE_NOT_FOUND`，
  * **不要伪造成功**，否则浏览器里「看起来能用」而进 Electron 就失败。
  */
-import { ERROR_CODES, type ApiResult, type DomainEvent, type ErrorCode, type SessionUser } from '@udm/shared';
+import {
+  ERROR_CODES,
+  permissionsOf,
+  type ApiResult,
+  type DomainEvent,
+  type ErrorCode,
+  type Role,
+  type SessionUser
+} from '@udm/shared';
 import type { ApiClient, Unsubscribe } from './client';
 import type { MapOverview } from './types';
 import { buildMockOverview } from './mock-data';
 
+/**
+ * 演示账号（与 `shared/src/constants.ts` 的 `SEED_ACCOUNTS` 同名同密码）。
+ *
+ * **`permissions` 必须按角色派生**（`permissionsOf(role)`），不能手写。
+ * 实测（2026-09-25）：这里曾把三个账号的 `permissions` 一律写成 `[]`，
+ * 而主进程 `services/auth.ts` 用的是 `permissionsOf(row.role)` —— 于是同一份"契约"
+ * 在浏览器形态下每个账号都是 0 个权限点、在 Electron 下是各自角色的完整权限。
+ * 界面只读角色判断导航时看不出问题（`hasPermission(role, …)` 仍按角色算），
+ * 但任何**信任 `user.permissions`** 的地方（如顶栏用户菜单显示的权限点数）会静默显示错值。
+ * 这与 mock 曾自造错误码（ISS-001 附带发现）是同一类问题：适配器之间行为不一致。
+ */
+function demoUser(id: string, username: string, role: Role, displayName: string): SessionUser {
+  return { id, username, role, displayName, permissions: permissionsOf(role) };
+}
+
 const SEED_ACCOUNTS: Record<string, { password: string; user: SessionUser }> = {
-  admin: {
-    password: 'admin123',
-    user: { id: 'seed-admin', username: 'admin', role: 'admin', displayName: '系统管理员', permissions: [] }
-  },
+  admin: { password: 'admin123', user: demoUser('seed-admin', 'admin', 'admin', '系统管理员') },
   dispatcher: {
     password: 'dispatcher123',
-    user: { id: 'seed-dispatcher', username: 'dispatcher', role: 'dispatcher', displayName: '调度员', permissions: [] }
+    user: demoUser('seed-dispatcher', 'dispatcher', 'dispatcher', '调度员')
   },
-  monitor: {
-    password: 'monitor123',
-    user: { id: 'seed-monitor', username: 'monitor', role: 'monitor', displayName: '监控员', permissions: [] }
-  }
+  monitor: { password: 'monitor123', user: demoUser('seed-monitor', 'monitor', 'monitor', '监控员') }
 };
 
 /**

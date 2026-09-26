@@ -1,177 +1,682 @@
-/** 应用外壳样式。 */
+/**
+ * 外壳与页面级样式：侧栏导航 / 顶栏 / 用户菜单 / 登录页 / 占位页。
+ *
+ * 边界（与 `styles/ui.css` 的分工）：本文件只放**页面骨架**（栅格、栏宽、粘性、页面留白），
+ * 不放通用基元（按钮/卡片/徽标的样式在 `ui.css`）。
+ * 只服务地图的样式在 `map/style/map.css`，只服务工作台的在 `dashboard/style/dashboard.css`。
+ *
+ * 色值一律走 `theme.css` 变量：这里不新增色值，改主题只改一处。
+ */
+
+/* ==================== 外壳骨架 ==================== */
 
 .udm-shell {
   display: flex;
-  flex-direction: column;
   height: 100%;
+  background: var(--udm-bg);
+}
+
+/** 键盘用户的跳转链接：平时藏起来，获得焦点时出现在左上角。 */
+.udm-skip {
+  position: absolute;
+  top: -100px;
+  left: var(--udm-space-3);
+  z-index: var(--udm-z-menu);
+  padding: 8px 12px;
+  color: #0b1220;
+  background: var(--udm-accent);
+  border-radius: var(--udm-radius-sm);
+  font-size: var(--udm-font-sm);
+  text-decoration: none;
+}
+
+.udm-skip:focus {
+  top: var(--udm-space-3);
+}
+
+.udm-rail {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  width: var(--udm-rail-w);
+  min-height: 0;
+  background: var(--udm-panel);
+  border-right: 1px solid var(--udm-hairline);
+  transition: width var(--udm-dur-base) var(--udm-ease);
+}
+
+.udm-shell.is-rail-collapsed .udm-rail {
+  width: var(--udm-rail-w-collapsed);
+}
+
+.udm-rail__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-3);
+  flex: 0 0 auto;
+  height: var(--udm-topbar-h);
+  padding: 0 var(--udm-space-4);
+  border-bottom: 1px solid var(--udm-hairline);
+  overflow: hidden;
+}
+
+.udm-rail__mark {
+  flex: 0 0 auto;
+}
+
+.udm-rail__titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.udm-rail__name {
+  font-size: var(--udm-font-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.udm-rail__sub {
+  font-size: var(--udm-font-2xs);
+  color: var(--udm-text-dim);
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+
+/* 收起时：文字与分组标题一并隐藏，只留图标（`title` 补上名称） */
+.udm-shell.is-rail-collapsed .udm-rail__titles,
+.udm-shell.is-rail-collapsed .udm-nav__label,
+.udm-shell.is-rail-collapsed .udm-nav__group-title {
+  display: none;
+}
+
+/* ==================== 导航 ==================== */
+
+.udm-nav {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--udm-space-4);
+  min-height: 0;
+  padding: var(--udm-space-3) var(--udm-space-2);
+  overflow-y: auto;
+}
+
+.udm-nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.udm-nav__group-title {
+  margin: 0 0 var(--udm-space-1);
+  padding: 0 10px;
+  font-size: var(--udm-font-2xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--udm-text-dim);
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.udm-nav__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  color: var(--udm-text-dim);
+  border-radius: var(--udm-radius-md);
+  font-size: var(--udm-font-md);
+  text-decoration: none;
+  transition:
+    background var(--udm-dur-fast) var(--udm-ease),
+    color var(--udm-dur-fast) var(--udm-ease);
+}
+
+.udm-nav__item:hover {
+  color: var(--udm-text);
+  background: var(--udm-surface-3);
+}
+
+.udm-nav__item:focus-visible {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: -2px;
+}
+
+/**
+ * 选中态用「左侧竖条 + 提亮文字 + 底色」三重表达。
+ * 只靠颜色一种手段，色觉障碍用户与低质量屏幕上会看不出当前在哪一页。
+ */
+.udm-nav__item.is-active {
+  color: var(--udm-text);
+  background: var(--udm-surface-3);
+  font-weight: 600;
+}
+
+.udm-nav__item.is-active::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -2px;
+  width: 3px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--udm-accent);
+  transform: translateY(-50%);
+}
+
+.udm-nav__icon {
+  flex: 0 0 auto;
+}
+
+.udm-shell.is-rail-collapsed .udm-nav__item {
+  justify-content: center;
+  padding: 9px 0;
+}
+
+.udm-rail__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--udm-space-2);
+  flex: 0 0 auto;
+  padding: var(--udm-space-3);
+  border-top: 1px solid var(--udm-hairline);
+}
+
+.udm-shell.is-rail-collapsed .udm-rail__foot {
+  flex-direction: column;
+}
+
+.udm-shell.is-rail-collapsed .udm-rail__foot .udm-badge {
+  /* 收起后放不下「适配器名 + 圆点」，只留圆点由 `title` 兜底 */
+  padding: 4px;
+  font-size: 0;
+}
+
+/* ==================== 顶栏 ==================== */
+
+.udm-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 .udm-topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  height: 48px;
+  gap: var(--udm-space-4);
   flex: 0 0 auto;
+  height: var(--udm-topbar-h);
+  padding: 0 var(--udm-space-4);
   background: var(--udm-panel);
-  border-bottom: 1px solid var(--udm-border);
+  border-bottom: 1px solid var(--udm-hairline);
+}
+
+.udm-topbar__titles {
+  display: flex;
+  align-items: baseline;
+  gap: var(--udm-space-3);
+  min-width: 0;
 }
 
 .udm-topbar__title {
+  margin: 0;
+  font-size: var(--udm-font-lg);
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.udm-topbar__spacer {
-  flex: 1;
-}
-
-.udm-topbar__user {
+.udm-topbar__desc {
+  margin: 0;
+  font-size: var(--udm-font-sm);
   color: var(--udm-text-dim);
-  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.udm-btn {
-  padding: 5px 12px;
-  border: 1px solid var(--udm-border);
-  border-radius: 5px;
-  background: var(--udm-panel-2);
-  color: var(--udm-text);
-  cursor: pointer;
+/** 窄屏优先丢掉说明文案，保住标题与用户菜单（信息密度取舍：标题不可省）。 */
+@media (max-width: 1080px) {
+  .udm-topbar__desc {
+    display: none;
+  }
 }
 
-.udm-btn:hover {
-  border-color: var(--udm-accent);
-}
-
-.udm-body {
+.udm-topbar__actions {
   display: flex;
-  flex: 1;
-  min-height: 0;
+  align-items: center;
+  gap: var(--udm-space-3);
+  margin-left: auto;
 }
 
-.udm-nav {
-  display: flex;
-  flex-direction: column;
-  width: 168px;
-  flex: 0 0 auto;
-  padding: 10px 8px;
-  gap: 2px;
-  background: var(--udm-panel);
-  border-right: 1px solid var(--udm-border);
+/** 心跳圆点：表示「事件通道在走」，纯装饰（`aria-hidden`），不参与语义。 */
+.udm-dot--pulse {
+  animation: udm-pulse 2.4s var(--udm-ease) infinite;
 }
 
-.udm-nav__link {
-  padding: 8px 10px;
-  border-radius: 5px;
-  color: var(--udm-text-dim);
-  text-decoration: none;
-  font-size: 13px;
+@keyframes udm-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
-.udm-nav__link:hover {
-  background: var(--udm-panel-2);
-  color: var(--udm-text);
-}
-
-.udm-nav__link.is-active {
-  background: var(--udm-panel-2);
-  color: var(--udm-accent);
-  font-weight: 600;
+@media (prefers-reduced-motion: reduce) {
+  .udm-dot--pulse {
+    animation: none;
+  }
 }
 
 .udm-content {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow: auto;
 }
 
-/* ---------- 登录页 ---------- */
-.udm-login {
+/* ==================== 用户菜单 ==================== */
+
+.udm-user {
+  position: relative;
+}
+
+.udm-user__button {
   display: flex;
   align-items: center;
-  justify-content: center;
-  height: 100%;
-}
-
-.udm-login__card {
-  width: 340px;
-  padding: 26px;
-  border: 1px solid var(--udm-border);
-  border-radius: 10px;
-  background: var(--udm-panel);
-}
-
-.udm-login__card h1 {
-  margin: 0 0 4px;
-  font-size: 18px;
-}
-
-.udm-login__hint {
-  margin: 0 0 18px;
-  color: var(--udm-text-dim);
-  font-size: 12px;
-}
-
-.udm-field {
-  display: block;
-  margin-bottom: 12px;
-}
-
-.udm-field span {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--udm-text-dim);
-  font-size: 12px;
-}
-
-.udm-field input {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--udm-border);
-  border-radius: 5px;
-  background: var(--udm-bg);
+  gap: var(--udm-space-2);
+  padding: 4px 8px 4px 4px;
   color: var(--udm-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background var(--udm-dur-fast) var(--udm-ease),
+    border-color var(--udm-dur-fast) var(--udm-ease);
 }
 
-.udm-field input:focus {
+.udm-user__button:hover {
+  background: var(--udm-surface-3);
+  border-color: var(--udm-hairline);
+}
+
+.udm-user__button:focus-visible {
   outline: 2px solid var(--udm-accent);
-  outline-offset: -1px;
+  outline-offset: 1px;
 }
 
-.udm-login__submit {
-  width: 100%;
-  padding: 9px;
-  margin-top: 6px;
-  border: none;
-  border-radius: 5px;
-  background: var(--udm-accent);
+.udm-user__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   color: #0b1220;
+  background: var(--udm-accent);
+  border-radius: 50%;
+  font-size: var(--udm-font-md);
+  font-weight: 700;
+}
+
+.udm-user__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.25;
+}
+
+.udm-user__name {
+  font-size: var(--udm-font-sm);
   font-weight: 600;
+}
+
+.udm-user__role {
+  font-size: var(--udm-font-2xs);
+  color: var(--udm-text-dim);
+}
+
+.udm-user__caret {
+  color: var(--udm-text-dim);
+  transition: transform var(--udm-dur-fast) var(--udm-ease);
+}
+
+.udm-user__caret.is-open {
+  transform: rotate(180deg);
+}
+
+@media (max-width: 720px) {
+  /* 窄屏只留头像，名字与角色进下拉菜单（避免顶栏被挤成两行） */
+  .udm-user__meta,
+  .udm-user__caret {
+    display: none;
+  }
+}
+
+.udm-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--udm-z-menu);
+  width: 224px;
+  padding: var(--udm-space-2);
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-md);
+  box-shadow: var(--udm-shadow-2);
+}
+
+.udm-menu__head {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  padding: var(--udm-space-2) var(--udm-space-2) var(--udm-space-1);
+}
+
+.udm-menu__icon {
+  color: var(--udm-accent);
+}
+
+.udm-menu__title {
+  font-size: var(--udm-font-sm);
+  font-weight: 600;
+}
+
+.udm-menu__sub {
+  font-size: var(--udm-font-2xs);
+  color: var(--udm-text-dim);
+}
+
+.udm-menu__kv {
+  padding: 0 var(--udm-space-2) var(--udm-space-2);
+  margin-bottom: var(--udm-space-1);
+  font-size: var(--udm-font-xs);
+}
+
+.udm-menu__kv dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.udm-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  width: 100%;
+  padding: 8px var(--udm-space-2);
+  color: var(--udm-text);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--udm-hairline);
+  border-radius: 0 0 var(--udm-radius-sm) var(--udm-radius-sm);
+  font: inherit;
+  font-size: var(--udm-font-sm);
+  text-align: left;
   cursor: pointer;
 }
 
-.udm-login__submit:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.udm-alert {
-  margin: 0 0 12px;
-  padding: 8px 10px;
-  border-radius: 5px;
-  background: rgba(248, 113, 113, 0.15);
-  border: 1px solid var(--udm-danger);
+.udm-menu__item:hover {
   color: var(--udm-danger);
-  font-size: 12px;
+  background: var(--udm-surface-3);
 }
 
-.udm-placeholder {
-  padding: 24px;
+/* ==================== 页面容器 ==================== */
+
+/** 普通页面的留白容器（地图页自带满高布局，不使用它）。 */
+.udm-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--udm-space-4);
+  padding: var(--udm-space-5);
+  max-width: 1600px;
+}
+
+.udm-page__intro {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--udm-space-4);
+  flex-wrap: wrap;
+}
+
+.udm-page__lead {
+  margin: 0;
+  font-size: var(--udm-font-md);
+  color: var(--udm-text-dim);
+  line-height: 1.6;
+}
+
+.udm-page__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  margin-left: auto;
+}
+
+/* ==================== 登录页 ==================== */
+
+/**
+ * 两栏：左侧品牌/能力说明，右侧表单。
+ * 为什么不是「居中一张卡片」：登录页是使用者看到的第一屏，空白的深色背景 +
+ * 一个 340px 的卡片除了「能登录」不提供任何信息；左栏顺手交代系统是干什么的、
+ * 演示账号是什么，省掉一次「我该输什么」的来回。
+ */
+.udm-login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+  height: 100%;
+}
+
+.udm-login__brand {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--udm-space-5);
+  padding: var(--udm-space-6) clamp(28px, 6vw, 72px);
+  overflow: hidden;
+  background: var(--udm-surface-1);
+  border-right: 1px solid var(--udm-hairline);
+}
+
+/**
+ * 背景网格：用 CSS 渐变画出「路网」的暗示，不用图片。
+ * `pointer-events: none` 保证它不挡表单；`opacity` 压到很低以免抢文字。
+ */
+.udm-login__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(var(--udm-hairline) 1px, transparent 1px),
+    linear-gradient(90deg, var(--udm-hairline) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(ellipse at 30% 40%, #000 20%, transparent 78%);
+}
+
+.udm-login__brandHead {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-3);
+}
+
+.udm-login__brandName {
+  font-size: var(--udm-font-xl);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.udm-login__tagline {
+  position: relative;
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--udm-font-lg);
+  line-height: 1.7;
+  color: var(--udm-text);
+}
+
+.udm-login__points {
+  position: relative;
+  display: grid;
+  gap: var(--udm-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 46ch;
+}
+
+.udm-login__points li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--udm-space-2);
+  font-size: var(--udm-font-md);
+  color: var(--udm-text-dim);
+  line-height: 1.6;
+}
+
+.udm-login__points svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--udm-accent);
+}
+
+.udm-login__points strong {
+  color: var(--udm-text);
+  font-weight: 600;
+}
+
+.udm-login__panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--udm-space-6) var(--udm-space-5);
+  background: var(--udm-bg);
+}
+
+.udm-login__form {
+  width: 100%;
+  max-width: 360px;
+}
+
+.udm-login__formTitle {
+  margin: 0 0 var(--udm-space-1);
+  font-size: var(--udm-font-xl);
+  font-weight: 600;
+}
+
+.udm-login__hint {
+  margin: 0 0 var(--udm-space-5);
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+  line-height: 1.6;
+}
+
+.udm-login__demo {
+  margin-top: var(--udm-space-5);
+  padding-top: var(--udm-space-3);
+  border-top: 1px dashed var(--udm-hairline);
+}
+
+.udm-login__demoTitle {
+  margin: 0 0 var(--udm-space-2);
+  font-size: var(--udm-font-xs);
   color: var(--udm-text-dim);
 }
 
-.udm-placeholder h2 {
-  color: var(--udm-text);
-  margin-top: 0;
+.udm-login__demoRow {
+  display: flex;
+  gap: var(--udm-space-2);
+  flex-wrap: wrap;
+}
+
+/* 窄屏：左栏收起为顶部一条，表单占满 —— 登录是唯一目标，先保证它能完成 */
+@media (max-width: 940px) {
+  .udm-login {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .udm-login__brand {
+    gap: var(--udm-space-4);
+    padding: var(--udm-space-5) var(--udm-space-5) var(--udm-space-4);
+    border-right: none;
+    border-bottom: 1px solid var(--udm-hairline);
+  }
+
+  .udm-login__points {
+    display: none;
+  }
+
+  .udm-login__tagline {
+    font-size: var(--udm-font-md);
+  }
+
+  .udm-login__panel {
+    align-items: flex-start;
+    padding: var(--udm-space-5);
+  }
+}
+
+/* ==================== 未实现模块（占位页） ==================== */
+
+.udm-planned__head {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-3);
+}
+
+.udm-planned__id {
+  padding: 3px 9px;
+  color: var(--udm-accent);
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  border-radius: var(--udm-radius-sm);
+  font-size: var(--udm-font-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.udm-planned__caps {
+  display: grid;
+  gap: var(--udm-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.udm-planned__caps li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--udm-space-3);
+  padding-bottom: var(--udm-space-2);
+  border-bottom: 1px dashed var(--udm-hairline);
+  font-size: var(--udm-font-md);
+}
+
+.udm-planned__caps li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/** 需求编号：等宽字体让 5 条编号左对齐成一列，扫读时不必逐字读。 */
+.udm-planned__req {
+  flex: 0 0 92px;
+  color: var(--udm-text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--udm-font-xs);
+}
+
+.udm-planned__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--udm-space-4);
+  align-items: start;
 }

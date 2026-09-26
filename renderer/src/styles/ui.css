@@ -1,0 +1,475 @@
+/**
+ * UI 基元（设计系统）。
+ *
+ * **为什么单独一份**：按钮 / 面板 / 卡片 / 键值表 / 徽标这些「到处都在用」的东西原先散在
+ * `styles/layout.css`（`.udm-btn` 基础样式、表单字段、提示条）与 `map/style/map.css`
+ * （`.udm-btn--ghost`、`.udm-icon-btn`、`.udm-panel`、`.udm-kv`、`.tone-*`、`.udm-swatch*`）里。
+ * 后果是外壳与工作台想用一个幽灵按钮，得先知道它住在**地图**的样式表里；地图之外一复用，
+ * 要么 import `map.css`（把画布样式带进工作台），要么再抄一份（第二套真相，本项目反复踩过）。
+ *
+ * 现在按「谁在用」划分，规则简单到不用查表：
+ *   - **被 2 处以上使用 → 本文件**；
+ *   - 只服务画布 → `map/style/map.css`；
+ *   - 只服务外壳与页面 → `styles/layout.css`；
+ *   - 只服务工作台 → `dashboard/style/dashboard.css`。
+ *
+ * **色值约束**：本文件只引用 `theme.css` 的变量，不新增色值。画布那一组颜色另有
+ * `palette.test.ts` 断言「CSS 变量 ↔ `palette.ts` 字面量」一致，改色请改 `theme.css`。
+ */
+
+/* ==================== 按钮 ==================== */
+
+.udm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--udm-space-1);
+  padding: 6px 12px;
+  font: inherit;
+  font-size: var(--udm-font-sm);
+  line-height: 1.4;
+  color: var(--udm-text);
+  background: var(--udm-surface-3);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--udm-dur-fast) var(--udm-ease),
+    background var(--udm-dur-fast) var(--udm-ease),
+    color var(--udm-dur-fast) var(--udm-ease);
+}
+
+.udm-btn:hover {
+  border-color: var(--udm-accent);
+  background: var(--udm-surface-4);
+}
+
+/* 键盘用户必须看得见焦点：`title` 与 hover 都对键盘无效 */
+.udm-btn:focus-visible {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: 1px;
+}
+
+.udm-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.udm-btn--ghost {
+  padding: 4px 9px;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+  background: transparent;
+}
+
+.udm-btn--ghost:hover {
+  color: var(--udm-text);
+}
+
+.udm-btn--primary {
+  color: #0b1220;
+  background: var(--udm-accent);
+  border-color: var(--udm-accent);
+  font-weight: 600;
+}
+
+.udm-btn--primary:hover {
+  background: #7dd3fc;
+  border-color: #7dd3fc;
+}
+
+.udm-btn--danger:hover {
+  color: var(--udm-danger);
+  border-color: var(--udm-danger);
+}
+
+/** 表单内通栏按钮（登录页等）。 */
+.udm-btn--block {
+  width: 100%;
+  justify-content: center;
+  padding: 9px;
+}
+
+.udm-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--udm-text-dim);
+  background: transparent;
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-sm);
+  cursor: pointer;
+}
+
+.udm-icon-btn:hover {
+  color: var(--udm-accent);
+  border-color: var(--udm-accent);
+}
+
+.udm-icon-btn:focus-visible {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: 1px;
+}
+
+/** 无边框图标按钮（用于已有自身背景的容器，如顶栏用户区）。 */
+.udm-icon-btn--plain {
+  border-color: transparent;
+}
+
+/* ==================== 卡片 / 面板 ==================== */
+
+/** 页面级卡片：有头有体有脚，是工作台的基本块。 */
+.udm-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-md);
+  box-shadow: var(--udm-shadow-1);
+}
+
+.udm-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  flex: 0 0 auto;
+  padding: var(--udm-space-3) var(--udm-space-4);
+  border-bottom: 1px solid var(--udm-hairline);
+}
+
+.udm-card__title {
+  margin: 0;
+  font-size: var(--udm-font-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--udm-text);
+}
+
+.udm-card__icon {
+  flex: 0 0 auto;
+  color: var(--udm-accent);
+}
+
+/** 右侧的动作/说明槽位：`margin-left:auto` 让标题与它自然分列两端。 */
+.udm-card__aside {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  margin-left: auto;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+}
+
+.udm-card__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--udm-space-4);
+}
+
+/** 内容自带内边距（如列表行）时用，避免出现双份留白。 */
+.udm-card__body--flush {
+  padding: 0;
+}
+
+.udm-card__foot {
+  flex: 0 0 auto;
+  padding: var(--udm-space-3) var(--udm-space-4);
+  border-top: 1px solid var(--udm-hairline);
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+}
+
+/**
+ * 侧栏面板（沿自地图侧栏的既有形态，被地图与工作台共用）。
+ * 与 `.udm-card` 的差别：卡片是页面网格里的独立块（有外边距、有阴影），
+ * 面板是**贴在栏内**的分区（用发丝线分隔，不叠阴影）。
+ */
+.udm-panel {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--udm-hairline);
+}
+
+.udm-panel:last-child {
+  border-bottom: none;
+}
+
+.udm-panel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  margin-bottom: 10px;
+}
+
+.udm-panel__icon {
+  flex: 0 0 auto;
+  color: var(--udm-accent);
+}
+
+.udm-panel__head h2 {
+  margin: 0;
+  font-size: var(--udm-font-sm);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--udm-text-dim);
+  text-transform: uppercase;
+}
+
+/* ==================== 键值表 ==================== */
+
+.udm-kv {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--udm-hairline);
+  font-size: var(--udm-font-sm);
+}
+
+.udm-kv > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.udm-kv dt {
+  color: var(--udm-text-dim);
+  white-space: nowrap;
+}
+
+.udm-kv dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 详情卡用「上下堆叠」而非左右对齐：值可能很长（如「1 个节点 · 3/5 段有数据」） */
+.udm-kv--stacked > div {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--udm-hairline);
+}
+
+.udm-kv--stacked > div:last-child {
+  border-bottom: none;
+}
+
+.udm-kv--stacked dd {
+  text-align: left;
+  font-weight: 600;
+}
+
+/** 无上边框的变体：紧跟在标题下、不需要再画一条分隔线时用。 */
+.udm-kv--flush {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* ==================== 状态色 / 徽标 / 色块 ==================== */
+
+/* 状态色：只在真正表达状态时使用，避免整屏都是彩色数字 */
+.tone-ok { color: var(--udm-ok); }
+.tone-warn { color: var(--udm-warn); }
+.tone-danger { color: var(--udm-danger); }
+.tone-info { color: var(--udm-accent); }
+.tone-dim { color: var(--udm-text-dim); }
+
+/** 徽标：在标题/列表里承担「这是哪一类、哪个状态」的短标签。 */
+.udm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  font-size: var(--udm-font-2xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--udm-text-dim);
+  background: var(--udm-surface-3);
+  border: 1px solid var(--udm-hairline);
+  border-radius: 999px;
+}
+
+.udm-badge--ok {
+  color: var(--udm-ok);
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.32);
+}
+
+.udm-badge--warn {
+  color: var(--udm-warn);
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.32);
+}
+
+.udm-badge--danger {
+  color: var(--udm-danger);
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.32);
+}
+
+.udm-badge--info {
+  color: var(--udm-accent);
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.32);
+}
+
+/** 图例色块：形状也参与表意（车辆是「车身」形、任务端点是圆点）。 */
+.udm-swatch {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: var(--udm-text-dim);
+}
+
+.udm-swatch--net { background: var(--udm-canvas-net); }
+.udm-swatch--route { background: var(--udm-canvas-route); }
+.udm-swatch--site { background: var(--udm-canvas-site); }
+.udm-swatch--task { background: var(--udm-canvas-task); border-radius: 50%; }
+.udm-swatch--order { background: var(--udm-canvas-order); }
+.udm-swatch--vehicle { background: var(--udm-canvas-vehicle); border-radius: 3px 3px 6px 6px; }
+
+/** 圆点：状态/级别指示，比色块更轻。 */
+.udm-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ==================== 短标签按钮（chip） ==================== */
+
+/**
+ * `chip`：比按钮更轻的「一键切换」控件（图层预设、演示账号快填）。
+ * **不含 `flex`** —— 是否拉伸由所在容器决定（图层预设行需要等宽，见 `map.css`）；
+ * 把 `flex: 1` 写进基类会让它在纵向容器里被抻高，属于「基类替使用方做了布局决定」。
+ */
+.udm-chip {
+  padding: 5px 8px;
+  font: inherit;
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text);
+  background: var(--udm-surface-3);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--udm-dur-fast) var(--udm-ease),
+    background var(--udm-dur-fast) var(--udm-ease);
+}
+
+.udm-chip:hover {
+  border-color: var(--udm-accent);
+  background: var(--udm-surface-4);
+}
+
+.udm-chip:focus-visible {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: 1px;
+}
+
+/* ==================== 进度条 ==================== */
+
+.udm-progress {
+  height: 6px;
+  overflow: hidden;
+  background: var(--udm-surface-4);
+  border-radius: 999px;
+}
+
+.udm-progress__fill {
+  height: 100%;
+  background: var(--udm-accent);
+  border-radius: inherit;
+  transition: width var(--udm-dur-base) var(--udm-ease);
+}
+
+.udm-progress--ok .udm-progress__fill { background: var(--udm-ok); }
+.udm-progress--warn .udm-progress__fill { background: var(--udm-warn); }
+.udm-progress--danger .udm-progress__fill { background: var(--udm-danger); }
+
+/* ==================== 表单字段 ==================== */
+
+.udm-field {
+  display: block;
+  margin-bottom: var(--udm-space-3);
+}
+
+.udm-field > span {
+  display: block;
+  margin-bottom: var(--udm-space-1);
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+}
+
+.udm-field input {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: var(--udm-font-md);
+  color: var(--udm-text);
+  background: var(--udm-surface-1);
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-sm);
+}
+
+.udm-field input:focus {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: -1px;
+}
+
+/** 行内错误提示（登录失败等）。 */
+.udm-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--udm-space-2);
+  margin: 0 0 var(--udm-space-3);
+  padding: 8px 10px;
+  font-size: var(--udm-font-sm);
+  color: var(--udm-danger);
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid var(--udm-danger);
+  border-radius: var(--udm-radius-sm);
+}
+
+/* ==================== 空态 ==================== */
+
+/** 空态：给出「为什么空 + 下一步去哪」，不留白屏（`design.md` §7.2 第 6 条）。 */
+.udm-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--udm-space-2);
+  padding: var(--udm-space-5) var(--udm-space-4);
+  text-align: center;
+  color: var(--udm-text-dim);
+}
+
+.udm-empty__icon {
+  color: var(--udm-border);
+}
+
+.udm-empty__title {
+  margin: 0;
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text);
+}
+
+.udm-empty__hint {
+  margin: 0;
+  max-width: 42ch;
+  font-size: var(--udm-font-xs);
+  line-height: 1.6;
+}

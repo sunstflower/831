@@ -1,4 +1,5 @@
 import '../../test/dom-stubs';
+import { PIXELS_PER_METER } from '../model/projection';
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { useVehicleMotion } from './useVehicleMotion';
@@ -19,8 +20,8 @@ describe('useVehicleMotion', () => {
     });
 
     const positions = onFrame.mock.calls.at(-1)![0] as Record<string, { x: number; y: number }>;
-    // 业务 20 m → 画布 60 px（PIXELS_PER_METER = 3），y 取负
-    expect(positions.v1!.x).toBeCloseTo(60, 3);
+    // 业务 20 m → 画布 20 * PIXELS_PER_METER px，y 取负（比例常量见 model/projection.ts）
+    expect(positions.v1!.x).toBeCloseTo(20 * PIXELS_PER_METER, 3);
     expect(positions.v1!.y).toBeCloseTo(0, 3);
   });
 

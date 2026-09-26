@@ -10,19 +10,42 @@
 ## 项目快照
 
 - **项目**：无人物流调度管理软件（`/Users/sunsetflower/myJobs/js/831`）。
-- **阶段**：**P1 地基已通 + M6 地图已实现（三层链路端到端可跑）**。代码已落地三端：
+- **阶段**：**P1 地基已通 + M6 地图已实现 + 渲染层设计系统与信息架构到位（三层链路端到端可跑）**。代码已落地三端：
   - `shared/`：枚举 · 类型（含 `MapOverview` 系列快照契约）· **错误目录 `ERROR_CODES` 125 条**（35 运行时 + 90 导入域；**唯一登记处**，见 D-33）· 常量（含 `SEED_IDS` 演示任务/路线/告警）。
   - `desktop/`：`node:sqlite` 连接（`createRequire` 惰性加载，见下）· 迁移 · seed（含演示执行数据）· IPC Router · 会话 · 审计 · **事件总线（按会话权限过滤，D-32）** · **8 条接口**：health / auth.login / auth.logout / auth.session / settings / settings.schema / users / **map.overview**；新增 `repositories/map.repo.ts`（快照读取层）。
-  - `renderer/`：**已补齐入口与全部业务代码** —— `src/main.tsx`（HashRouter，Electron `file://` 必需）、三层适配器（mock / ipc / http）、zustand store（session / selection）、路由与页面（登录 / 工作台 / 地图 / 其余 7 个占位页）、**React Flow 地图**（`map/` 下 model / nodes / edges / hooks / stage / style 全套）。
+  - `renderer/`：**入口与业务代码齐全，并已沉淀两层共用地基（D-36）** —— `src/main.tsx`（HashRouter，Electron `file://` 必需）、三层适配器（mock / ipc / http）、zustand store（session / selection）、路由与页面（**现代化外壳 + 监控工作台 + 登录页** + 地图 + 其余 7 个说明页）、**React Flow 地图**（`map/` 下 model / nodes / edges / hooks / stage / panels / style 全套）、**设计系统**（`styles/theme.css` 令牌 + `styles/ui.css` 共用基元）、**信息架构**（`app/modules.ts`）、**跨模块共用层**（`domain/labels.ts`）与**监控工作台**（`dashboard/` 下 model / panels / style）。
   - `npm run build` 与 `npm test` 均已通过（详见「验证基线」）。
 - **形态**：本地优先桌面应用 —— Electron 主进程（SQLite + 领域服务 + 算法）+ React 渲染层 + 三层服务适配器（IPC / 本地 HTTP / Mock）。
 - **技术栈（`node_modules` 实测版本）**：Electron 44.3.0 · React / React-DOM 18.3.1 · **`@xyflow/react` 12.11.6（仅 renderer；见 D-21）** · react-router-dom 6.30.6 · **Vite 6.4.3（renderer 独立安装）+ Vite 5.4.21（根，Vitest 侧）** · TypeScript 5.9.3 · **Node 内置 `node:sqlite`（见 D-14，非 better-sqlite3）** · zustand 5.0.15（`@xyflow/react` 另带嵌套 zustand 4.5.7，两者并存、互不影响）· Vitest 2.1.9 · bcryptjs 2.4.3 · @testing-library/react 16.3.3 · **@testing-library/jest-dom 6.10.0** · jsdom 25.0.1 · concurrently 9.2.4 · wait-on 8.0.5；运行时 Node v25.8.2 / npm 11.11.1。
-- **仓库状态**：已完成 `git init`，当前最新提交为本次「提交后回写」批次（`docs(issues): 提交后回写基线与 ISS-029，工作区清空`），其下为内容批次 **`84fa028`（`docs(base-data): 补 M2 模块开发文档并修两处契约缺陷`）**（10 份文件修改 + 新增 `docs/module-M2-base-data.md`）；历史 `29143cc` → `7dcc211` → `66fa7d2` → `3e33de7` → `121af4d` → `ab9a762` → `076714e` → `84fa028`（→ 本次回写提交）。**工作区已清空（0 处未提交改动）**，`ISS-029` 随之关闭（见 `docs/issues.md` §2）。`package-lock.json` 已纳入版本控制；开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除。
-- **验证基线（2026-09-22 复测；「M2 模块文档 + 契约缺陷修复」会话复跑，三端结论未变）**：
+- **仓库状态**：已完成 `git init`。提交序列 `29143cc` → `7dcc211` → `66fa7d2` → `3e33de7` → `121af4d` → `ab9a762` → `076714e` → `84fa028` → `e9a6100`（`docs(issues): 提交后回写基线与 ISS-029，工作区清空`）。
+  - ⚠️ **本轮改动尚未提交**：`e9a6100` 之后工作区存在两批未提交内容 ——
+    **(1)** 2026-09-25 的地图现代化改动（`renderer/src/map/` 与 `AppLayout` 等，无工作日志，
+    见下「困难与问题记录」与 `docs/issues.md` ISS-042）；
+    **(2)** 本轮「设计系统 + 信息架构 + 现代化外壳/工作台/登录页」，含同步回写的
+    `AGENTS.md` / `docs/issues.md` / `docs/api.md` / `docs/module-M6-map.md` / `README.md`
+    与 `docs/requirement-raw.md` 的边界行补全（ISS-044）。
+    按纪律，本条日志与 `docs/issues.md` 同步完成后才执行提交。
+  - `package-lock.json` 已纳入版本控制；开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除。
+- **验证基线（2026-09-25 复测；「设计系统 + 信息架构 + 现代化外壳/工作台/登录页」会话）**：
+  - > 2026-09-25 复跑：`npm test` **27 套件 / 223 用例**通过；`typecheck` 三 workspace exit 0；
+  - > `build` 三端通过（renderer JS 446.48 kB / gzip 144.10 kB、CSS 53.23 kB / gzip 9.21 kB）；
+  - > 文档自检：14 份 Markdown 边界行齐全 · 围栏 112 对配平 · 255 表格块 · 62 条相对链接 0 悬空；
+  - > `docs/issues.md` 索引/明细/锚点 44 / 44 / 44，悬空 0 · 未用 0（严重度合计 5+29+10=44）；
+  - > **浏览器 Mock 形态**（Playwright + 系统 Chrome）：登录 → 工作台 → 地图 → 说明页逐页截图核对，
+  - > 窄屏 1280 / 1024 复核通过；控制台错误仅 1 条 favicon 404（ISS-041，非本次引入）。
+  - > **真实 Electron 形态**（CDP 连渲染进程，真实 IPC + SQLite）：适配器自动判定 `ipc`；
+  - > 三角色实测（2026-09-26 复测）：dispatcher 权限点 16 / 导航 7 项、monitor 6 / 5 项、admin 20 / 9 项；
+  - > 地图页 `{总 20, 路网 12, 站点 3, 车辆 3, 任务端点 2}` + 缩略图 20 方块，与 seed 一致；控制台错误 0 条。
+  - > 下列逐项为 2026-09-21～09-22 的实测明细，本轮未改动主进程与数据库，故未重跑 `db:*`。
+  - ⚠️ 上一版基线的**测试套件数 / 用例数 / renderer 产物体积**三项已被本轮取代（见上），
+  - ⚠️ 其余结论（错误码闭环、权限过滤、dev 脚本、数据库引导）本轮未复跑、继续有效。
+
+- **验证基线（2026-09-22；「M2 模块文档 + 契约缺陷修复」会话复跑，三端结论未变）** —— 保留供对照：
   - > 2026-09-22 复跑：`npm test` 18 套件 / 110 用例通过；`typecheck` 三 workspace exit 0；
   - > `build` 三端通过（renderer JS 394.36 kB / gzip 128.82 kB、CSS 24.45 kB / gzip 4.51 kB）；
   - > `ERROR_CODES` 125 条唯一（35 运行时 + 90 导入域）；文档结构自检 14 份 Markdown / 248 表格块 / 224 围栏全通过。
   - > 下列逐项为 2026-09-21 的实测明细，本轮未改动代码，故未重跑 `db:*` 与 Electron 端到端。
+  - > ⚠️ 该段的套件/用例数与 renderer 产物体积已被 2026-09-25 基线取代（保留供对照）。
   - ✅ `npm test`：**18 个套件 / 110 个用例全通过**（本轮新增 `errors.catalog.test.ts` 5 条、`event-bus.test.ts` 8 条、`mock-parity.test.ts` 3 条）。
   - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace 全部 exit 0。
   - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 0.42 kB + CSS 24.45 kB（gzip 4.51 kB）+ JS 394.36 kB（gzip 128.82 kB）。
@@ -59,10 +82,16 @@
 | `desktop/src/services/` | `auth.ts`（登录/锁定策略）、`password.ts`（bcryptjs）、`session.ts`（内存会话）、`audit.ts`（审计写入）、`event-bus.ts`（**按会话权限过滤后**推送领域事件，D-32；含 `EVENT_PERMISSIONS`）、`event-bus.test.ts` | 领域服务层（任务/调度/路线/告警/监控）整体未开工；**无持续产生 `vehicle.changed` 的执行器**（故车辆静止） |
 | `desktop/src/cli/db.ts` | `migrate` / `seed` / `reset`（reset 删 `-wal`/`-shm` 后重建） | — |
 | `desktop/preload.cjs` | `window.dispatchApi.invoke/on`（`udm:invoke` / `udm:event`，contextIsolation 开启） | — |
-| `renderer/src/` | **全套已落地**：`main.tsx`（HashRouter，Electron `file://` 必需）、`api/`（client 契约 + `ipc`/`http`/`mock` 三层适配器 + `types.ts` 再导出 shared + `mock-data.ts` 与 seed 同源 + **`mock-parity.test.ts` 锁死三层错误码一致**）、`store/`（session / selection）、`app/`（路由 + `RequireSession`）、`components/AppLayout`、`pages/`（登录 / 工作台 / 占位页）、`map/`（model 6 + nodes 5 + edges 2 + hooks 4 + stage + style）、`test/dom-stubs.ts` | 任务/调度/告警等业务页仍为占位；地图缺轨迹回放、订单端点图层；无跨包 E2E 测试 |
-| `tests/setup.ts` | 全局 setup（一行 `@testing-library/jest-dom/vitest`，依赖已补齐） | ✅ 已解锁：18 套件 / 110 用例全通过；jsdom 所需的 `ResizeObserver`/`matchMedia` stub 放在 `renderer/src/test/dom-stubs.ts` 里按需引入，**不进全局 setup**（否则 node 环境的 desktop 用例会被污染） |
+| `renderer/src/` | **全套已落地**：`main.tsx`（HashRouter，Electron `file://` 必需）、`api/`（client 契约 + `ipc`/`http`/`mock` 三层适配器 + `types.ts` 再导出 shared + `mock-data.ts` 与 seed 同源 + **`mock-parity.test.ts` 锁死三层错误码与登录权限口径一致**）、`store/`（session / selection）、`app/`（路由 + `RequireSession` + **`modules.ts` 信息架构**）、`styles/`（**`theme.css` 令牌 + `ui.css` 共用基元** + `layout.css` 外壳）、`components/`（AppLayout / **BrandMark** / **UserMenu** / `icons.tsx` 内联图标集）、`pages/`（登录 / 工作台 / 未实现模块说明页）、`domain/labels.ts`（枚举→中文，跨模块共用）、`dashboard/`（**工作台 model + 6 个面板 + style**）、`map/`（model 11 + nodes 5 + edges 2 + hooks 6 + stage + panels + style）、`test/dom-stubs.ts` | 任务/调度/告警等业务页仍为占位（但已有「计划能力 + 依赖契约」说明）；地图缺轨迹回放（Req-M6-6）；**工作台数据源仍复用 `map/overview`**，待 `/api/monitor/overview` 落地后切换；无跨包 E2E 测试 |
+| `tests/setup.ts` | 全局 setup（`@testing-library/jest-dom/vitest` + 每个用例后卸载 React 树 —— **本项目未开 `globals`，自动 cleanup 不生效**，必须显式注册） | ✅ 已解锁：27 套件 / 223 用例全通过；jsdom 所需的 `ResizeObserver`/`matchMedia` stub 放在 `renderer/src/test/dom-stubs.ts` 里按需引入，**不进全局 setup**（否则 node 环境的 desktop 用例会被污染） |
 
-> 测试现状：**18 个测试文件 / 110 用例全通过** —— `shared/`（enums、errors、**errors.catalog**）+ `desktop/`（db、auth、router、map.repo、**services/event-bus**）+ `renderer/`（api/index、api/mock-data、**api/mock-parity**、map/model 的 ids/projection/structural/motion/toFlow、map/MapView.tsx、map/hooks/useVehicleMotion）。
+> 测试现状：**27 个测试文件 / 223 用例全通过** ——
+> `shared/`（enums、errors、errors.catalog）+
+> `desktop/`（db、auth、router、map.repo、services/event-bus）+
+> `renderer/`（api/index、api/mock-data、api/mock-parity、**domain/labels**、
+> **dashboard/model/summary**、**dashboard/panels/dashboard**、
+> map/model 的 ids/projection/structural/motion/toFlow/**focus/metrics/detail/palette/visualization**、
+> map/MapView.tsx、map/panels、map/hooks/useVehicleMotion）。
 
 ## 角色与权限摘要（实现必须遵守）
 
@@ -160,6 +189,7 @@
 | D-33 | 错误码**唯一登记处**为 `shared/src/errors.ts` 的 `ERROR_CODES`；命名统一为 **`域.原因`** 两段式（对应 Google AIP-193 `ErrorInfo` 的 `domain`+`reason`），域按**业务概念**而非「文件来源」划分；**同一概念只允许一个 code**；`severity`（error/warning/info）是单次问题出现的属性、不是 code 的身份，故同一 code 可在不同调用点有不同 severity（如 `GRAPH.EMPTY` 导入预检 warning、调度预览 error） | 项目曾同时存在两套目录（34 条 vs 97 条，**零重叠**），两份文档各自声称「唯一登记处」，同一概念两个名字（`GRAPH.EMPTY` vs `MAP.EMPTY_GRAPH`）。前端按 code 做文案映射，两套 key 会直接打挂本地化（ISS-001）。AIP-193 明确：同一个 `(reason, domain)` 对**必须**用于同一个错误、且**不得**用于不同错误 —— 即「概念唯一」优先于「文件族前缀统一」。合并后 123 条（34 运行时 + 89 导入域；后续按同一登记处继续增加，**当前条数以 `docs/api.md` §2 为准**），并以 `shared/src/errors.catalog.test.ts` 把该规定变成可执行断言（文档里出现未登记 code 会 `npm test` 失败） | 已定 |
 | D-34 | **文档事实单一来源（SSOT）**：`docs/api.md` §0 用一张表把每个易漂移事实指派给**唯一负责文档**（错误码→`shared/src/errors.ts`、接口/事件→`docs/api.md`、DDL→`docs/database.md`、`Req-*`/状态机→`design.md`、导入字段契约→`docs/data-interfaces.md`、脚本/验收→`docs/build-plan.md`、问题→`docs/issues.md`、决策→`AGENTS.md`、索引→`README.md`），其余文档**只能引用 §号、不得复述数值**；每份文档抬头用「**文档边界**」一行自声明其负责范围 | 历史上同一事实最多有**三种写法**（ISS-032：迁移目录、seed 规模、适配器默认值等 12 处），根因不是「写错了」而是**多处各写一份**——同一天在不同文档里写对、也同时写错。单点纠正只能修一次，指派唯一来源才能防复发。这与 D-33（错误码只改一处）是同一原则在不同层面的应用：**每个事实只有一个作者**，其余都是读者。见 `docs/api.md` §0 | 已定 |
 | D-35 | `edges` 新增业务 `code` 列（`TEXT NOT NULL UNIQUE`）作为 D-18 引用的**持久键**：缺省按两端节点 code 推导 `E_<fromCode>_<toCode>`，反向边加 `_R`；`/api/edges` 暴露并支持按 `code` 查询，`code` 创建后不可改。**文件内 `edge_id` 字段语义 = 边的 `code`**（导入器解析为内部 `id` 后落库，如 `sites.edge_id` 列存 id）；库内 JSON 列（`routes.edge_ids`）继续存 **id**，与 `routes.node_ids` 保持一致 | `docs/data-interfaces.md` §4.2/§4.3 要求「文件内一律用 code 引用」（D-18），且样本 `campus_edges.csv` 的 `edge_id` 列映射为 `edges[].code`；`sites.onEdgeCode` / `obstacles.affectsEdgeCodes[]` / `codeOfReverse` / `restrictions` 目标都指向 `edges[].code`。但 `nodes`/`sites`/`vehicles`/`task_templates`/`tasks` **都有 code 列，唯独 `edges` 没有** —— 契约要求一个无处落库的键，`merge` 模式的「库内解析」也无从实现（只能靠 `(from_node_id,to_node_id)` 反推，与文件里的 `code` 无法互相校验）。落库随 `0002_data_import.sql`（加列 + 按 `E_<from>_<to>` 回填既有行），列建议见 `docs/data-interfaces.md` §10。见 `docs/module-M2-base-data.md` §8 | 待评审 |
+| D-36 | 渲染层引入**设计系统与信息架构两层共用地基**，并把「复用规则」写成可执行约束：① `styles/theme.css` 承载全部设计令牌（颜色 / 字号 7 档 / 间距 6 档 / 动效 / 层级）；② 新增 `styles/ui.css` 承载**被 2 处以上使用**的基元（`.udm-btn` / `.udm-panel` / `.udm-card` / `.udm-kv` / `.udm-badge` / `.udm-swatch` / `.udm-chip` / `.udm-progress` / `.udm-empty` / `.udm-field` / `.tone-*`），`map.css` 与 `layout.css` 只留**本模块特有**的布局；③ 新增 `app/modules.ts` 作为「模块 → 路由 / 标题 / 权限 / 图标 / 计划能力」的**唯一作者**，导航分组、顶栏标题、占位页说明三处共用；④ 新增 `domain/labels.ts`（枚举→中文，原 `map/model/labels.ts` 上移）与 `dashboard/`（工作台 model + panels + style） | 起因是三条实测到的具体问题：**(a)** 通用基元（`.udm-btn--ghost` / `.udm-icon-btn` / `.udm-panel` / `.udm-kv` / `.tone-*` / `.udm-swatch`）当时**只存在于 `map/style/map.css`** —— 地图之外的模块要复用一个幽灵按钮，就得 import 画布样式表或再抄一份，二者都会制造第二套真相（D-34）；**(b)** 「导航项 / 页面标题 / 未实现模块说明」此前各写一份，改名时必然漏改；**(c)** `map/model/labels.ts` 在被工作台共用时出现「import 地图模块」的尴尬依赖。判定规则取**「按谁在用划分」**而非「按文件类型」：被 2 处以上使用 → `styles/ui.css`；只服务画布 → `map/style/map.css`；只服务外壳与页面 → `styles/layout.css`；只服务工作台 → `dashboard/style/dashboard.css`。`theme.css` 的令牌值仍受既有 `palette.test.ts` 断言（CSS 变量 ↔ `palette.ts` 字面量一致），故本次拆分**未引入任何新色值** | 已定 |
 
 ## 困难与问题记录
 
@@ -218,6 +248,13 @@
 | 2026-09-22 | `PATCH /api/vehicles/{id}/status` 的文档取值 `enabled` **不在车辆状态枚举里**，按契约实现会写库失败 | 该段从 `sites` 的启停写法复制而来（`sites`/`nodes`/`edges` 确有 `enabled`），而车辆 7 态没有这个取值；同段落还把「更新基础属性」写成可含 `status` | 改为 `disabled` / `idle`，显式声明「车辆域没有 `enabled`」、占用中停用被拒、`PUT` 不含 `status`。**教训：任何数值/结构清单都查不出这类错 —— 只有把契约与 `enums.ts` / DDL 的 CHECK 逐项对表才会暴露** · 出处：`docs/api.md` §3.2.2（ISS-036） |
 | 2026-09-22 | 差点把「尚未落地」的 `edges.code` 列写进 `docs/database.md` §2 的 `0001_init.sql` DDL | 该节声明与迁移文件一致；我为了记录 D-35 直接改了 DDL，等于宣称该列已存在 | 回滚，改为在 §6 的 `0002_data_import.sql` 登记行注明，并在 `design.md` §6.2 用「**待加列**」区分现有与目标。**教训：新增「尚未实现」的内容时，版式上必须与「已实现」可区分，否则文档会骗人** · 出处：`docs/database.md` §2/§6 · `design.md` §6.2（D-35） |
 | 2026-09-22 | `docs/issues.md` §0.2 的 **37 条索引链接渲染后全部点不动**（源码里看不出异常） | 只写了 `](#iss037)`，但从未写入对应的 `<a id="iss037">`；明细标题渲染出的锚点是 `iss-037-标题…` 形态 | 每条标题前补 `<a id="iss0xx">`（38 个），锚点 ↔ 链接 ↔ 明细三者闭环。**教训：结构自检的覆盖面本身就是风险 —— 之前只查列数/围栏/编号，漏了链接可解析性，已补进脚本** · 出处：`docs/issues.md`（ISS-038） |
+| 2026-09-25 | 同一份「登录响应」在两种适配器下给出**不同的 `permissions`**：mock 返回 `[]`、主进程返回该角色的完整权限点 | `renderer/src/api/mock.ts` 手写了三个演示账号并把 `permissions` 一律填 `[]`，而 `desktop/src/services/auth.ts` 用的是 `permissionsOf(row.role)`。页面只按**角色**判断导航（`hasPermission(role, …)`）时完全看不出差别，因此该字段长期无人读取、也就无人发现 | **已解决**：mock 改为 `permissionsOf(role)` 派生，并在 `mock-parity.test.ts` 新增「两种形态的 permissions 口径一致」断言。发现路径值得记录——它是在新写的顶栏用户菜单「顺手显示权限点数」时才暴露的：**一个从未被读取的字段，一旦被读就立刻暴露两套口径** · 出处：`renderer/src/api/mock.ts` · `renderer/src/api/mock-parity.test.ts`（ISS-040） |
+| 2026-09-25 | 工作台的地图预览首次渲染时，路网被顶到画布左边缘、且此后**永不重试** | 预览照抄了地图页 `useReactFlow().fitView()` 的手调写法，但**漏了它配套的 `useNodesInitialized()` 门控**：手调版本在节点尺寸仍为 0 时就算包围盒，算出的边界是错的。地图页早已记录过这次实测（`MapView.tsx` 注释），但那条知识**只存在于那个文件的注释里** | **已解决**：预览改用 `<ReactFlow fitView fitViewOptions={…}>` 内置 prop，由 React Flow 自己在测量完成后适配，少一份需要维护的时序代码。**教训：跨模块复用代码时，同一处注释里的「为什么」不会跟着代码一起被复用到新位置** · 出处：`renderer/src/dashboard/panels/MapPreview.tsx` |
+| 2026-09-25 | 通用 UI 基元（`.udm-btn--ghost` / `.udm-icon-btn` / `.udm-panel` / `.udm-kv` / `.tone-*` / `.udm-swatch`）**只存在于 `map/style/map.css`**；「导航项 / 页面标题 / 未实现模块说明」三处各写一份 | 地图模块先落地并把基元顺手写进了自己的样式表；随后工作台要复用同一个幽灵按钮，就只剩两条路：import 画布样式表（把画布样式带进工作台）或再抄一份（制造第二套真相，D-34 明令禁止）。同理 `app/App.tsx` 的 7 个占位路由把标题写死了一遍，而侧栏导航另写一份 | **已解决**：定 D-36 —— 抽 `styles/ui.css`（规则：**被 2 处以上使用 → 归设计系统**）、`app/modules.ts`（模块元数据唯一作者）、`domain/labels.ts`（枚举文案上移）。`map.css` 由 1004 行降至 866 行 · 出处：`renderer/src/styles/ui.css` · `renderer/src/app/modules.ts`（ISS-043） |
+| 2026-09-25 | 2026-09-25 的**地图现代化改动（含 `map/panels/` 全套与 10+ 个新测试）没有留下任何工作日志**，工作区已积压 19 改 + 14 新增 | 该批次完成时未按纪律执行「先记录、后提交」，改动一直停在未提交状态；本会话开始时的基线 `e9a6100` 因此与实际代码不符 | **已解决**：本条日志与本轮日志一并补记该批次的客观内容（文件清单、测试结论），并在 `docs/issues.md` 登记 ISS-042。**教训：纪律的价值恰在于「累的时候也要写」——不写不会立即出错，只会让后来者拿着错误的基线判断** · 出处：`AGENTS.md` 工作日志 · `docs/issues.md`（ISS-042） |
+| 2026-09-25 | 浏览器 Mock 形态下控制台各页面稳定出现 1 条 `favicon.ico` 404 | `renderer/index.html` 未声明图标；属既有现象，非 2026-09-25 改动引入 | **待办（ISS-041）**：可在 `index.html` 内联一个 `data:` URI 的 SVG 图标（零在线依赖，与 D-21/M6 §1.3 的约束一致）。未一并修，是为避免把无关改动混进本批 |
+| 2026-09-25 | 两份文档**没有「文档边界」行**，其中 `docs/api.md` 在**本批次里刚被改过**（§0 指派表补 3 行）—— 规则存在、也在被引用，却没被执行 | 该禁令与 D-33（错误码有 `errors.catalog.test.ts`）、索引锚点（有 `dangling/unused` 断言）不同：**它没有任何自动化断言**，「文档边界」只靠人记。凡是只靠人记的规则，都会在「顺手改一下」时被跳过；`requirement-raw.md` 更是从建立起就没人补过 | **已解决**：两份补齐边界行 —— `docs/api.md` 声明自己兼「**SSOT 指派总表**」（它是指派者，不只是读者，故另加这句）；`docs/requirement-raw.md` 声明为「**需求原文存档、只追加不修改**，不是可执行契约，冲突时以现行文档为准」。并用脚本一次性复核 14 份文档边界行齐全、围栏配平、62 条相对链接 0 悬空 · 出处：`docs/api.md` · `docs/requirement-raw.md`（ISS-044） |
+| 2026-09-26 | `AGENTS.md` 验证基线与工作日志把「调度员可见导航项数」写成 **6 项**，实测 **7 项** | 该数字是**由「9 项里少了 2 个」推得**的，而当时页面上真实渲染的列表**并未逐个读出**。同一段里另外两个数（权限点 16 项 == `permissionsOf('dispatcher').length`）都是对的，说明错在「数了一遍没数对」而非权限模型理解错。**推论比实测便宜，所以人总会顺手推论** | **已解决（2026-09-26 复测三角色）**：dispatcher 导航 7 项 / 权限点 16；monitor 5 / 6；admin 9 / 20 —— 使该行**自洽可复核**（权限点可对 `docs/api.md` §3.1，导航项可对「9 项减去缺失项」）。教训：**凡写进「验证基线」的数字，都必须来自一次实际读取，不能由其它数字推算** · 出处：`AGENTS.md`「验证基线」· `renderer/src/app/modules.ts` · `shared/src/enums.ts`（ISS-045） |
 
 ## 工作日志
 
@@ -936,3 +973,127 @@
      缺 `restriction` / `task_template`）是 **M2 开工前必须先定**的项。
   2. **M1 仍无模块开发文档**（P2 阶段另一项）。
   3. 下一步业务代码：按 `docs/build-plan.md` §6 的 P2 顺序落地 M1 → M2；开工前先清 Q1。
+
+### 2026-09-25 — 渲染层设计系统与信息架构落地：现代化外壳 + 监控工作台 + 登录页（D-36，ISS-040/041/044/045）
+
+- **范围与目标**：使用者要求「维护 AGENTS.md，并参考 React Flow 官方案例，设计一个现代、直观的可视化前端」。
+  侦察后的结论是：**地图页（M6）已经现代化**（`121af4d` 之后的一批改动：面板、指标条、图层面板、
+  详情卡、快捷键、缩放自适应），但**应用外壳、监控工作台、登录页仍是 P1 时期的极简版** ——
+  工作台只有三行会话信息、导航是纯文字列表、登录页是一张 340px 的居中卡片。
+  本次把这四处对齐到地图页的水准，并把「为什么这么改」沉淀成设计系统与信息架构两层地基。
+  **不含业务接口改动**（主进程 8 条接口与契约不变）。
+- **变更清单**：
+  - **设计令牌补全（`renderer/src/styles/theme.css`）**：新增字号 7 档、间距 6 档（4 的倍数）、
+    动效时长与缓动、外壳尺寸（侧栏两档 / 顶栏高）、层级（sticky / menu）。此前界面上散落着
+    10/11/12/13/15/18/20/26px 八种字号与 3/5/7/9px 的随机留白 —— 层级感就是被这种「随手一个数」磨掉的。
+  - **`renderer/src/styles/ui.css`（新增）**：把**被 2 处以上使用**的基元从 `map/style/map.css` 与
+    `layout.css` 中抽出并归位：`.udm-btn`（含 `--ghost` / `--primary` / `--danger` / `--block`）、
+    `.udm-icon-btn`、`.udm-panel`、`.udm-card`（head/body/foot/aside）、`.udm-kv`、
+    `.udm-badge`、`.udm-swatch`、`.udm-dot`、`.udm-chip`、`.udm-progress`、`.udm-empty`、
+    `.udm-field` / `.udm-alert`、`.tone-*`。`map.css` 从 1004 行降到 866 行，并只保留画布专有部分。
+  - **`renderer/src/app/modules.ts`（新增）**：导航分组（监控 / 调度 / 系统）、9 个导航项的
+    「路由 / 标题 / 图标 / 权限点 / 一句话说明」，以及 7 个未实现模块的**自我介绍**
+    （模块编号 + 计划能力 + 每条能力的 `Req-*` 编号 + 依赖接口与权限点）。
+  - **`renderer/src/components/BrandMark.tsx`（新增）**：内联 SVG 标识（路线 + 三个节点 + 虚线边），
+    配色取 `theme.css` 的画布变量，离线可用、随主题变化。
+  - **`renderer/src/components/UserMenu.tsx`（新增）**：顶栏用户下拉 —— 角色、**当前会话的权限点数**
+    （取自 `user.permissions`）、当前适配器、退出登录。含点击外部关闭 / Esc 关闭 / 焦点回位 /
+    `aria-expanded`。**刻意不按角色本地重算 `ROLE_PERMISSIONS`**：那是「前端自己算权限」，
+    与服务端实际下发的授权可能不一致，而这正是排查越权时最容易把人带偏的地方（D-08）。
+  - **`renderer/src/components/AppLayout.tsx`（重写）**：左侧分组导航（可收起，状态存 `localStorage`，
+    收起后靠 `title` 与读屏文本保住可访问性）+ 顶栏（当前页标题 / 说明 / 实时徽标 / 适配器徽标 / 用户菜单）
+    + 跳转到主内容的 skip-link。导航按权限过滤，但**明确仍只是体验层**（D-08）。
+  - **`renderer/src/domain/labels.ts`（由 `map/model/labels.ts` 上移）**：补齐 `ALERT_TYPE_LABEL`
+    与 `ALERT_STATUS_LABEL`（文案取自 `design.md` §4.8）；`detail.ts` 的告警文案由机器值
+    （`vehicle_offline · 警告`）改为中文类型名（`车辆离线 · 警告`）。
+  - **`renderer/src/dashboard/`（新增）**：`model/summary.ts`（纯函数：KPI / 车队分布 / 任务行 / 告警行）、
+    `panels/`（KpiCards、FleetBreakdown、TaskProgress、AlertFeed、MapPreview、SourceCard）、
+    `style/dashboard.css`。
+  - **`renderer/src/pages/DashboardPage.tsx`（重写）**：四张 KPI 卡 + 车队状态 / 任务执行 / 告警三栏 +
+    实时地图预览 + 数据源卡片。
+  - **`renderer/src/pages/LoginPage.tsx`（重写）**：左栏品牌与能力说明（CSS 渐变网格背景，无图片）、
+    右栏表单 + 演示账号一键填入 + 适配器形态说明。
+  - **`renderer/src/pages/PlaceholderPage.tsx`（重写）**：从「该模块尚未实现」四个字，改为
+    「模块编号 + 计划能力（带 `Req-*`）+ 依赖接口与权限点 + 回查指引」。
+  - **`renderer/src/api/mock.ts`（修缺陷）**：见下「关键设计决策」。
+  - **文档（本文件 + `docs/issues.md` + `README.md` + `docs/module-M6-map.md` + `docs/api.md`）**：
+    补记地图批次与本轮两条工作日志、新增 D-36、`docs/issues.md` 登记 ISS-039～ISS-044、
+    `docs/api.md` §0 指派表补 3 行（模块元数据 / 设计令牌与基元归属 / 枚举文案）。
+  - **`docs/api.md` 与 `docs/requirement-raw.md` 补「文档边界」行（ISS-044）**：两份文档此前没有该行，
+    而 `api.md` **本批次刚被改过**。前者声明自己兼「SSOT 指派总表」（它是指派者，不只是读者），
+    后者声明为「需求原文存档、不是可执行契约」。
+  - 测试：新增 `domain/labels.test.ts`（12 例）、`dashboard/model/summary.test.ts`（19 例）、
+    `dashboard/panels/dashboard.test.tsx`（5 例，jsdom 渲染冒烟）、`api/mock-parity.test.ts` 补 1 例；
+    `map/model/detail.test.ts` 中的 labels 段落随文件的移动迁到新文件。
+- **关键设计决策**：
+  1. **新增 D-36（已定）**：见「设计决策记录」—— 设计令牌 / `ui.css` 归属规则 / `app/modules.ts` 单一作者 /
+     `domain/` 上移，四条一起构成「复用规则」。
+  2. **工作台的数据来源如实标注，不冒充 M7**：工作台读的是 `GET /api/map/overview`
+     （Req-M6-5 的「画布唯一数据入口」），页面上写明「M7 运行监控的专属接口 `/api/monitor/*` 尚未实现，
+     因此本页指标与地图页同源」。**不新增接口**（那属 M7 的活），全部指标由已有快照派生。
+  3. **地图预览刻意做成不可交互**（对齐官方案例里静态预览画布的做法）：`panOnDrag` / `zoomOnScroll`
+     / `zoomOnPinch` / `zoomOnDoubleClick` 全部关闭、`elementsSelectable={false}`、
+     `preventScrolling={false}`。原因写在组件注释里：约 320px 高的画布嵌在长页面里，
+     若滚轮被画布吃掉，页面会「卡住不动」—— 这是嵌入式画布最常见的体验事故。
+     `fitView` 用**内置 prop** 而非 `useReactFlow().fitView()` 手调：内置机制会在节点测量完成后
+     再适配一次，手调只在挂载时执行一次（实测手调版本量到 0 尺寸，图被顶到画布左边缘）。
+  4. **修一个跨适配器不一致的真实缺陷（新登记 ISS-040）**：`renderer/src/api/mock.ts` 把三个演示账号的
+     `permissions` **一律硬编码为 `[]`**，而主进程 `services/auth.ts` 用的是 `permissionsOf(row.role)`。
+     即同一份契约在浏览器形态下每个账号 0 个权限点、在 Electron 下是各自角色的完整权限。
+     界面只按角色判断导航时看不出问题（`hasPermission(role, …)` 仍按角色算），
+     但任何**信任 `user.permissions`** 的地方会静默显示错值 —— 本次顶栏用户菜单正好是第一个这种调用点
+     （修复前显示「权限点 0 项」，修复后 admin 显示其完整权限数）。
+     已改为 `permissionsOf(role)` 派生，并在 `mock-parity.test.ts` 加断言锁住「两者口径一致」。
+     这与 mock 曾自造错误码是同一类问题（适配器之间行为不一致）。
+  5. **`computeMetrics` 复用而不复制**：工作台的 KPI 与地图的指标条共用同一份 `map/model/metrics.ts`
+     计算（同一口径只算一次）。`dashboard` → `map` 的依赖是**有意为之并已注明**：
+     因为工作台当前就建在 `map/overview` 之上；M7 接口落地后只需替换数据源 hook。
+- **验证与测试结果（2026-09-25 实测）**：
+  - ✅ `npm test`：**27 个套件 / 223 个用例全通过**（本次 +36 例）。
+  - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace exit 0。
+  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 0.42 kB + CSS **53.23 kB**（gzip 9.21 kB）
+    + JS **446.48 kB**（gzip 144.10 kB）。CSS/JS 增量为新增的设计系统、工作台与登录页所必需。
+  - ✅ **浏览器 Mock 形态（Playwright + 系统 Chrome，1512×945 @2x）**：登录 → 工作台 → 地图 → 占位页
+    逐页截图核对；控制台错误仅 1 条 favicon 404（与本次改动无关）。窄屏 1280 / 1024 复核：
+    KPI 在 1024 下折成 2×2 而非 3+1（`minmax` 下限由 200px 调到 176px）。
+  - ✅ **真实 Electron 形态（CDP 连渲染进程，真实 IPC + SQLite）**：适配器自动判定为 **`ipc`**；
+    登录后顶栏用户菜单显示 **调度员 · 权限点 16 项**（与 `permissionsOf('dispatcher')` 一致）；
+    左侧导航**只出现该角色可见的 7 项**（9 项中缺「审计日志」「用户管理」，验证权限过滤生效）；
+    **2026-09-26 复测**三角色：dispatcher 7 项 / monitor 5 项 / admin 9 项，权限点数依次 16 / 6 / 20
+    （见「困难与问题记录」——此处原写「6 项」，是当日算错且未经实测的错误数字）；
+    地图页节点计数 `{总 20, 路网 12, 站点 3, 车辆 3, 任务端点 2}`、缩略图 20 个方块，与 seed 一致；
+    控制台错误 0 条。主进程日志：`migrations applied: none`、seed 各表新增 0（幂等）。
+  - ✅ **favicon 404 的说明**：浏览器形态下 `index.html` 未声明图标，请求 `/favicon.ico` 落 404。
+    属既有现象、非本次引入；未一并修（避免把无关改动混进本批），已记入 ISS-041 待办。
+  - ✅ **文档一致性脚本自检**：14 份 Markdown **边界行齐全**、围栏 112 对**全部配平**、
+    表格 255 块、**62 条相对链接 0 悬空**；`docs/issues.md` 索引 ↔ 明细 ↔ 锚点 **44 / 44 / 44**，
+    悬空 0 / 未用 0；严重度合计 5+29+10=44、状态合计 22+10+7+1+3+1=44。
+- **遇到的困难与解决方案**：
+  1. **`fitView` 的时序坑（第二次踩）**：工作台的地图预览首次渲染时图被顶到画布左边缘。
+     原因是照抄了地图页 `useReactFlow().fitView()` 的手调写法，但**漏了它配套的
+     `useNodesInitialized()` 门控** —— 手调版本在节点尺寸还是 0 时就算包围盒，且此后永不重试。
+     地图页早有记录（`MapView.tsx` 里写着这次实测），但那条知识**只存在于那个文件的注释里**。
+     解法：预览改用 `<ReactFlow fitView fitViewOptions={…}>` 内置 prop，由 React Flow 自己
+     在测量完成后适配，少一份需要维护的时序代码。**教训：跨模块复用代码时，
+     同一处注释里的「为什么」不会跟着代码一起被复用到新位置。**
+  2. **组件测试里 `getByText` 命中多个元素的假失败**：工作台用例断言「任务起点显示 A-01」时，
+     站点编码同时出现在任务行与地图预览节点上，`getByText` 因命中多个元素而失败 ——
+     失败信息与被测组件的行为无关，极易误导。解法：用 `within(container.querySelector('.udm-tasks'))`
+     把断言限定到任务列表内。**教训：断言范围要跟着「这条断言的意图」收窄，而不是跟着选择器的方便程度。**
+  3. **KPI 网格在 1024 窗口下折成「3+1」**：第四张卡孤零零占一行，视觉上像漏了一张。
+     解法：把 `minmax` 下限从 200px 调到 176px（1024 窗口 + 216 侧栏 + 页面留白仍能放下 4 列的下限）。
+  4. **本轮改动在一个「多实现者并存」的位置上暴露了契约不一致**：见「关键设计决策」第 4 条（ISS-040）。
+     值得记的是**发现路径**：它是被新写的用户菜单「顺手显示权限点数」这个动作暴露的 ——
+     一个此前无人读取的字段，一旦被读就立刻暴露了两套口径。
+- **遗留问题与下一步**：
+  1. **新增 `ISS-039`（待评审）**、**`ISS-040`/`ISS-044`/`ISS-045`（已解决）** 与 **`ISS-041`（待办）**，
+     见 `docs/issues.md` §1 与 §2。
+  5. **2026-09-26 追加**：为「运行项目」复跑一次三端实测时，发现并改正了本批次日志里的一个错数字
+     （可见导航项数 6 → 7），已登记 `ISS-045`；同日三角色实测见「验证基线」。
+  2. **工作台的数据源待随 M7 迁移**：当前复用 `map/overview`。`/api/monitor/overview` 落地后，
+     替换 `DashboardPage` 的数据源即可，`dashboard/model/summary.ts` 与全部面板不用改
+     （它们只依赖快照字段，已由单测锁住口径）。
+  3. **M1-M10 仍未开工的模块**：占位页现在会说明「计划能力 + 依赖契约」，但仍是占位
+     （`ISS-010` 保持「计划内」）。按 `docs/build-plan.md` §6 的 P2 → P6 顺序推进。
+  4. **本批改动尚未提交**（按纪律：本条日志与 `docs/issues.md` 同步完成后再提交）。
+     提交信息拟为 `feat(renderer): 落地设计系统与信息架构，现代化外壳/工作台/登录页`。

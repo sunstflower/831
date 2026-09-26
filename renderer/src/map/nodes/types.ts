@@ -1,14 +1,22 @@
-/** 节点/边 `data` 的形状（与 `model/toFlow.ts` 的产出保持一致）。 */
-import type { ObjectType, SiteType, TaskStatus, VehicleStatus } from '@udm/shared';
+/**
+ * 节点/边 `data` 的形状（与 `model/toFlow.ts` 的产出**必须**一一对应）。
+ *
+ * 约定：
+ * - `entityType` / `entityId` 是**业务标识**，用于联动与详情；`code`/`name` 只用于展示；
+ * - `data` 里只放「已经算好的展示事实」（如 `lowBattery`），不让组件自己再推导一遍 ——
+ *   否则同一个判断会在节点组件与详情面板里各写一次，两边迟早不一致。
+ */
+import type { SiteType, TaskStatus, VehicleStatus } from '@udm/shared';
 import type { MapAlert } from '../../api/types';
+import type { SelectableEntityType } from '../../store/selection';
 
 export interface EntityRef {
-  entityType: ObjectType;
+  entityType: SelectableEntityType;
   entityId: string;
 }
 
 export interface MapNodeData extends Record<string, unknown> {
-  entityType: ObjectType;
+  entityType: SelectableEntityType;
   entityId: string;
   code?: string;
   name?: string;
@@ -18,6 +26,8 @@ export interface MapNodeData extends Record<string, unknown> {
 
 export interface SiteNodeData extends MapNodeData {
   siteType: SiteType;
+  /** 站点挂靠的路网节点编码（可能没有绑定）。 */
+  nodeCode?: string;
   alerts?: MapAlert[];
 }
 
@@ -25,6 +35,8 @@ export interface VehicleNodeData extends MapNodeData {
   status: VehicleStatus;
   battery: number;
   taskId: string | null;
+  /** 低电标记（阈值见 `model/metrics.ts`），由 `toFlow` 统一判定。 */
+  lowBattery: boolean;
   alerts?: MapAlert[];
 }
 
@@ -33,6 +45,8 @@ export interface TaskEndpointData extends MapNodeData {
   status: TaskStatus;
   progress: number;
   vehicleId: string | null;
+  /** 对端站点编码，用于详情面板显示「A-01 → B-01」。 */
+  peerCode?: string;
 }
 
 export interface OrderEndpointData extends MapNodeData {
@@ -46,6 +60,12 @@ export interface NetEdgeData extends Record<string, unknown> {
   lengthM: number | null;
   speedLimitMps: number | null;
   disabled: boolean;
+  /** 通行耗时（s）；缺少长度或限速时为 null。 */
+  travelSeconds: number | null;
+  /** 「可通行 / 禁行」的展示文案。 */
+  kind: string;
+  fromCode: string;
+  toCode: string;
 }
 
 export interface RouteEdgeData extends Record<string, unknown> {
@@ -53,4 +73,9 @@ export interface RouteEdgeData extends Record<string, unknown> {
   taskId: string | null;
   vehicleId: string | null;
   superseded: boolean;
+  /** 第几段（0 基）与总段数，用于「3/5 段」提示。 */
+  seq: number;
+  total: number;
+  /** 该段路网边长（米）；取不到为 null。 */
+  lengthM: number | null;
 }
