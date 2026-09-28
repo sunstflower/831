@@ -25,7 +25,7 @@ function TaskEndpointNodeImpl({ data, selected }: NodeProps & { data: TaskEndpoi
       title={title}
       aria-label={title}
     >
-      <span className="udm-node-endpoint__glyph" aria-hidden="true">{isFrom ? '起' : '终'}</span>
+      <span aria-hidden="true">{isFrom ? '起' : '终'}</span>
       {data.peerCode ? (
         // 起点指向终点、终点回指起点：悬停即可读出「这批货从哪到哪」
         <span className="udm-node-endpoint__tip">{isFrom ? `→ ${data.peerCode}` : `← ${data.peerCode}`}</span>

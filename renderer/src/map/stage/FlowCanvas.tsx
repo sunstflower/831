@@ -37,6 +37,14 @@ export interface FlowCanvasProps {
   topLeftPanel?: React.ReactNode;
   /** 画布左下角的提示（如「低缩放已隐藏标签」）。 */
   bottomLeftPanel?: React.ReactNode;
+  /**
+   * 画布坐标系里的装饰层（轨迹折线等）。
+   *
+   * 必须渲染在 `<ReactFlow>` **内部**：`ViewportPortal` 靠 React Flow 的上下文
+   * 拿到视口变换，放在外面会抛错。它是纯装饰（`pointer-events: none`），
+   * 不参与命中与图结构。
+   */
+  decorations?: React.ReactNode;
 }
 
 export function FlowCanvas({
@@ -47,7 +55,8 @@ export function FlowCanvas({
   onPaneClick,
   onViewportChange,
   topLeftPanel,
-  bottomLeftPanel
+  bottomLeftPanel,
+  decorations
 }: FlowCanvasProps) {
   return (
     <ReactFlow
@@ -88,6 +97,8 @@ export function FlowCanvas({
       }}
     >
       <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#243044" />
+      {/* 装饰层放在最前面：它必须被节点/边盖住，不能反过来遮住业务对象 */}
+      {decorations}
       <Controls showInteractive={false} position="bottom-right" />
       <MiniMap
         pannable

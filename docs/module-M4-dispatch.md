@@ -54,34 +54,49 @@ desktop/src/domain/dispatch/
 ├── occupancy.ts                # 占用区间模型（区间相交检测）
 ├── explain.ts                  # 人类可读 explain 生成
 └── errors.ts                   # M4 错误码常量与构造器
-desktop/src/algorithms/dispatch/
-├── types.ts                    # 算法层内部输入输出（纯类型）
-├── greedy.ts                   # 贪心策略
-├── hungarian.ts                # 匈牙利指派（n×m，不可行格=∞）
-└── index.ts                    # runDispatch(snapshot, strategy) 分派
 desktop/src/db/repositories/     # 对应 Repository（已有通用实现，本模块只用查询/受控写入）
 ├── task.repo.ts  vehicle.repo.ts  graph.repo.ts  restriction.repo.ts
 ├── dispatch-plan.repo.ts  route.repo.ts  dispatch-log.repo.ts
 ```
 
+**算法内核的实际归属：`shared/src/dispatch-*.ts`（不是 `desktop/src/algorithms/`）** —— 与 M5 的
+`route-search.ts` 同一条理由（D-49 / D-51）：内核是**纯函数、无 IO**，而浏览器 Mock 形态迟早要复用
+（三层一致性是项目不变量）；只有「从哪个存储读快照」留在各端（主进程 `repositories/`、Mock 内存库）。
+落地形态：
+
+```text
+shared/src/dispatch-types.ts        # 快照/视图类型 + 算法内部常量（纯类型与数字）
+shared/src/dispatch-evaluate.ts     # 占用区间 + 单车×单任务评估 + 代价函数
+shared/src/dispatch-strategies.ts   # 贪心 + 匈牙利（含 solveAssignment）
+shared/src/dispatch.ts              # runDispatch(snapshot, strategy) 分派与再导出
+```
+
 边界约束：
 
-1. `desktop/src/algorithms/dispatch/*` 不得 import 任何 db/domain 实现，只消费传入快照。
+1. `shared/src/dispatch-*.ts` 不得 import 任何 db/domain 实现，只消费传入快照。
 2. `dispatch.service.ts` 不写 SQL，只调用 Repository 方法。
 3. `dispatch.service.ts` 不 import 算法文件以外任何 UI 内容。
 
 ## 4. 核心类型契约（实现时以 `shared/src/types.ts` 为准）
 
 ```ts
-// 算法层输入快照（纯数据）
+// 算法层输入快照（纯数据）—— 实现以 `shared/src/dispatch-types.ts` 为准
 interface DispatchSnapshot {
-  tasks: TaskView[];        // { id, priority, cargoKg, fromSiteId, toSiteId, timeWindowStart, timeWindowEnd }
-  vehicles: VehicleView[];  // { id, code, status, capacityKg, loadKg, battery, maxSpeedMps, x, y, freeAt }
-  graph: GraphModel;        // { nodes: NodeView[], edges: EdgeView[] } 已剔除禁行项
-  occupiedSlots: OccupiedSlot[]; // 车辆未来已占用区间（apply 后产生）
-  settings: { w1: number; w2: number; w3: number; w4: number; w5: number; … };
+  tasks: DispatchTaskView[];      // fromNodeId/toNodeId 已由快照组装阶段从站点解析好
+  vehicles: DispatchVehicleView[];// 含 status/capacityKg/loadKg/battery/x/y/startNodeId/freeAt
+  nodes: RouteNodeInput[];        // 原始图输入（未按车种裁剪）
+  edges: RouteEdgeInput[];
+  restrictions: RouteRestrictionInput[];
+  occupiedSlots: OccupiedSlot[];  // 车辆未来已占用区间（apply 后产生）
+  weights: DispatchCostWeights;   // 来自 `DISPATCH_COST_WEIGHTS`
   now: string;
 }
+
+> **与本文档 §4 原草案的两处差异（已按实现回写）**：
+> **(1)** 快照带的是**原始图输入**而不是一张 `graph`：构图与禁行判定**按车种**各做一次
+> （AGV 与无人机默认速度不同、禁行规则可只针对某车种），统一由 `buildRouteGraph` 处理 ——
+> 若快照只给一张「已剔除禁行项」的图，就会把权限与速度差异糊掉。内核内按车种缓存构图结果。
+> **(2)** `settings` 收窄为 `weights`：P4 的代价权重是常量（§7.3），不读 `settings` 表。
 
 interface CostDetail {
   deadheadTimeS: number;  // 车→起点的空驶时间
@@ -176,7 +191,9 @@ occupied = [t2, t3]                                   // 与其它任务时间�
 区间规则：
 
 1. `now` 取服务端时钟，同一请求内所有策略共用同一个 `now`（确定性，Req-M4-6 可复核）。
-2. 相交判定采用半开区间 `[a,b) ∩ [c,d) ≠ ∅` → 冲突。
+2. 相交判定采用半开区间 `[a,b) ∩ [c,d) ≠ ∅` → 冲突。**空区间（`from === to`）永不冲突**：
+   谓词里先判 `aFrom < aTo && bFrom < bTo` —— 少了这一步，「空槽落在对方内部」会被判成相交
+   （`from === to` 时 `aFrom < bTo && bFrom < aTo` 仍可能为真），见 `ISS-067`。
 3. 预览阶段：策略内部在内存中维护「已被本批预览占用的槽位」；多策略各自独立维护。
 4. apply 阶段：`occupiedFrom/occupiedTo` 落库到 `dispatch_plans`，作为后续候选筛选的真实占用（`VehicleView.freeAt` 由最大 `occupiedTo` 推导）。
 
@@ -217,7 +234,12 @@ cost = w1*deadheadTimeS + w2*executeTimeS + w3*waitTimeS
      + w4*penaltyLateS + w5*chargeRisk
 ```
 
-- 权重默认值：`w1=1, w2=1, w3=0.8, w4=2, w5=1000`。P4 以 `dispatch/cost.defaults.ts` 常量落地（不进设置表），二期接入系统设置时再补键。
+- 权重默认值：`w1=1, w2=1, w3=0.8, w4=2, w5=1000`。P4 以 **`shared/src/constants.ts` 的 `DISPATCH_COST_WEIGHTS`** 常量落地（不进设置表），二期接入系统设置时再补键。
+- 其余阈值在 `shared/src/dispatch-types.ts`（与快照类型同文件，避免再多一个只放数字的文件）：
+  `DISPATCH_LATE_TOLERANCE_S`（晚点容忍秒数，超过直接拒绝）、`DISPATCH_CHARGE_COMFORT_PERCENT`
+  （低于它才产生续航风险分 —— 若与硬门槛同值，风险项恒为 0，等于没实现）、
+  `DISPATCH_BATTERY_PERCENT_PER_KM`（车辆未给耗电率时的兜底）、`DISPATCH_MAX_TASKS` / `DISPATCH_MAX_VEHICLES`
+  （§16 第 1 条的规模上限）、`DISPATCH_FORBIDDEN_COST`（匈牙利矩阵的「不可行」有限大数）。
 - `penaltyLateS`：预计完成时刻晚于 `timeWindowEnd` 的秒数（≤ 容忍阈值内计入代价，超过阈值直接拒绝）。
 - `chargeRisk`：`预计完成剩余电量 < chargeMinBattery` 时按缺口比例计风险分，否则 0。
 - 每条 `PlanPreview` 必须携带完整 `costDetail` 供 UI 展开解释。
@@ -394,6 +416,18 @@ sequenceDiagram
 
 ## 14. 测试与验收清单
 
+> **落地进度（2026-09-27）**：**Step 1-5 全部落地**。内核在 `shared/src/dispatch-*.ts`（D-51）；
+> 服务层在 `desktop/src/domain/dispatch/`（`snapshot` / `explain` / `dispatch.service`）+ 两个 Repository；
+> 六条路由在 `desktop/src/ipc/api.ts`（`api.dispatch.test.ts` 守契约）；调度台在 `renderer/src/dispatch/`，
+> 浏览器形态由 `renderer/src/api/mock-dispatch.ts` 复用同一份内核承载。
+>
+> 逐项：U1-U11 与 S1-S8 全绿；本模块用例分布见下表与 `docs/api.md` §3.4 的「已实现范围」。
+> 需求条目 Req-M4-1..7 的验收走查（§14.4）已在 Electron（真实 SQLite + IPC）与浏览器 Mock 两种形态各跑一遍，
+> 结论逐项相同、控制台错误 0 条。
+>
+> **尚未落地的相邻能力（有意，不是本模块欠账）**：执行器（M7）未开工，故车辆停在 `reserved` 不会自动变
+> `busy`，也不会产生位置事件；遗传策略（`genetic`）按设计返回 `enabled: false`。
+
 ### 14.1 单元测试（算法层，纯函数，无 DB）
 
 | 编号 | 用例 | 断言 |
@@ -422,6 +456,16 @@ sequenceDiagram
 | S6 | recompute：superseded→回收→pending→新 preview | dispatch_logs 成对 |
 | S7 | 事件广播 | task.changed/vehicle.changed/map.updated 均发出 |
 | S8 | 权限 | dispatcher 可通过；monitor 调 preview 返回 `AUTH.FORBIDDEN` |
+| S9 | 同一车在一批里出现两条计划（占用区间不重叠） | apply 一次派成两条，两条任务都 `assigned`、车辆只 `reserved` 一次 |
+| S10 | 跨批次：车辆已 `reserved` | 另起一次预览时该车不进候选，任务得 `VEHICLE_NOT_AVAILABLE`（有意的保守边界） |
+| S11 | 重算回收同车两单中的一单 | 另一单仍 `assigned`、车辆**不**置 `idle`；两单都回收后才回 `idle` |
+
+### 14.2.1 三条写路由的方法护栏（ISS-066 回归）
+
+`POST /api/dispatch/preview` / `/apply` / `/manual-assign` / `/recompute` 全部以 `POST` 注册；
+用 `GET` 访问同一路径一律 `API.ROUTE_NOT_FOUND`。这条性质由 `api.dispatch.test.ts` 逐路由断言 ——
+此前 `/api/auth/login` 曾以默认 `GET` 注册（`Router.invoke` 不传 method 就是 `GET`），
+前端按契约发 `POST` 时得到「接口不存在」，而两侧各自单测都是绿的。
 
 ### 14.3 契约测试（走统一 API 信封）
 
@@ -441,13 +485,29 @@ sequenceDiagram
 ## 15. 开发顺序与完成标准（DoD）
 
 ```text
-Step 1  shared/src/types.ts + enums.ts 追加 M4 类型                   → 编译通过
-Step 2  algorithms：occupancy → evaluate → greedy → hungarian → explain → U1-U11 绿
-Step 3  domain/dispatch：snapshot → errors → dispatch.service(preview/apply/manual/recompute)
-        + Repository 方法                                              → S1-S8 绿
-Step 4  IPC 注册 + 鉴权中间件 + 契约测试                                → §3.4 全部通过
-Step 5  前端调度中心页接入（策略选择/预览对比/应用/日志）               → 走查 1-7 通过
+Step 1  M4 类型（复用 shared/src/types.ts 既有契约；内核自带快照类型）  → 编译通过          ✅ 已落地
+Step 2  内核：occupancy → evaluate → greedy → hungarian                → U1-U10 绿        ✅ 已落地
+        （explain 归服务层，U11 随 Step 3 —— 见 §8：文案面向人、含中文）
+Step 3  domain/dispatch：snapshot → explain → dispatch.service(preview/apply/manual/recompute)
+        + Repository 方法（dispatch-plan / dispatch-log）              → U11 + S1-S8 绿    ✅ 已落地
+Step 4  IPC 注册 + 鉴权中间件 + 契约测试                                → §3.4 全部通过     ✅ 已落地
+Step 5  前端调度中心页接入（策略选择/预览对比/应用/日志）               → 走查 1-7 通过      ✅ 已落地
 ```
+
+### 15.1 落地位置（按文档找文件用）
+
+| 关注点 | 位置 |
+| --- | --- |
+| 六步评估 / 占用区间 / 代价 | `shared/src/dispatch-evaluate.ts` |
+| 贪心 / 匈牙利 | `shared/src/dispatch-strategies.ts`（顺序与常量在 `dispatch-types.ts`） |
+| 快照组装（读库 → `DispatchSnapshot`） | `desktop/src/domain/dispatch/snapshot.ts` |
+| 人读解释文案（唯一作者） | `desktop/src/domain/dispatch/explain.ts` |
+| 五个方法（preview/apply/manualAssign/recompute/list*） | `desktop/src/domain/dispatch/dispatch.service.ts` |
+| 计划落库与乐观锁 | `desktop/src/db/repositories/dispatch-plan.repo.ts` |
+| 日志写入与存档读取 | `desktop/src/db/repositories/dispatch-log.repo.ts` |
+| 六条路由与事件广播 | `desktop/src/ipc/api.ts`（`emitDispatchEffects`） |
+| 调度台 UI | `renderer/src/dispatch/`（`DispatchConsole` / `ConfirmDispatchDialog` / `DispatchLogPanel` / `model.ts`） |
+| 浏览器形态的存储 | `renderer/src/api/mock-dispatch.ts`（与主进程逐项对齐由 `mock-dispatch.test.ts` 守） |
 
 DoD 定义：需求条目全部通过验收走查、dispatch_logs/audit 有断言覆盖、事件已广播、文档无欠账（改动即回写本文档与 design/api）、提交前按 AGENTS 纪律记录。
 

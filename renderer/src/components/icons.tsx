@@ -212,6 +212,16 @@ export function IconRefresh(props: IconProps) {
   );
 }
 
+/** 搜索（放大镜）。用于列表页的搜索框前缀。 */
+export function IconSearch(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="7" cy="7" r="4.2" />
+      <path d="M10.2 10.2 13.5 13.5" />
+    </svg>
+  );
+}
+
 /** 向右箭头（跳转、进入）。 */
 export function IconArrowRight(props: IconProps) {
   return (
@@ -303,6 +313,22 @@ export function IconInfo(props: IconProps) {
     <svg {...base(props)}>
       <circle cx="8" cy="8" r="5.8" />
       <path d="M8 7.2v3.4M8 5.3v.1" />
+    </svg>
+  );
+}
+
+/**
+ * 下载（导出 CSV 用）。
+ *
+ * 箭头从一条横线**落入**托盘：这是「导出到文件」的通用形状，
+ * 与「刷新」的环形箭头在缩小到 14px 时也不容易混淆。
+ */
+export function IconDownload(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M8 2.5v7" />
+      <path d="M5 6.8 8 9.8l3-3" />
+      <path d="M3 12.5h10" />
     </svg>
   );
 }

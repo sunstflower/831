@@ -6,13 +6,18 @@
  * 不能静默降级到 Mock —— 否则会出现「以为在测真实数据、其实在看假数据」。
  */
 import type { ApiResult, DomainEvent } from '@udm/shared';
-import type { ApiClient, Unsubscribe } from './client';
+import type { ApiClient, InvokeOptions, Unsubscribe } from './client';
 
 export function createIpcAdapter(): ApiClient {
   const bridge = typeof window !== 'undefined' ? window.dispatchApi : undefined;
 
   return {
-    async invoke<T>(path: string, payload: Record<string, unknown> = {}, token?: string | null): Promise<ApiResult<T>> {
+    async invoke<T>(
+      path: string,
+      payload: Record<string, unknown> = {},
+      token?: string | null,
+      options?: InvokeOptions
+    ): Promise<ApiResult<T>> {
       if (!bridge) {
         return {
           code: 'SYS.INTERNAL',
@@ -20,7 +25,8 @@ export function createIpcAdapter(): ApiClient {
           source: 'system'
         };
       }
-      return (await bridge.invoke(path, payload, token ?? null)) as ApiResult<T>;
+      // 方法随请求一起过桥：主进程的 Router 按「方法 + 路径」匹配（见 `desktop/src/ipc/router.ts`）
+      return (await bridge.invoke(path, payload, token ?? null, options?.method ?? 'GET')) as ApiResult<T>;
     },
     on<T>(event: string | null, handler: (message: DomainEvent<T>) => void): Unsubscribe {
       if (!bridge) {

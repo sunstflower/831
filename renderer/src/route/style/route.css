@@ -1,0 +1,127 @@
+/**
+ * 路径规划面板（M5）的样式。
+ *
+ * 归属说明（D-36）：只被本模块使用的类放这里；`.udm-btn` / `.udm-table` / `.udm-kv` /
+ * `.udm-empty` / `.udm-alert` 这些被 2 处以上使用的基元留在 `styles/ui.css`，本文件只做组合。
+ *
+ * 版式是一条两列网格：左边表单（固定宽度，输入框对齐）、右边结果。
+ * 窄屏（< 900px）落回单列 —— 面板在 Electron 窗口最小尺寸下也要能用，
+ * 而不是把结果挤成一条缝。
+ */
+.udm-route {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: var(--udm-space-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .udm-route {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.udm-route__form {
+  padding: var(--udm-space-3);
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-md);
+}
+
+/* 两个短字段（车种 / 算法）并排，避免表单过高 */
+.udm-route__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--udm-space-3);
+}
+
+.udm-route__actions {
+  display: flex;
+  gap: var(--udm-space-2);
+  margin-top: var(--udm-space-2);
+}
+
+.udm-route__hint {
+  margin: var(--udm-space-2) 0 0;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-2xs);
+  line-height: 1.6;
+}
+
+.udm-route__result {
+  min-height: 220px;
+}
+
+.udm-route__summary {
+  padding: var(--udm-space-3);
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-md);
+}
+
+/* 节点链：允许换行，长路线不横向溢出（20 个节点的一行会撑破面板） */
+.udm-route__chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+  padding-top: var(--udm-space-2);
+  border-top: 1px solid var(--udm-hairline);
+  font-size: var(--udm-font-sm);
+}
+
+.udm-route__node {
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--udm-surface-3);
+  border-radius: var(--udm-radius-sm);
+}
+
+.udm-route__arrow {
+  color: var(--udm-text-dim);
+}
+
+/* 警告：橙色而不是红色 —— 慢速段/绕行不影响能不能走，只影响好不好走 */
+.udm-route__warnings {
+  margin: var(--udm-space-3) 0 0;
+  padding-left: 18px;
+  color: var(--udm-warn);
+  font-size: var(--udm-font-sm);
+  line-height: 1.7;
+}
+
+.udm-route__note {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-1);
+  margin: var(--udm-space-3) 0 0;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+}
+
+.udm-route__compare {
+  margin-top: var(--udm-space-3);
+}
+
+/* 对比结论：一致 → 绿、不一致 → 红。形态与 `.udm-alert` 成对，但只在本模块使用，故留在这里 */
+.udm-route__verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--udm-space-2);
+  margin: 0 0 var(--udm-space-3);
+  padding: 8px 10px;
+  font-size: var(--udm-font-sm);
+  border-radius: var(--udm-radius-sm);
+}
+
+.udm-route__verdict--ok {
+  color: var(--udm-ok);
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.45);
+}
+
+.udm-route__verdict--danger {
+  color: var(--udm-danger);
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid var(--udm-danger);
+}

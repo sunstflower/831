@@ -19,6 +19,27 @@
 
 /* ==================== 按钮 ==================== */
 
+/** 看起来像链接的按钮（如任务编码）：它触发的是打开详情，而不是导航 —— 用 `<a>` 会假装成链接。 */
+.udm-linklike {
+  appearance: none;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--udm-accent);
+  cursor: pointer;
+  text-align: left;
+}
+
+.udm-linklike:hover {
+  text-decoration: underline;
+}
+
+.udm-linklike:focus-visible {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: 2px;
+}
+
 .udm-btn {
   display: inline-flex;
   align-items: center;
@@ -77,9 +98,34 @@
   border-color: #7dd3fc;
 }
 
+/*
+ * 危险动作按钮（物理删除）。
+ *
+ * 默认只把**文字与描边**变红，而不是整块铺红：一屏里若有多行删除按钮，
+ * 每个都铺成红色会让表格变成一片红，反而看不出哪一行是重点。
+ * 只有在确认层里（`.udm-dialog--confirm`）才用实心底 —— 那里使用者已经点过一次，
+ * 需要的是「这一步不可逆」的强度（见 `BaseDataPage` 的二次确认层）。
+ */
+.udm-btn--danger {
+  color: var(--udm-danger);
+  border-color: color-mix(in srgb, var(--udm-danger) 55%, transparent);
+}
+
 .udm-btn--danger:hover {
   color: var(--udm-danger);
   border-color: var(--udm-danger);
+  background: color-mix(in srgb, var(--udm-danger) 12%, transparent);
+}
+
+.udm-dialog--confirm .udm-btn--danger {
+  background: var(--udm-danger);
+  border-color: var(--udm-danger);
+  color: #1f0a0a;
+  font-weight: 600;
+}
+
+.udm-dialog--confirm .udm-btn--danger:hover {
+  background: color-mix(in srgb, var(--udm-danger) 86%, white);
 }
 
 /** 表单内通栏按钮（登录页等）。 */
@@ -472,4 +518,475 @@
   max-width: 42ch;
   font-size: var(--udm-font-xs);
   line-height: 1.6;
+}
+
+/**
+ * 无障碍：仅供读屏器的文本（视觉上不可见，但会被读屏器朗读）。
+ * 图标按钮若没有可见文字，必须提供可读名称 —— 不能只靠 `title`，它不保证被朗读。
+ *
+ * 归属说明：它原先写在 `styles/theme.css` 里，但按 D-36 的规则（**被 2 处以上使用 → 归 ui.css**）
+ * 它是工具类而不是变量，且已被外壳与地图详情面板多处使用，故归位到这里。
+ */
+.udm-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/**
+ * 加载指示器（纯 CSS 动画，无在线资源）。
+ *
+ * 归属说明：它原先写在 `styles/theme.css` 里，但按 D-36 的规则（**被 2 处以上使用 → 归 ui.css**）
+ * 它是**基元**而不是令牌 —— 实测被工作台（`pages/DashboardPage.tsx`）与地图（`map/MapView.tsx`）
+ * 的加载态共同使用，故与 `@keyframes` 一起归位。
+ * `prefers-reduced-motion` 的分支必须跟着它走：动画与它的降级规则分在两个文件里，
+ * 迟早会有人只改一处（本块就是从 theme.css 整块搬来的）。
+ */
+@keyframes udm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.udm-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--udm-border);
+  border-top-color: var(--udm-accent);
+  border-radius: 50%;
+  animation: udm-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .udm-spinner {
+    animation-direction: reverse;
+    animation-duration: 3s;
+  }
+}
+
+
+/* ==================== 列表页 + 弹层（数据维护页的公共骨架） ==================== */
+
+/*
+ * 这一节原先住在 `base/style/base.css`（M2 基础数据页的专属样式表）。
+ * M3 任务页落地时它是**第二个**使用者，于是按本文件开头的归属规则整体搬到这里 ——
+ * 规则是「被 2 处以上使用 → 本文件」，搬的时候连同类名一起把 `udm-base__*`
+ * 改成 `udm-list__*`：名字里留着 `base` 会让下一个人以为它只服务基础数据模块，
+ * 从而在别处再抄一份（本项目反复踩过的「同一事实多个作者」，见 D-34 / D-36）。
+ *
+ * 归属边界（改动前先读这一行）：
+ *   - 列表骨架（工具条 / 筛选 / 表格 / 分页脚 / 提示条）→ 本节，类名 `udm-list__*`；
+ *   - 弹层与表单（遮罩 / 对话框 / 字段）→ 本节，类名 `udm-dialog*` / `udm-form__*` 本就没有模块前缀，未改名；
+ *   - 按钮 / 卡片 / 空态 / 徽标等基元 → 本文件上半部分；
+ *   - 只服务某一个页面自身的排版 → 回它自己的 `style/*.css`。
+ */
+
+/*
+ * 基础数据页（M2）的样式。
+ *
+ * 只放**本页特有**的布局：页签、筛选条、表格与分页脚。
+ * 按钮 / 卡片 / 输入框 / 空态一律复用 `styles/ui.css` 的基元（D-36 的复用规则），
+ * 因此这里出现的 `.udm-btn` / `.udm-card` / `.udm-empty` 只是**使用**，不是定义。
+ */
+
+.udm-list__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--udm-space-3);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--udm-space-2);
+}
+
+.udm-list__tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-md);
+}
+
+/* 页签是 aria-pressed 的切换按钮，不是 tablist：四个按钮各自可聚焦（Tab 键可达），
+   因此不需要方向键 —— 半套 ARIA tab 模式比不用它更难用（见 D-38 的同类教训）。 */
+.udm-list__tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--udm-text-dim);
+  font: inherit;
+  font-size: var(--udm-font-sm);
+  padding: 6px 14px;
+  border-radius: var(--udm-radius-sm);
+  cursor: pointer;
+}
+
+.udm-list__tab:hover {
+  color: var(--udm-text);
+}
+
+.udm-list__tab.is-active {
+  background: var(--udm-surface-3);
+  color: var(--udm-text);
+  box-shadow: inset 0 -2px 0 var(--udm-accent);
+}
+
+.udm-list__tab:focus-visible {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: 1px;
+}
+
+.udm-list__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--udm-space-2);
+  align-items: center;
+}
+
+.udm-list__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  min-width: 260px;
+  color: var(--udm-text-dim);
+}
+
+.udm-list__search input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--udm-text);
+  font: inherit;
+  font-size: var(--udm-font-sm);
+  padding: 8px 0;
+}
+
+.udm-list__search input:focus {
+  outline: none;
+}
+
+.udm-list__select {
+  padding: 0 10px;
+}
+
+.udm-list__select select {
+  background: transparent;
+  border: none;
+  color: var(--udm-text);
+  font: inherit;
+  font-size: var(--udm-font-sm);
+  padding: 8px 0;
+}
+
+.udm-list__select select:focus {
+  outline: none;
+}
+
+.udm-list__hint {
+  margin: 0 0 var(--udm-space-3);
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+}
+
+.udm-list__card {
+  padding: 0;
+}
+
+/* 表格横向滚动而不是压缩列宽：列多时压到看不清，比出现滚动条更糟 */
+.udm-table__wrap {
+  overflow-x: auto;
+}
+
+.udm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--udm-font-sm);
+}
+
+.udm-table th,
+.udm-table td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--udm-border);
+  white-space: nowrap;
+}
+
+.udm-table th {
+  color: var(--udm-text-dim);
+  font-weight: 500;
+  font-size: var(--udm-font-xs);
+  text-transform: none;
+  background: var(--udm-surface-2);
+  position: sticky;
+  top: 0;
+}
+
+.udm-table tbody tr:hover {
+  background: var(--udm-surface-2);
+}
+
+/**
+ * 可点选表格里的选中行（告警列表、账号列表用它）。
+ *
+ * 与 `:hover` 的区别必须**看得出来**：hover 是「鼠标在这」、选中是「详情栏显示的是这一条」。
+ * 只改背景深浅的话，鼠标一移开就分不清选中的是哪一条 —— 因此选中行额外加一条左侧色条。
+ */
+.udm-table tbody tr.is-selected {
+  background: rgba(56, 189, 248, 0.1);
+  box-shadow: inset 3px 0 0 var(--udm-accent);
+}
+
+.udm-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.udm-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-list__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--udm-space-2);
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-top: 1px solid var(--udm-border);
+}
+
+.udm-list__count {
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+}
+
+.udm-list__count strong {
+  color: var(--udm-text);
+}
+
+.udm-list__pager {
+  display: flex;
+  gap: var(--udm-space-1);
+}
+
+.udm-list__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: var(--udm-space-3) 0 0;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+}
+
+/* ==================== 写操作：提示条 / 行内动作 ==================== */
+
+/** 写操作成功提示。与 `.udm-alert`（失败）成对：一绿一红，不看文字也能分辨结果。 */
+.udm-list__banner {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  margin: 0 0 var(--udm-space-3);
+  padding: 8px 10px;
+  font-size: var(--udm-font-sm);
+  border-radius: var(--udm-radius-sm);
+}
+
+.udm-list__banner--ok {
+  color: var(--udm-ok);
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.45);
+}
+
+.udm-list__row-actions {
+  display: flex;
+  gap: var(--udm-space-1);
+}
+
+.udm-table__actions {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* ==================== 新增 / 编辑弹层 ==================== */
+
+/*
+ * 归属说明：弹层与表单样式列在这里（而不是 `styles/ui.css`），因为本模块是它们**目前唯一**的使用者。
+ * 按 D-36 的复用规则，等第二个模块（M3 任务、M7 泊车等）也用上这套弹层时再整体搬进 `ui.css` ——
+ * 提前搬过去只会得到一份「看起来是公共基元、其实只有一个调用点」的样式，改它的人无法判断影响面。
+ */
+.udm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--udm-z-dialog);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 6vh var(--udm-space-4) var(--udm-space-4);
+  background: rgba(2, 6, 23, 0.62);
+  overflow-y: auto;
+}
+
+/*
+ * 确认层比表单弹层窄：它只有一段话与两个按钮，用表单的宽度会让文字孤零零地飘在 680px 里
+ * （`BaseDataPage` 的物理删除二次确认用它）。
+ */
+.udm-dialog--confirm {
+  width: min(420px, 100%);
+}
+
+.udm-dialog {
+  width: min(680px, 100%);
+  background: var(--udm-panel);
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-lg);
+  box-shadow: var(--udm-shadow-2);
+}
+
+.udm-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--udm-space-3);
+  padding: var(--udm-space-3) var(--udm-space-4);
+  border-bottom: 1px solid var(--udm-border);
+}
+
+.udm-dialog__title {
+  margin: 0;
+  font-size: var(--udm-font-lg);
+}
+
+.udm-dialog__body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--udm-space-3);
+  padding: var(--udm-space-4) var(--udm-space-4) 0;
+}
+
+/* 原因输入框（状态操作的确认层用它）：固定纵向可拖，横向拖会把弹层撑破 */
+.udm-form__field textarea {
+  resize: vertical;
+  min-height: 64px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+/*
+ * 单列弹层。
+ *
+ * 表单弹层默认是两列网格（字段短、两列能在一屏里放下更多），
+ * 但**确认层与详情层**是一段一段的说明文字：挤成两列会让每段都在半栏里折行。
+ */
+.udm-dialog__body--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 整表级错误与超宽字段占满两列，避免被挤在半栏里折成三行 */
+.udm-dialog__body > .udm-alert,
+.udm-form__field--wide {
+  grid-column: 1 / -1;
+}
+
+/* 表单里的字段贴齐格线：`.udm-field` 自带的 margin 在网格里会变成上下不等距 */
+.udm-form__field {
+  margin-bottom: var(--udm-space-3);
+}
+
+.udm-form__label {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-1);
+  margin-bottom: var(--udm-space-1);
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+}
+
+.udm-form__label label {
+  cursor: pointer;
+}
+
+/* 必填语义由输入框的 `required` 承担；这里的角标只是视觉速记（读屏器跳过它） */
+.udm-form__required,
+.udm-form__locked {
+  font-style: normal;
+  font-size: var(--udm-font-2xs);
+  padding: 0 5px;
+  border-radius: var(--udm-radius-sm);
+}
+
+.udm-form__field input,
+.udm-form__field select,
+.udm-form__field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: var(--udm-font-md);
+  color: var(--udm-text);
+  background: var(--udm-surface-1);
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-sm);
+}
+
+.udm-form__field input:focus,
+.udm-form__field select:focus,
+.udm-form__field textarea:focus {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: -1px;
+}
+
+.udm-form__field input:disabled,
+.udm-form__field select:disabled,
+.udm-form__field textarea:disabled {
+  color: var(--udm-text-dim);
+  background: var(--udm-surface-2);
+}
+
+/* 服务端回来的字段级原因：红框 + 红字，两者必须同时出现（只给红字会让长表单里找不到是哪个框） */
+.udm-form__field input.is-invalid,
+.udm-form__field select.is-invalid,
+.udm-form__field textarea.is-invalid {
+  border-color: var(--udm-danger);
+}
+
+.udm-form__help {
+  display: block;
+  margin-top: 4px;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-2xs);
+}
+
+.udm-form__error {
+  display: block;
+  margin-top: 4px;
+  color: var(--udm-danger);
+  font-size: var(--udm-font-2xs);
+}
+
+.udm-form__required {
+  color: var(--udm-danger);
+  background: rgba(248, 113, 113, 0.14);
+}
+
+.udm-form__locked {
+  color: var(--udm-text-dim);
+  background: var(--udm-surface-3);
+}
+
+.udm-dialog__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--udm-space-2);
+  padding: var(--udm-space-3) var(--udm-space-4) var(--udm-space-4);
+}
+
+.udm-dialog__foot .udm-btn {
+  padding: 7px 16px;
+  font-size: var(--udm-font-sm);
 }

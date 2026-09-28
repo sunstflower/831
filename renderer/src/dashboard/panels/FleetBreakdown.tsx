@@ -8,7 +8,8 @@
  * 0 台的状态**仍然列出**并置灰：不显示会让人以为「这个状态不存在」，
  * 而它其实是「当前没有车处于该状态」——后者才是事实。
  */
-import { toneClass, type FleetBucket } from '../model/summary';
+import { toneClass } from '../../domain/tone';
+import type { FleetBucket } from '../model/summary';
 
 export interface FleetBreakdownProps {
   buckets: FleetBucket[];

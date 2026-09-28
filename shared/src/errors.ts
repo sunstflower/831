@@ -43,6 +43,7 @@ export const ERROR_CODES = {
   'DISPATCH.PLAN_EXPIRED': { source: 'business', message: '调度预览已过期，请重新预览', httpStatus: 409 },
   'DISPATCH.ALREADY_APPLIED': { source: 'business', message: '该调度请求已应用', httpStatus: 409 },
   'DISPATCH.NO_CANDIDATE': { source: 'business', message: '没有满足约束的候选车辆', httpStatus: 409 },
+  'ROUTE.NOT_FOUND': { source: 'business', message: '路线不存在', httpStatus: 404 },
   'ROUTE.NOT_FOUND_PATH': { source: 'business', message: '起点与终点之间不存在可行路径', httpStatus: 409 },
   'GRAPH.EMPTY': { source: 'business', message: '路网为空', httpStatus: 409 },
   'GRAPH.DISCONNECTED': { source: 'business', message: '路网不连通', httpStatus: 409 },

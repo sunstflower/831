@@ -31,8 +31,11 @@ export function insertAudit(db: Db, entry: AuditEntry): void {
     entry.action,
     entry.objectType,
     entry.objectId,
-    entry.before === undefined ? null : JSON.stringify(entry.before),
-    entry.after === undefined ? null : JSON.stringify(entry.after),
+    // `null` 与 `undefined` **都**表示「没有快照」：少了 `== null` 这层判断，
+    // 显式传 `null` 会被 `JSON.stringify` 写成字符串 `'null'`，于是同一件事
+    // （没有 after 快照）在库里有两种形态，而 `WHERE after IS NULL` 只找得到其中一种
+    entry.before == null ? null : JSON.stringify(entry.before),
+    entry.after == null ? null : JSON.stringify(entry.after),
     entry.result,
     entry.message,
     entry.errorCode,
@@ -65,7 +68,17 @@ export interface AuditRow {
 
 export function listAudit(
   db: Db,
-  options: { page: number; pageSize: number; module?: string; action?: string; actorId?: string; from?: string; to?: string }
+  options: {
+    page: number;
+    pageSize: number;
+    module?: string;
+    action?: string;
+    actorId?: string;
+    objectType?: string;
+    objectId?: string;
+    from?: string;
+    to?: string;
+  }
 ): { records: AuditRow[]; total: number } {
   const clauses: string[] = [];
   const params: SqlParam[] = [];
@@ -80,6 +93,14 @@ export function listAudit(
   if (options.actorId) {
     clauses.push('actor_id = ?');
     params.push(options.actorId);
+  }
+  if (options.objectType) {
+    clauses.push('object_type = ?');
+    params.push(options.objectType);
+  }
+  if (options.objectId) {
+    clauses.push('object_id = ?');
+    params.push(options.objectId);
   }
   if (options.from) {
     clauses.push('ts >= ?');

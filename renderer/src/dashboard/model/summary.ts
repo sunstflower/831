@@ -14,6 +14,7 @@
  */
 import type { AlertLevel, AlertStatus, TaskStatus, VehicleStatus } from '@udm/shared';
 import type { MapAlert, MapOverview, MapTask } from '../../api/types';
+import { TASK_STATUS_TONE, toneClass, type Tone } from '../../domain/tone';
 import {
   ALERT_LEVEL_LABEL,
   ALERT_STATUS_LABEL,
@@ -25,12 +26,6 @@ import {
 } from '../../domain/labels';
 import { LOW_BATTERY_PERCENT, type MapMetrics } from '../../map/model/metrics';
 
-export type Tone = 'ok' | 'warn' | 'danger' | 'info' | 'dim';
-
-/** 把 tone 映射成 `ui.css` 的类名。 */
-export function toneClass(tone: Tone, prefix = 'tone'): string {
-  return `${prefix}-${tone}`;
-}
 
 /* ==================== KPI ==================== */
 
@@ -164,17 +159,6 @@ export interface TaskRow {
 /** 任务排序：执行中的先看，然后按「离完成还差几步」倒排。 */
 const TASK_ORDER: TaskStatus[] = ['running', 'paused', 'assigned', 'pending', 'draft', 'failed', 'cancelled', 'finished'];
 
-const TASK_TONE: Record<TaskStatus, Tone> = {
-  draft: 'dim',
-  pending: 'warn',
-  assigned: 'info',
-  running: 'ok',
-  paused: 'warn',
-  finished: 'dim',
-  cancelled: 'dim',
-  failed: 'danger'
-};
-
 export interface TaskRowPage {
   rows: TaskRow[];
   /** 被截断的任务数（列表只显示前 limit 条，但要如实说明还有多少）。 */
@@ -191,7 +175,7 @@ export function buildTaskRows(overview: MapOverview, limit = 6): TaskRowPage {
     code: task.code,
     status: task.status,
     statusLabel: labelOf(TASK_STATUS_LABEL, task.status),
-    tone: TASK_TONE[task.status],
+    tone: TASK_STATUS_TONE[task.status],
     progress: task.progress,
     percent: Math.round(task.progress * 100),
     // 站点 / 车辆缺失时回落到原 id，绝不显示空白（design.md §7.2 第 6 条）

@@ -427,6 +427,15 @@
   background: var(--udm-surface-3);
 }
 
+/**
+ * 菜单项现在由方向键聚焦（`tabindex="-1"` + roving focus，见 `UserMenu.tsx`），
+ * 因此这枚焦点环是**键盘用户唯一的位置提示** —— 缺了它，方向键移动会看起来毫无反应。
+ */
+.udm-menu__item:focus-visible {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: -2px;
+}
+
 /* ==================== 页面容器 ==================== */
 
 /** 普通页面的留白容器（地图页自带满高布局，不使用它）。 */
@@ -679,4 +688,25 @@
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--udm-space-4);
   align-items: start;
+}
+
+/**
+ * 接口路径与权限点名（`<code>`）。
+ *
+ * 为什么必须有：`<code>` 默认是**行内**元素，多个挨在一起会连成一串不可读的文字 ——
+ * 实测「权限点」一行渲染成 `alert:readalert:ackalert:resolvealert:archive`。
+ * 只有**列出多项**的模块才看得出来，而恰好只有一个接口的模块（如「用户管理」）显示正常，
+ * 因此这个缺陷在页面改版时很容易被漏掉（`ISS-048`）。
+ * 这里用 `inline-block` + 右/下外边距：它在窄栏里自然折行，且不必改父级的 `dl` 布局。
+ */
+.udm-planned__iface {
+  display: inline-block;
+  margin: 0 5px 5px 0;
+  padding: 1px 6px;
+  color: var(--udm-text);
+  background: var(--udm-surface-3);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--udm-font-xs);
 }

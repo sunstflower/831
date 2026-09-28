@@ -1,3 +1,10 @@
+export { AlertsPage } from './AlertsPage';
+export { AuditPage } from './AuditPage';
+export { BaseDataPage } from './BaseDataPage';
 export { DashboardPage } from './DashboardPage';
+export { DispatchPage } from './DispatchPage';
 export { LoginPage } from './LoginPage';
 export { PlaceholderPage } from './PlaceholderPage';
+export { SettingsPage } from './SettingsPage';
+export { TasksPage } from './TasksPage';
+export { UsersPage } from './UsersPage';

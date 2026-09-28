@@ -3,6 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      深色优先的应用：`color-scheme` 让浏览器在任何 CSS 到达之前就用深色底绘制，
+      否则冷启动会先闪一帧白（Electron 的 `loadFile` 尤其明显）。
+    -->
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0f172a" />
+    <!--
+      内联 SVG 图标（`data:` URI）：不引第三方图标库、不发额外请求，离线可用
+      （`docs/module-M6-map.md` §1.3 的零在线依赖约束）。图形与 `components/BrandMark.tsx` 同语义。
+      色值全部取自 `styles/theme.css`（该文件是配色的唯一来源）——
+      因为图标在 CSS 之前就要可用，读不到 CSS 变量，只能写字面量；
+      `renderer/src/app/index-html.test.ts` 会断言这里出现的每个色值都已在 theme.css 登记，
+      避免它变成脱离主题的第三套色值。
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f172a'/%3E%3Cpath d='M8.5 21.5V11H16v6.5h7' fill='none' stroke='%2338bdf8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M8.5 21.5h9' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-dasharray='3 3'/%3E%3Ccircle cx='8.5' cy='11' r='2.8' fill='%23a78bfa'/%3E%3Ccircle cx='23' cy='17.5' r='2.8' fill='%234ade80'/%3E%3Ccircle cx='17.5' cy='21.5' r='2.8' fill='%2338bdf8'/%3E%3C/svg%3E"
+    />
     <title>无人物流调度管理软件</title>
   </head>
   <body>

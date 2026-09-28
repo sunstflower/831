@@ -5,8 +5,9 @@ import { APP_NAME } from '@udm/shared';
 import { defaultDbPath, openDatabase } from './db/index.js';
 import { applyMigrations } from './db/migrate.js';
 import { seedDatabase } from './db/seed.js';
+import { ExecutionRunner } from './domain/execution/executor.js';
 import { createApiRoutes } from './ipc/api.js';
-import { createRouter } from './ipc/router.js';
+import { createRouter, type HttpMethod } from './ipc/router.js';
 import { EventBus } from './services/event-bus.js';
 import { SessionStore } from './services/session.js';
 
@@ -52,7 +53,21 @@ app.whenReady().then(() => {
   const db = bootstrapDatabase();
   const sessions = new SessionStore();
   const bus = new EventBus(db, sessions);
-  const router = createRouter(createApiRoutes({ db, sessions, bus }), {
+  /*
+   * M7 本地模拟执行器（D-10）。
+   *
+   * 单实例、随进程生命周期：路由把 `start` / `takeover` 交给它，定时器每 tickMs
+   * 推进一帧。`adoptRunningTasks()` 把库里已处于 `running` 的任务（例如 seed 的
+   * 演示任务，或**上一次进程退出时**正在跑的任务）接进内存续跑 ——
+   * 少了这一步，界面上一条「执行中」的任务会永远停在原地。
+   */
+  const executor = new ExecutionRunner(db, bus);
+  const adopted = executor.adoptRunningTasks();
+  if (adopted > 0) {
+    console.log(`[udm] executor resumed ${adopted} running task(s)`);
+  }
+  executor.startTimer();
+  const router = createRouter(createApiRoutes({ db, sessions, bus, executor }), {
     db,
     sessions,
     onError: ({ path, traceId, error }) => {
@@ -62,7 +77,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'udm:invoke',
-    async (event, request: { path: string; payload?: Record<string, unknown>; token?: string }) => {
+    async (
+      event,
+      request: { path: string; payload?: Record<string, unknown>; token?: string; method?: HttpMethod }
+    ) => {
       const result = await router.invoke(request);
       // 会话与窗口绑定：窗口在登录前创建，只有登录成功后才具备接收领域事件的权限；
       // 登出即刻降权。否则任何窗口都能收到与其角色无关的业务事件（ISS-009）。
@@ -90,6 +108,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  // 定时器已 `unref()`，但显式停一次让「退出即停推进」这件事在代码上可见
   if (process.platform !== 'darwin') {
     app.quit();
   }

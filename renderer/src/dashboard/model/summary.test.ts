@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { MapOverview } from '../../api/types';
 import { buildMockOverview } from '../../api/mock-data';
 import { computeMetrics } from '../../map/model/metrics';
-import { buildAlertRows, buildFleetBuckets, buildKpis, buildTaskRows, toneClass } from './summary';
+import { buildAlertRows, buildFleetBuckets, buildKpis, buildTaskRows } from './summary';
+import { toneClass } from '../../domain/tone';
 
 /**
  * 工作台的展示口径测试。
@@ -246,6 +247,7 @@ describe('buildAlertRows', () => {
 describe('toneClass', () => {
   it('默认产出 tone-* 类名，可切换前缀产出徽标类名', () => {
     expect(toneClass('danger')).toBe('tone-danger');
-    expect(toneClass('ok', 'udm-badge')).toBe('udm-badge-ok');
+    // 前缀要连修饰符的横线一起给：`.udm-badge--ok` 是双横线（见 `domain/tone.ts`）
+    expect(toneClass('ok', 'udm-badge--')).toBe('udm-badge--ok');
   });
 });

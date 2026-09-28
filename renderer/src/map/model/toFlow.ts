@@ -10,7 +10,7 @@ import { computeFocus, isDimmed } from './focus';
 import { buildEdgeLengthIndex, segmentLength } from './edgeIndex';
 import type { SelectableEntityType } from '../../store/selection';
 import { netEdgeId, netNodeId, orderEndpointId, routeSegmentId, siteNodeId, taskEndpointId, vehicleNodeId } from './ids';
-import { PIXELS_PER_METER, toFlowXY } from './projection';
+import { toFlowXY } from './projection';
 import { DEFAULT_VISIBILITY, LAYERS, type LayerKey } from './layers';
 import { LOW_BATTERY_PERCENT } from './metrics';
 
@@ -29,12 +29,26 @@ import { LOW_BATTERY_PERCENT } from './metrics';
  */
 const CENTER_ORIGIN: [number, number] = [0.5, 0.5];
 
-/** 在**米制业务坐标**上做展示偏移：`px` 偏移除以比例尺换算回米。 */
-function shiftEndpoint(
+/**
+ * 图层偏移：「屏幕向上为正」→ **画布坐标**（y 轴向下）。
+ *
+ * 这是 `LAYER_OFFSET` 唯一的符号换算点 —— 节点落点（`shiftFlow`）与 `anchorOfFlow`
+ * 都经过它。**任何地方不得再手写这个取负**：写反了不会报错，只会让站点静默沉到
+ * 车辆下面（见上方 `LAYER_OFFSET` 的符号约定）。
+ */
+function toCanvasOffset(offset: { x: number; y: number }): { x: number; y: number } {
+  // `|| 0` 只为把 `-0` 归一成 `0`：业务 y=0 取负会得到 `-0`，它虽与 `0` 数值相等，
+  // 但在 `Object.is` / `toEqual` / 调试输出里会现形，白让后来者困惑一次。
+  return { x: offset.x || 0, y: -offset.y || 0 };
+}
+
+/** 在**画布坐标**上做展示偏移（`offset.y` 为正 = 屏幕上移）。 */
+function shiftFlow(
   point: { x: number; y: number },
   offset: { x: number; y: number }
 ): { x: number; y: number } {
-  return { x: point.x + offset.x / PIXELS_PER_METER, y: point.y + offset.y / PIXELS_PER_METER };
+  const canvas = toCanvasOffset(offset);
+  return { x: point.x + canvas.x, y: point.y + canvas.y };
 }
 
 export interface FlowGraph {
@@ -57,31 +71,128 @@ export interface FlowGraph {
  * 只需在测量完成前给缩略图一个合理的比例即可。
  * 改 CSS 尺寸时**不必**同步改这里，但偏差过大会让缩略图与主画布观感不一致。
  */
-const NODE_SIZE: Record<string, { width: number; height: number }> = {
+export const NODE_SIZE: Record<string, { width: number; height: number }> = {
   net: { width: 12, height: 12 },
-  // 站点与车辆带可见文字标签，宽度远大于高度 —— 尺寸偏差过大时缩略图会与主画布不一致
-  site: { width: 96, height: 26 },
-  vehicle: { width: 84, height: 42 },
+  /**
+   * 站点/车辆卡片是**内容撑开**的（`style/map.css` 里 `width: auto`），
+   * 下面的数值是 2026-09-26 在 Electron 里按 `getBoundingClientRect() / zoom`
+   * 实测的典型尺寸（站点名被 `max-width: 76px` 截断，故宽度有上限）。
+   *
+   * 它们同时被两处使用：缩略图方块（越准越好）与 `layout.test.ts` 的图层不变量
+   * （用声明尺寸算「会不会遮挡」）。所以改 CSS 的字体/内边距后**应回来重新核对** ——
+   * 偏差太大时，不变量会在「假尺寸」上算出假的结论。
+   */
+  site: { width: 66, height: 32 },
+  vehicle: { width: 90, height: 46 },
   taskEndpoint: { width: 20, height: 20 },
   orderEndpoint: { width: 20, height: 20 }
 };
 
 /**
- * 起终点标记的**展示去重叠偏移**（画布 px）。
+ * 各图层的**展示偏移**（画布 px，相对锚点）。
  *
- * 背景：任务起终点落在**站点**上，而执行该任务的**车辆**也停在同一个站点上。
- * 三者位置完全重合，且车辆层恒在最上层 —— 实测结果是「任务起终点永远看不见」。
- * 这不是数据问题（坐标本身是对的），而是三个元素挤在同一个点上的排版问题。
+ * ## 为什么需要它
  *
- * 处理：把起终点标记沿对角方向让开一点，让「站点本体 / 车辆 / 起终点」三者同时可见。
- * 这是**纯展示变换**（与 `projection.ts` 的 y 轴翻转同类），
- * 不写回业务数据、不影响任何接口，也不改变「起终点就在这个站点」这一事实。
- * 偏移量取 22px：约等于站点标记自身尺寸，视觉上仍明显「贴着」站点。
+ * 同一个路网节点上可以同时站着**四个**元素：路网节点本身、它上面挂的**站点**、
+ * 停在该点的**车辆**、以及以该站点为起终点的任务/订单端点。它们共用同一个锚点坐标
+ * —— 坐标本身是对的，挤在一起是**排版**问题。
+ *
+ * 实测过两次，都是这一类：
+ *   1. 任务起终点永远看不见（车辆层恒在最上层，把 20×20 的端点整个盖住）；
+ *   2. `ISS-053`：seed 的演示数据里 AGV-01 停在站点 A-01 绑定的节点上，
+ *      两个约 90px 宽的标签框**完全重叠**，`AGV-01 / 执行中 / 100%` 压住了 `A-01 / A 仓库`，
+ *      两块文字都读不清 —— 而且默认首屏就是这幅样子。
+ *
+ * ## 布局规则（围绕锚点排成一圈，互不遮挡）
+ *
+ * ```
+ *            ┌────── 站点 ──────┐        y = +46（向上抬起）
+ *            └──────────────────┘
+ *              ┌──── 车辆 ────┐          y =   0  ← 锚点本身
+ *              └─────────────┘
+ *   起终点 ●                   ● 起终点    y =   0，左右各 64px
+ * ```
+ *
+ * ⚠️ **符号约定**：这里的 `y` 是「**屏幕方向、向上为正**」，与直觉一致，但与
+ * `projection.ts` 的 `toFlowXY` 相反 —— 后者会翻转 y 轴（`toFlowXY` 把业务坐标的
+ * y 取负，于是「业务 y 增大 = 屏幕向上」）。偏移在**翻转之后**叠加到画布坐标上，
+ * 由 `toCanvasOffset` 统一把 `+y` 折算成屏幕上移。
+ * 这个符号**必须由测试锁住**（`layout.test.ts` 断言「站点在车辆上方」），
+ * 因为写反了页面照样能渲染，只是站点跑到车底下 —— 一眼看不出来是符号错了。
+ *
+ * **车辆不参与偏移**：它的位置就是「车在哪」这个信息本身，而且是**动的**
+ * （`useVehicleMotion` 沿路段插值）。把车辆整体挪 20px 会变成「车压在路外面」，
+ * 那是把排版问题换成了坐标错误。所以让位的永远是**静止**的图层：
+ * 站点抬起、端点让到两侧。
+ *
+ * ## 三条纪律
+ *
+ * 1. 这是**纯展示变换**（与 `projection.ts` 的 y 轴翻转同类）：不写回业务数据、
+ *    不影响任何接口，也不改变「起终点就在这个站点」「车就在这个点」这些事实；
+ * 2. 偏移量只在这里定义一次，**`style/map.css` 不得再叠一份**（同一个位置两处定义必然分叉）；
+ * 3. 新增共点图层时**必须**给它一个不重叠的锚点，并由 `layout.test.ts` 的不变量断言守住。
  */
-const ENDPOINT_OFFSET = {
-  from: { x: -22, y: -22 },
-  to: { x: 22, y: -22 }
+export const LAYER_OFFSET = {
+  /**
+   * 静止元素：抬起，给车辆与端点让位。`+y` = 屏幕上移（见上方的符号约定）。
+   *
+   * 数值 ≈ 车辆半高 + 站点半高 + 可见间隙 = 23 + 16 + 15 = 54。
+   * 间距按「看得见」定而不是「不重叠」定：刚好贴边时两行文字仍会视觉粘连，
+   * 实测 46px 时只剩约 7px 间隙（截图核对），故抬到 54。
+   */
+  site: { x: 0, y: 54 },
+  /**
+   * 任务/订单起终点：让到锚点两侧。
+   *
+   * 为什么是左右而不是原来的对角偏移（左-22上-22 / 右+22上-22）：站点抬起后，
+   * 对角偏移会重新撞进站点标签框的水平范围（站点框宽 96、半宽 48，对角偏移的水平量只有 22）。
+   * 改成左右各 64px 后，与站点框（半宽 48 + 端点半宽 10 = 58）和车辆框（半宽 42 + 10 = 52）
+   * 都留出余量。
+   * 左右分开也更好读：起点在左、终点在右，与「从 → 到」的阅读方向一致。
+   */
+  taskEndpoint: {
+    from: { x: -64, y: 0 },
+    to: { x: 64, y: 0 }
+  },
+  orderEndpoint: {
+    from: { x: -64, y: 0 },
+    to: { x: 64, y: 0 }
+  }
 } as const;
+
+/** 某个图层声明的偏移量（屏幕向上为正）；未登记偏移的图层返回零位移。 */
+function offsetOfLayer(type: string | undefined, role?: 'from' | 'to') {
+  switch (type) {
+    case 'site':
+      return LAYER_OFFSET.site;
+    case 'taskEndpoint':
+      return LAYER_OFFSET.taskEndpoint[role ?? 'from'];
+    case 'orderEndpoint':
+      return LAYER_OFFSET.orderEndpoint[role ?? 'from'];
+    default:
+      return { x: 0, y: 0 };
+  }
+}
+
+/** 节点落点相对锚点的**画布位移**（与 `shiftFlow` 同源，供调试面板与布局测试使用）。 */
+export function layerCanvasOffset(
+  type: string | undefined,
+  role?: 'from' | 'to'
+): { x: number; y: number } {
+  return toCanvasOffset(offsetOfLayer(type, role));
+}
+
+/**
+ * 节点落点反推的**锚点**（画布坐标）。
+ *
+ * 布局不变量测试靠它判断「哪些元素共点」：只有共点的图层之间才谈得上遮挡；
+ * 不同锚点的元素偶尔相交（车辆开过某个端点标记）是正常现象，不该判为缺陷。
+ */
+export function anchorOfFlow(node: Node): { x: number; y: number } {
+  const data = node.data as { role?: 'from' | 'to' } | undefined;
+  const offset = layerCanvasOffset(node.type, data?.role);
+  return { x: node.position.x - offset.x, y: node.position.y - offset.y };
+}
 
 /** 把声明尺寸与中心锚点摊平到节点上（`initial*` 而非 `width/height`，避免覆盖真实测量）。 */
 function sized(node: Node): Node {
@@ -274,7 +385,8 @@ export function toFlow(
     nodes.push(sized({
       id: siteNodeId(site.id),
       type: 'site',
-      position: toFlowXY(xy),
+      // 抬起站点而不是车辆：车的位置是「车在哪」的信息本身，且它是动的（见 LAYER_OFFSET）
+      position: shiftFlow(toFlowXY(xy), LAYER_OFFSET.site),
       hidden: !visibility.sites,
       className: isDimmed(focus, focus.nodeIds, siteNodeId(site.id)) ? 'is-dimmed' : '',
       data: {
@@ -299,11 +411,10 @@ export function toFlow(
       if (!xy) {
         continue;
       }
-      const xy2 = shiftEndpoint(xy, ENDPOINT_OFFSET[role]);
       nodes.push(sized({
         id: taskEndpointId(task.id, role),
         type: 'taskEndpoint',
-        position: toFlowXY(xy2),
+        position: shiftFlow(toFlowXY(xy), LAYER_OFFSET.taskEndpoint[role]),
         className: isDimmed(focus, focus.nodeIds, taskEndpointId(task.id, role)) ? 'is-dimmed' : '',
         // 图层开关统一用 hidden，不移除元素：关掉再打开时选中态与视口不丢（D-21）
         hidden: !visibility.taskEndpoints,
@@ -331,7 +442,7 @@ export function toFlow(
       id: orderEndpointId(endpoint.orderId, endpoint.role),
       type: 'orderEndpoint',
       // 与任务起终点同理：订单点位常落在站点上，需让开车辆与站点标记
-      position: toFlowXY(shiftEndpoint(endpoint, ENDPOINT_OFFSET[endpoint.role])),
+      position: shiftFlow(toFlowXY(endpoint), LAYER_OFFSET.orderEndpoint[endpoint.role]),
       hidden: !visibility.orderEndpoints,
       className: isDimmed(focus, focus.nodeIds, orderEndpointId(endpoint.orderId, endpoint.role)) ? 'is-dimmed' : '',
       data: {

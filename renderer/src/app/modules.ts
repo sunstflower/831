@@ -145,99 +145,20 @@ export interface PlannedModule {
 }
 
 export const PLANNED_MODULES: Record<string, PlannedModule> = {
-  tasks: {
-    id: 'M3',
-    title: '任务管理',
-    goal: '任务的创建、批量导入、编辑与状态流转操作',
-    capabilities: [
-      { requirement: 'Req-M3-1', label: '任务创建（套模板 / 手填）' },
-      { requirement: 'Req-M3-2', label: 'CSV / JSON 批量导入与失败明细' },
-      { requirement: 'Req-M3-4', label: '暂停 / 恢复 / 取消 / 重派' },
-      { requirement: 'Req-M3-5', label: '高风险操作二次确认' },
-      { requirement: 'Req-M3-7', label: '状态 / 优先级 / 车辆 / 时间过滤' }
-    ],
-    interfaces: ['/api/tasks'],
-    permissions: ['task:read', 'task:write']
-  },
-  dispatch: {
-    id: 'M4 / M5',
-    title: '调度中心',
-    goal: '多策略派发预览对比，确认后落库生效，并给出可解释的路线',
-    capabilities: [
-      { requirement: 'Req-M4-1', label: '贪心 / 匈牙利策略对比' },
-      { requirement: 'Req-M4-2', label: '约束不满足的拒绝原因' },
-      { requirement: 'Req-M4-3', label: '先预览、后应用（预览不落库）' },
-      { requirement: 'Req-M4-4', label: '手动指派指定车辆' },
-      { requirement: 'Req-M5-2', label: 'A* 与 Dijkstra 路线对比' }
-    ],
-    interfaces: ['/api/dispatch', '/api/routes'],
-    permissions: ['dispatch:read', 'dispatch:preview', 'dispatch:apply', 'route:plan']
-  },
-  'base-data': {
-    id: 'M2',
-    title: '基础数据',
-    goal: '站点、车辆、路网、禁行规则与任务模板的维护',
-    capabilities: [
-      { requirement: 'Req-M2-1', label: '站点增删改查（编码唯一）' },
-      { requirement: 'Req-M2-2', label: '车辆增删改查（含状态）' },
-      { requirement: 'Req-M2-3', label: '路网节点与有向边维护' },
-      { requirement: 'Req-M2-4', label: '禁行规则与生效时间窗' },
-      { requirement: 'Req-M2-6', label: '主数据变更写审计（before/after）' }
-    ],
-    interfaces: ['/api/sites', '/api/vehicles', '/api/nodes', '/api/edges', '/api/restrictions'],
-    permissions: ['base:read', 'base:write']
-  },
-  alerts: {
-    id: 'M8',
-    title: '告警中心',
-    goal: '异常事件归类、提示与留痕，形成「生成 → 确认 → 处理 → 归档」闭环',
-    capabilities: [
-      { requirement: 'Req-M8-2', label: '确认 / 处理 / 归档（记录操作者与时间）' },
-      { requirement: 'Req-M8-3', label: '按类型 / 级别 / 状态 / 对象过滤' },
-      { requirement: 'Req-M8-4', label: '去重窗口，同一原因不刷屏' },
-      { requirement: 'Req-M8-5', label: '新告警实时推送与地图角标' }
-    ],
-    interfaces: ['/api/alerts'],
-    permissions: ['alert:read', 'alert:ack', 'alert:resolve', 'alert:archive']
-  },
-  audit: {
-    id: 'M9',
-    title: '审计日志',
-    goal: '全量操作的留痕查询与导出，只增不改不删',
-    capabilities: [
-      { requirement: 'Req-M9-1', label: '登录 / 主数据 / 任务 / 调度 / 接管全部留痕' },
-      { requirement: 'Req-M9-2', label: '模块 / 动作 / 操作者 / 时间过滤与分页' },
-      { requirement: 'Req-M9-3', label: '调度结果留痕（输入快照 / 策略 / 耗时）' },
-      { requirement: 'Req-M9-4', label: '导出 CSV（仅 admin）' }
-    ],
-    interfaces: ['/api/audit', '/api/dispatch-logs'],
-    permissions: ['audit:read']
-  },
-  settings: {
-    id: 'M10',
-    title: '系统设置',
-    goal: '按 schema 校验后保存全局参数，主进程重启生效',
-    capabilities: [
-      { requirement: 'Req-M10-1', label: '按 schema 校验类型与范围' },
-      { requirement: 'Req-M10-4', label: '前端按 schema 动态渲染表单' },
-      { requirement: 'Req-M10-2', label: '修改写审计' },
-      { requirement: 'Req-M10-3', label: '启动读取，缺失用默认值' }
-    ],
-    interfaces: ['/api/settings', '/api/settings/schema'],
-    permissions: ['settings:read', 'settings:write']
-  },
-  users: {
-    id: 'M1',
-    title: '用户管理',
-    goal: '账号、角色与密码维护（登录链路已实现，管理界面待补）',
-    capabilities: [
-      { requirement: 'Req-M1-5', label: '账号增 / 禁 / 启用 / 重置密码' },
-      { requirement: 'Req-M1-6', label: '登录 / 退出 / 密码变更记审计' },
-      { requirement: 'Req-M1-7', label: '连续失败锁定策略（参数可配）' }
-    ],
-    interfaces: ['/api/users'],
-    permissions: ['user:manage']
-  }
+  /*
+   * 这里是**空表**，而且现在就该是空的。
+   *
+   * `PLANNED_MODULES` 的语义是「还没实现、因此被挂到 `PlaceholderPage` 上的模块」。
+   * M1-M10 九个模块的页面如今**全部落地**，没有任何路由再指向 `PlaceholderPage`
+   * —— 表里再留条目就等于声称「这个模块没实现」，与 `App.tsx` 的路由表直接矛盾。
+   *
+   * 保留这张表与 `PlaceholderPage` 是为了**下一个模块**：先登记「将来有什么能力、
+   * 依赖哪些接口」，路由挂占位页；模块落地后再把这一条删掉、改指真实页面。
+   * 反过来（先挂占位页、不登记）会让使用者看到一张空白页（ISS-010 的教训）。
+   *
+   * 先例与理由（D-34）：M2/M3/M4+M5 落地时都从这张表里删过条目 —— 同一件事
+   * 一旦有两个作者（路由说已实现、登记表说未实现），它们必然随开发进度分叉。
+   */
 };
 
 /** 按路由取导航项（顶栏据此显示标题与说明）。 */

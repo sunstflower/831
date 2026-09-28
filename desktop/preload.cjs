@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('dispatchApi', {
-  invoke: (path, payload, token) => ipcRenderer.invoke('udm:invoke', { path, payload, token }),
+  invoke: (path, payload, token, method) => ipcRenderer.invoke('udm:invoke', { path, payload, token, method }),
   on: (event, handler) => {
     const listener = (_event, message) => {
       if (!event || message.type === event) {

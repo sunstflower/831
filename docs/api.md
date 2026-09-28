@@ -30,7 +30,14 @@
 | 文档索引 | `README.md`「文档入口」 | 不再各自维护副本 |
 | 页面路由 / 导航分组 / 模块元数据 | `renderer/src/app/modules.ts` | 引用模块键或路由，不复述标题与权限清单 |
 | 设计令牌（颜色 / 字号 / 间距）与共用 UI 基元的归属 | `renderer/src/styles/theme.css` · `styles/ui.css`（代码即事实，见 D-36） | 引用类名与变量名，不复述色值 |
+| 首屏声明（图标 / `color-scheme` / `theme-color`） | `renderer/index.html`（代码即事实，见 D-37；色值已登记性由 `renderer/src/app/index-html.test.ts` 断言） | 引用 D-37，不复述色值 |
+| 弹层键盘语义（焦点管理 / 可读名称 / 焦点环） | 组件代码即事实（首个实现见 `renderer/src/components/UserMenu.tsx`）与它同目录的 `.test.tsx`（见 D-38） | 引用 D-38，不必逐条复述 |
+| 传输层参数校验与分页的归属、以及「非法分页值怎么处理」 | `desktop/src/ipc/paging.ts` · `desktop/src/ipc/validators.ts`（代码即事实，见 D-40） | 引用 D-40；具体容错口径不复述 |
+| 边的**业务编码**命名约定（`E_<小>_<大>` / 反向后缀 `_R`）、以及「`edges.code` 列还没落地时由谁推导」 | `shared/src/edge-code.ts`（代码即事实，见 D-35；条数/取值不复述） | 引用该文件与 D-35 |
 | 枚举值 → 中文展示文案 | `renderer/src/domain/labels.ts` | 引用文案表，不另写一份映射 |
+| 各模块的**模块内实现口径**（文件划分、校验顺序、事务与副作用边界、审计动作命名、测试清单） | `docs/module-M2-base-data.md` · `docs/module-M3-task.md` · `docs/module-M4-dispatch.md` · **`docs/module-M5-route.md`** · `docs/module-M6-map.md` | 引用模块文档的 §号；**不复述**其文件清单与步骤 |
+| 路径规划的车种默认速度、通行速度取小规则、绕行阈值与警告产生条件 | `shared/src/route-graph.ts` · `shared/src/route-search.ts`（代码即事实，见 D-49 / D-50） | 引用文件与常量名，**不复述**数值 |
+| 表与列 DDL | `desktop/migrations/*.sql` → `docs/database.md` | 引用表名与列名 |
 
 > **禁止**：在非负责文档的**正文叙述**里复述可漂移的数值（条数、节点数、用例数、路径、默认值）。
 > 需要时写「见 §X」。只有两类例外，且都必须**自带出处与日期**：
@@ -119,8 +126,8 @@
 
 > **全项目唯一登记处**：`shared/src/errors.ts` 的 `ERROR_CODES`（实现即契约）。
 > 本表由该文件与 `shared/src/errors.catalog.test.ts` 的断言共同锁定 —— 文档里出现未登记的 code 会导致 `npm test` 失败。
-> **条数不在此处固化**（易漂移）：实时值 = `Object.keys(ERROR_CODES).length`，当前为 **125 条
-> （35 运行时 + 90 导入域）**；其它文档引用条数时请改引「本文 §2」，不要各自复述（D-34）。
+> **条数不在此处固化**（易漂移）：实时值 = `Object.keys(ERROR_CODES).length`，当前为 **126 条
+> （36 运行时 + 90 导入域）**；其它文档引用条数时请改引「本文 §2」，不要各自复述（D-34）。
 > 数据文件导入域的 code（`IMPORT.*` / `ORDER.*` / `MAP.*` / `VEHICLE.*` / `ALGO.*` / `SCENARIO.*`）见 §2.2。
 
 ### 2.1 运行时业务错误码
@@ -183,6 +190,7 @@
 
 | code | source | 说明 | HTTP(参考) |
 | --- | --- | --- | --- |
+| `ROUTE.NOT_FOUND` | business | 路线不存在（按 id 查不到已落库的路线） | 404 |
 | `ROUTE.NOT_FOUND_PATH` | business | 起点与终点之间不存在可行路径 | 409 |
 | `GRAPH.EMPTY` | business | 路网为空 | 409 |
 | `GRAPH.DISCONNECTED` | business | 路网不连通 | 409 |
@@ -321,6 +329,11 @@
 
 `POST /api/auth/login` · 公开（no-audit 仅在失败时不写，成功写审计）
 
+> **方法不是可选项**（2026-09-26 实测，`ISS-066`）：`Route.method` 省略时路由按 `GET` 注册，
+> 而本契约写的是 `POST`。曾因此出现「渲染层不传方法 → 整条链路都是 GET → 界面一切正常」，
+> 只有**照着本文档调用的第三方**（HTTP 客户端 / E2E 脚本）拿到 `API.ROUTE_NOT_FOUND`。
+> 同 §3.1.3 的 `POST /api/auth/logout`。两者现有断言：`desktop/src/ipc/api.auth.test.ts`。
+
 请求：
 
 ```json
@@ -396,6 +409,28 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 
 通用说明：写操作权限 `base:write`，读权限 `base:read`；实体字段以 design §6.2 为准。所有写操作写审计并做编码唯一校验（`BASE.CODE_EXISTS`）。
 
+> **已实现范围（2026-09-26）**：本节的**读接口**（`GET /api/sites` · `GET /api/vehicles` · `GET /api/nodes` · `GET /api/edges` ·
+> `GET /api/restrictions` · `GET /api/task-templates`，含各自的分页、`keyword` 搜索与 `status`/`type` 筛选）与
+> **写接口**（POST 创建 / PUT 更新 / PATCH 启停 / DELETE 删除，六类资源共 19 条）
+> 均已落地并有测试。本节表格里的 `GET /api/{资源}/{id}`（详情）**未实现**，界面不用它：
+> 列表行已带齐字段，而详情会引入第二套「一条记录长什么样」的形状。
+> 四个列表接口共用同一套分页口径（**宽进**）与筛选项口径（**严出**），取舍见 `AGENTS.md` D-40；
+> 写接口的字段规则**唯一作者**是 `shared/src/base-rules.ts`（主进程与浏览器 Mock 共用，见 D-44）。
+>
+> 写接口的三条落地口径（实现处：`desktop/src/domain/base/`）：
+>   1. **参数原样进领域服务**：传输层不再重复 `requireString` 一遍 —— 两处都判会出现「传输层说合法、
+>      领域层说非法」的口径分叉，且只在某个字段组合上显形；
+>   2. **写操作 = 一个事务 + 一条审计**，顺序固定为「读旧值 → 校验 → 写表 → 写审计」；
+>      已是目标状态的启停请求**幂等返回且不写审计**（否则重复点两次会在审计里留下两条 disable）；
+>   3. **`map.updated` 事件在事务提交之后发**，渲染层收到事件时一定能读到新值。
+>
+> 易被误解的一处：车辆停用**不是**通用的 `{ "status": "disabled" }` 语义 ——
+> 取值必须是 §1.5 车辆状态枚举成员，且 `reserved`/`busy` 停用返回 `VEHICLE.STATE_CONFLICT`（见 §3.2.2）。
+>
+> 六类资源的能力**并不对称**，而且都是契约决定的，不是实现缺口：
+> `sites`/`vehicles`/`nodes`/`edges` 有启停；`restrictions` 有**物理删除**但没有启停接口
+> （失效是一条带理由的 `PUT`，见 §3.2.5）；`task-templates` 只有读 / 创建 / 更新，**没有删除也没有停用**（§3.2.6）。
+
 #### 3.2.1 站点 sites
 
 | 方法/路径 | 说明 |
@@ -418,6 +453,9 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 
 说明：`offline/fault/charging` 等运行态状态由执行器/心跳更新，管理接口不直接改；`online`（心跳标志）同样不由本接口维护。启用（`disabled → idle`）的目标状态固定为 `idle`，完整迁移表见 `design.md` §4.2。
 
+界面上还有一条**客户端**的预防措施（不是接口约束）：调度占用中（`reserved`/`busy`）的车辆，「停用」按钮直接禁用并给出原因，
+不让使用者点了才被 `VEHICLE.STATE_CONFLICT` 拒 —— 服务端校验仍是唯一的判定者。
+
 #### 3.2.3 路网节点 nodes
 
 | 方法/路径 | 说明 |
@@ -436,7 +474,7 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 | `GET /api/edges/{id}` | 详情 |
 | `POST /api/edges` | `code?/fromNodeId/toNodeId/lengthM?/speedLimitMps?/remark?`；`code` 缺省按两端节点 `code` 生成 `E_<from>_<to>`，唯一（见 `docs/data-interfaces.md` §4.3、D-35）；`lengthM` 缺省按坐标欧氏距离自动计算；重复方向对拒绝 |
 | `PUT /api/edges/{id}` | 更新（`code` 不可改） |
-| `PATCH /api/edges/{id}/status` | 封路（`disabled`）会触发相关任务告警评估 |
+| `PATCH /api/edges/{id}/status` | 封路（`disabled`）。**当前实现**：只写状态与审计并广播 `map.updated`；「触发相关任务告警评估」是 M5 的评估器落地后的行为（`edge.status` 事件已带 `edgeId`/`status`，评估器接上即可用） |
 
 #### 3.2.5 禁行规则 restrictions
 
@@ -447,6 +485,23 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 | `PUT /api/restrictions/{id}` | 更新 |
 | `DELETE /api/restrictions/{id}` | 物理删除（规则无历史依赖） |
 
+实现口径（`desktop/src/domain/base/restriction.service.ts`、`desktop/src/db/repositories/restriction.repo.ts`）：
+
+- **没有 `keyword` 搜索**：规则的可读标识是派生的 `targetCode`（节点取 `nodes.code`、边按两端节点推导），
+  它分散在两张表里，按它模糊搜在语义上不成立（与 §3.2.4 的边同理）。找一条规则的路径是
+  「按 `type` / `status` 缩小范围，再看 `targetCode` 列」。
+- **`targetId` 是多态引用**（节点或边），`restrictions.target_id` **没有外键**。因此：
+  读取时用 `LEFT JOIN` 现算 `targetCode`，目标被删除后规则**仍在列表里**、`targetCode` 为 `null`
+  （界面显示「目标已不存在」）—— 若用 `JOIN`，那条规则会凭空消失，使用者既看不到它也无法清理它；
+  写入时由服务层校验「目标在当前 `type` 下真实存在」，否则 `MAP.RESTRICTION_TARGET_NOT_FOUND`。
+- **时间窗是跨字段校验**：两个字段各自只需是**可解析的 ISO 8601 串**（字符串比较即时间序，
+  见 `docs/database.md` 的生效查询），而 `endAt > startAt` 由服务层拿**库里的**另一侧配对判断 ——
+  只传 `endAt` 的更新必须与旧 `startAt` 比较（只判传来的那一个会漏掉倒挂，撞 DDL 的 CHECK 报成 500）。
+- **删除是物理删除**：行真的从库里移除，动态数据只剩 `audit_logs` 里一条 `action='delete'`（`before` 存全量快照）。
+  这是 `design.md` D-07「一律软删」的**唯一例外**，也正是审计必须存 before 的原因。
+- 排序为 `created_at DESC, id ASC`（时间戳可能同毫秒，故用 `id` 兜底定序）；`type` / `status` 取值非法一律
+  `VALIDATION.FAILED`（不静默忽略，见 D-40）。
+
 #### 3.2.6 任务模板 task-templates
 
 | 方法/路径 | 说明 |
@@ -456,9 +511,38 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 | `POST /api/task-templates` | `code/name/priority/defaultCargoKg/timeWindowMinutes/fromSiteType/toSiteType/remark?` |
 | `PUT /api/task-templates/{id}` | 更新 |
 
+实现口径：
+
+- **只有三条路由**：没有 `DELETE`（模板会被 `tasks.template_id` 引用，删掉会让历史任务失去来源说明），
+  也没有启停（`task_templates` 表**没有 status 列**）。这是此表与其余五类的不对称之处，
+  属契约决定的范围，不是实现没做完 —— 服务层也**不提供**契约之外的入口。
+- `priority` 创建时可缺省，缺省值为 **`normal`**（与 DDL 的 `DEFAULT 'normal'` 一致；不是枚举首项 `low`）。
+- `defaultCargoKg` 域为 `>= 0`、`timeWindowMinutes` 为**正整数**（`> 0`），与 DDL 的 CHECK 保持一致 ——
+  DDL 拒掉而校验放过的值会以 `SYS.INTERNAL` 的形式冒出来，看不出原因。
+- 四个可空列（`defaultCargoKg` / `timeWindowMinutes` / `fromSiteType` / `toSiteType`）显式传 `null` 表示**清空**。
+- `code` 创建后不可改（与其它五类同口径）；模板**不影响路网**，因此变更**不**发 `map.updated`。
+- 排序为 `code ASC`。
+
 ### 3.3 任务管理（M3）
 
 字段与状态机见 design §4.3、§6.2。任务编码 `code` 创建后不可变；`fromSiteId/toSiteId` 必须是 `enabled` 站点。
+
+> **已实现范围（2026-09-26）**：本节的 **§3.3.1 列表** · **§3.3.2 详情** · **§3.3.3 创建** · **§3.3.5 编辑** ·
+> **§3.3.6 状态操作**（六个动作共用 `POST /api/tasks/{id}/{action}` + `DELETE /api/tasks/{id}`）· **§3.3.7 操作响应**
+> 均已落地并有测试；**§3.3.4 批量导入未实现** —— 页面已如实标注未实现，契约保留待导入管线定案（见
+> `docs/module-M3-task.md` §2.1 / §12 Q1）。状态操作的 HTTP 暴露面由状态机派生
+> （`shared/src/task-state.ts` 的 `TASK_API_ACTIONS - {delete}`），未登记的动作一律 `API.ROUTE_NOT_FOUND`；
+> 模块内实现口径见 `docs/module-M3-task.md`。
+>
+> 三条落地口径（实现处：`desktop/src/domain/task/task.service.ts`）：
+>   1. **写操作 = 一个事务 + 一条审计**，顺序固定为「读旧值 → 校验 → 写表 → 写审计」；
+>      `create` 带 `submit=true` 时 `draft → pending` 在**同一事务内**完成；
+>   2. **取消 / 重派先回收车辆再改状态**：仅 `busy` / `reserved` 回 `idle`（不谎报故障 / 离线 / 充电中 / 停用），
+>      并把计划置 `cancelled` / `superseded`、清空 `assigned_vehicle_id` 与 `plan_id`；未回收的提示写进审计 `message`；
+>   3. **`task.changed` 事件在事务提交之后发**，载荷含 `reason` 与 `taskId`（状态操作另带 `status`）。
+>
+> 契约里没有的能力**不是实现缺口**：`assign` / `start` / `complete` / `fail` 由 M4 / M7 触发，不给 HTTP 入口；
+> 单个任务没有「批量操作」接口；暂停原因落 `tasks.pause_reason` 列（迁移 `0004`）而不是只写审计。
 
 #### 3.3.1 任务列表
 
@@ -526,6 +610,9 @@ query：`status`(可逗号多值)/`priority`/`vehicleId`/`from`(timeWindowStart�
 
 #### 3.3.6 状态操作
 
+六个动作共用**同一个路径形态** `POST /api/tasks/{id}/{action}`（`{action}` ∈ `submit` / `pause` / `resume` / `cancel` / `requeue` / `reassign`）；
+物理删除是唯一的例外，走 `DELETE /api/tasks/{id}`。逐条列在下表（实现时不再为每个动作单独注册一条路径，见 `docs/module-M3-task.md` §3）。
+
 | 方法/路径 | 权限 | 请求 | 迁移 | 说明 |
 | --- | --- | --- | --- | --- |
 | `POST /api/tasks/{id}/submit` | task:write | `{}` | draft→pending | 必填校验 |
@@ -549,6 +636,27 @@ query：`status`(可逗号多值)/`priority`/`vehicleId`/`from`(timeWindowStart�
 ### 3.4 调度引擎（M4）
 
 约束与策略定义见 design §4.4、§5。**预览不落业务库**，仅写调度日志；apply 才创建 `dispatch_plans` 与 `routes` 并变更任务/车辆。
+
+> **已实现范围（2026-09-27）**：本节 **§3.4.1-§3.4.6 六条接口全部落地**，代码在
+> `desktop/src/domain/dispatch/dispatch.service.ts`（+ `snapshot.ts` / `explain.ts`）与
+> `desktop/src/ipc/api.ts`；仓储在 `desktop/src/db/repositories/dispatch-plan.repo.ts` /
+> `dispatch-log.repo.ts`；渲染层调度台在 `renderer/src/dispatch/`，浏览器形态复用
+> `renderer/src/api/mock-dispatch.ts`。三处**必须一并读**的落地口径：
+>
+>   1. **apply 不重跑算法**，落的是预览当场存下的 `dispatch_logs.output_snapshot`
+>      （只有路线会重推）。重跑会让「我确认的方案」与「实际落库的方案」不是同一个，
+>      而事后无法分辨是算法变了还是数据变了。并发安全由条件 UPDATE（乐观锁）负责，
+>      不靠「快照没变」这种无法证伪的判据。
+>   2. **`strategy=all` 只能用于预览**；apply / recompute 必须指定单一策略，
+>      传 `all` 得 `VALIDATION.FAILED`。否则会出现「对比后选了匈牙利、应用时落了贪心」。
+>   3. **车辆状态只到 `reserved`**：`busy` 由执行器（M7）在开工时置位。M7 未落地，
+>      因此应用派发之后车辆**不会自动变 `busy`**，也不会产生 `vehicle.changed` 位置流 ——
+>      地图上的车因此是静止的。这是当前已知且预期内的形态，不是接口缺陷。
+>
+> `eventSeq`（`GET /api/map/overview`）取 `sqlite_sequence` 这一单调水位线而非 `MAX(seq)`，
+> 与 `D-24` 同一判据；调度写入不额外发 `execution.progress`（那是 M7 的事件）。
+>
+> 模块内实现口径与测试清单见 `docs/module-M4-dispatch.md` §14。
 
 #### 3.4.1 策略列表
 
@@ -596,7 +704,16 @@ query：`status`(可逗号多值)/`priority`/`vehicleId`/`from`(timeWindowStart�
 
 校验：requestId 存在且未应用（`DISPATCH.REQUEST_NOT_FOUND` / `DISPATCH.ALREADY_APPLIED`）；快照变化导致不可行时返回 `DISPATCH.PLAN_EXPIRED` 并提示重新预览。
 
-成功副作用（单事务）：任务 `pending→assigned`；车辆 `idle→reserved→busy`（进入占用区间）；写入 `routes`、`dispatch_plans(applied)`、`dispatch_logs(action=apply)`。返回各任务详情。
+成功副作用（单事务）：任务 `pending→assigned`；车辆 `idle→reserved`（进入占用区间；`busy` 由 M7 执行器在开工时置位）；写入 `routes`、`dispatch_plans(applied)`、`dispatch_logs(action=apply)`。返回各任务详情。
+
+**同一辆车可以在一批里出现多条计划**（内核按半开占用区间排，见 `docs/module-M4-dispatch.md` §6）：
+后一个任务只要自然落在前一个区间之外就同样可行。此时车辆只 `idle→reserved` **一次**，
+「预留」不是可重入动作；两条计划的时间区间若重叠（存档被改动或来自旧版实现），
+整批拒绝并返回 `DISPATCH.PLAN_EXPIRED`，要求重新预览。
+
+**回收的语义是「释放这一单的占用」**：重算 / 取消某条计划时，只有该车不再被任何**其它**
+生效计划占用，才把状态改回 `idle`。否则会出现「车辆显示空闲、身上却还挂着未完成的计划」，
+下一次调度就会把车派出去，两条计划真重叠而库里查不出是哪一步错的。
 
 #### 3.4.4 手动指派
 
@@ -626,6 +743,23 @@ query：`requestId/action/strategy/taskId/from/to/page/pageSize`。记录：`req
 
 ### 3.5 路径规划（M5）
 
+字段与状态机见 design §4.6。路线结果**只读**：`routes` 表的写入发生在调度 apply（§3.4）。
+
+> **已实现范围（2026-09-26）**：本节的 **§3.5.1 规划** · **§3.5.2 对比** · **§3.5.3 已存路线查询**
+> 三条接口均已落地并有测试（`desktop/src/ipc/api.route.test.ts` · `desktop/src/domain/route/route.service.test.ts` ·
+> `renderer/src/api/mock-parity.test.ts` 的三层一致性）。**本模块没有「写」接口** —— 规划是预览，
+> 落库由 M4 的 apply 触发（§3.4.4），因此**这三条接口都不发领域事件**（没有数据变化；
+> 发 `map.updated` 会让地图为一个没有变化的世界重拉快照，`D-23` 已证明反复重建图层会让边渲染不稳）。
+>
+> 模块内实现口径见 `docs/module-M5-route.md`。三条落地口径（不复述该文档的清单）：
+>   1. **算法与构图是纯函数、放在 `shared/`**（`route-graph.ts` / `route-search.ts` / `route-rules.ts`）：
+>      主进程与浏览器 Mock 必须用同一份 —— 各抄一份的分叉只在切换形态时显形（D-27 / D-44 的形态）；
+>   2. **失败原因 → 错误码**：内核返回五种 `reason`，映射为四种 code（`GRAPH.EMPTY` /
+>      `GRAPH.DISCONNECTED` / `GRAPH.BLOCKED` / `ROUTE.NOT_FOUND_PATH`）。`VIA_UNREACHABLE` 与
+>      `NOT_FOUND_PATH` 合为同一个 code —— 对使用者是同一件事（这条线走不通），位置信息进 `detail.unreachableVia`；
+>   3. **节点存在性先于构图判**：`fromNodeId` / `toNodeId` / `viaNodeIds` 里出现库里没有的 id 一律
+>      `NODE.NOT_FOUND`，而不是「走不通」—— 两者该做的事完全不同（改 id vs 改路网）。
+
 #### 3.5.1 路线规划（预览，不落库）
 
 `POST /api/routes/plan` · `route:plan`
@@ -652,11 +786,16 @@ query：`requestId/action/strategy/taskId/from/to/page/pageSize`。记录：`req
 
 错误：`GRAPH.EMPTY` / `GRAPH.DISCONNECTED` / `GRAPH.BLOCKED` / `ROUTE.NOT_FOUND_PATH`；`viaNodeIds` 不可达并入 `detail.unreachableVia`。
 
+`vehicleType` 必填且**不给默认值**：它决定「没有单独限速的边」按多快计算（`shared/src/route-graph.ts` 的
+`ROUTE_DEFAULT_SPEED_MPS`），给默认值会让「忘了传」与「故意按 other 算」得到同一个结果，而前者是错的输入。
+`algorithm` 可省 —— 缺省取 `settings.route.defaultAlgorithm`（该设置项写坏时回落 `aStar`，不因此让规划打不开）。
+通行时间取 `min(边限速, 车种默认速度)`：道路限速是**上限**，漏掉 `min` 会让慢速车按道路限速通过。
+
 #### 3.5.2 算法对比
 
 `POST /api/routes/compare` · `route:plan`
 
-请求同 plan，`algorithm` 忽略。响应：
+请求同 plan，`algorithm` **忽略**（但仍走字段校验：给一个非法算法名应当报参数错误，而不是静默忽略）。响应：
 
 ```json
 {
@@ -666,11 +805,21 @@ query：`requestId/action/strategy/taskId/from/to/page/pageSize`。记录：`req
 }
 ```
 
-`consistent=false` 时实现方需记系统日志排查。
+`consistent=false` 时实现方需记系统日志排查（实现：写一条 `module=route`、`action=compare_inconsistent`
+的审计，`result=failure`）。**构一次图、算两次**：两次搜索必须面对同一张图，否则差异里会混进「两次读数之间的数据变化」。
+
+`consistent` 不是「两次结果一样」的装饰：A* 的启发式若不可采纳（高估剩余时间），它就会给出比 Dijkstra
+更短的路线 —— 那是**实现缺陷**而不是策略差异。判据是**里程与耗时**，不是节点序列：网格上等长的走法不止一条，
+A* 受启发式引导、Dijkstra 按 id 顺序展开，两者选出的等长路径本来就可能不同（断言序列相等会把正确实现判成错的）。
 
 #### 3.5.3 已存路线查询
 
 `GET /api/routes/{id}` · `route:plan`（任务关联路线也可由任务详情读取）。仅 apply/调度过程产生的路线会落库，可查 `nodeIds/distanceM/durationS/warnings` 全字段。
+
+不存在时返回 `ROUTE.NOT_FOUND`（404 语义）—— 与「两点之前没有可行路径」的 `ROUTE.NOT_FOUND_PATH`（409）是
+**两个不同的 code**：一个是「这条记录不存在」，一个是「这两点走不通」，混用会让调用方分不清该改 id 还是改路网。
+`costDetail` 在落库路线上**可能为空对象**（`routes.cost_detail` 列为 `'{}'` 默认值，seed 的演示路线正是如此），
+故类型上 `travelS` 是可选的 —— 规划响应里必然有它。
 
 ### 3.6 地图可视化（M6）
 

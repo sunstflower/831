@@ -1,6 +1,6 @@
 # 模块开发文档：地图渲染（M6）· React Flow 方案
 
-> 版本：v1.2 · 面向开发 · 状态：**已实现（待评审项见 §12）**
+> 版本：v1.3 · 面向开发 · 状态：**已实现（待评审项见 §12）**
 > 关联：`design.md` §2.3 / §2.4 / §4.6 · `docs/api.md` §3.6 / §4 · `docs/data-interfaces.md` §10（F2 仿真地图）
 > 定位：把 M6 的地图渲染从「自研 SVG/Canvas 平面图层」替换为 **React Flow（`@xyflow/react` v12）**，
 > 并给出渲染层文件划分、数据映射、动画/性能/测试口径。任何实现偏差必须先回写本文档与 `AGENTS.md`。
@@ -64,7 +64,8 @@ React Flow 是**节点-连线图（node/edge graph）渲染器**，不是地理�
 | 样式 | `import '@xyflow/react/dist/style.css'`（或在 `main.tsx` 统一引入） |
 | 内部依赖 | `zustand ^4.4.0`、`classcat`、`@xyflow/system` |
 
-> **注意（实测）**：`@xyflow/react` 自带 `zustand@4.5.7`，会装进 `renderer/node_modules/@xyflow/react/node_modules/zustand`，
+> **注意（实测）**：`@xyflow/react` 自带 `zustand@4.5.7`，会装进 `node_modules/@xyflow/react/node_modules/zustand`（`@xyflow/react` 被提升到**仓库根**，
+> 故嵌套那份也在根下；`renderer/node_modules/` 只有独立安装的 `vite` / `esbuild`），
 > 与项目使用的 `zustand@5.0.15` **并存两份**。两者互不干扰（React Flow 只用自己那份），但会让
 > `node_modules` 再多一层嵌套，排查版本问题时别混淆 —— 这与本项目已有的「两套 Vite（6.4.3 / 5.4.21）」是同类现象。
 
@@ -146,7 +147,7 @@ renderer/src/map/
    `{ nodes, edges }`；不读全局状态、不发请求。这样它可以被单测覆盖（§10）。
 3. 组件不自己 `fetch`：数据只从 `useMapOverview` 进来，保持「一个页面一个数据入口」。
 
-### 3.1 现状（2026-09-25）与样式归属
+### 3.1 现状（2026-09-26）与样式归属
 
 上表是**规划视图**，实现后有两处变化，按事实如实登记（避免后来者照规划找文件）：
 
@@ -166,6 +167,14 @@ renderer/src/map/
 判定规则是「**被 2 处以上使用 → 归设计系统**」，因为它们同时服务地图与工作台/外壳。
 色值本身仍只在 `theme.css` 定义一次，并由 `palette.test.ts` 断言 CSS 变量与 `model/palette.ts`
 的字面量逐条一致 —— 因此 swatch 搬了文件，颜色来源没变。
+
+**2026-09-26 的两处归位**（同一条规则扫存量时发现，登记为 `ISS-046`）：
+
+1. **`.udm-sr-only` 从 `styles/theme.css` 移入 `styles/ui.css`** —— 它是工具类而非令牌，
+   且被本模块的 `panels/DetailPanel.tsx`（「聚焦到该对象」/「取消选中」两个图标按钮的可读名称）
+   与外壳共同使用。移动后复测元素仍是 1×1 隐藏盒子。
+2. **本模块的枚举文案已迁走**：`model/labels.ts` → `renderer/src/domain/labels.ts`（上一轮 D-36 归位），
+   `detail.ts` 随之改为跨模块引用。若按旧路径找文案，会找不到。
 
 > 改样式时的落点选择：**只服务画布 → 本文件的 `map.css`；被两处以上使用 → `styles/ui.css`；
 > 只是换个色值 → `styles/theme.css`（改完让 `palette.test.ts` 告诉你哪里过期了）。**

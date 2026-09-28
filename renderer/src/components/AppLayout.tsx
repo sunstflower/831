@@ -84,7 +84,9 @@ export function AppLayout() {
         跳到主要内容
       </a>
 
-      <aside className="udm-rail" aria-label="主导航">
+      {/* 标签挂在 <nav> 上而不是外层 <aside>：aside 里还有品牌与折叠按钮，
+          把「主导航」这个名字给它，读屏会念成「主导航 补充区域」，与内容不符。 */}
+      <aside className="udm-rail">
         <div className="udm-rail__brand">
           <BrandMark className="udm-rail__mark" />
           <span className="udm-rail__titles">
@@ -93,7 +95,7 @@ export function AppLayout() {
           </span>
         </div>
 
-        <nav className="udm-nav">
+        <nav className="udm-nav" aria-label="主导航">
           {NAV_GROUPS.map((group) => {
             const items = visibleItems.filter((item) => item.group === group.key);
             if (items.length === 0) {
@@ -134,7 +136,7 @@ export function AppLayout() {
             {current ? <p className="udm-topbar__desc">{current.description}</p> : null}
           </div>
           <div className="udm-topbar__actions">
-            <span className="udm-badge udm-badge--ok udm-topbar__live">
+            <span className="udm-badge udm-badge--ok">
               <span className="udm-dot udm-dot--pulse" aria-hidden="true" />
               实时
             </span>

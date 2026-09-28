@@ -22,12 +22,16 @@ import { buildDetailCard } from './model/detail';
 import { useMapOverview } from './hooks/useMapOverview';
 import { useLayerVisibility } from './hooks/useLayerVisibility';
 import { useVehicleMotion } from './hooks/useVehicleMotion';
+import { useVehicleTracks } from './hooks/useVehicleTracks';
 import { useSelectionSync } from './hooks/useSelectionSync';
 import { useMapShortcuts } from './hooks/useMapShortcuts';
 import { COMPACT_ZOOM, useZoomLevel } from './hooks/useZoomLevel';
 import { LayerPanel } from './panels/LayerPanel';
 import { DetailPanel } from './panels/DetailPanel';
 import { MetricsBar } from './panels/MetricsBar';
+import { TrackPanel } from './panels/TrackPanel';
+import { TrackLayer } from './stage/TrackLayer';
+import { scrubIndex } from './model/track';
 import { useSessionStore } from '../store/session';
 import { useSelectionStore, type SelectableEntityType } from '../store/selection';
 import { vehicleNodeId } from './model/ids';
@@ -46,6 +50,14 @@ function MapCanvas() {
   const [showLayers, setShowLayers] = useState(true);
 
   /**
+   * 轨迹回放是**页面态**而不是全局态：它跟着「当前看的这一台车」走，
+   * 换一台车就该重置到最新（留着上一台的回放位置会指向另一台车的历史）。
+   * 折线开关与回放位置分开存：关掉折线不该丢掉「回看到哪」。
+   */
+  const [trackShow, setTrackShow] = useState(true);
+  const [trackFraction, setTrackFraction] = useState(1);
+
+  /**
    * 图结构（节点/边）只在「快照 / 图层 / 选中 / 运行态」变化时重建。
    * 车辆**位置**刻意不在此依赖里：位置走 `updateNode` 定向更新。
    * `statusRevision` 只在状态或电量真的变化时自增（低频），用于刷新车辆节点的徽标。
@@ -61,6 +73,15 @@ function MapCanvas() {
   );
 
   const metrics = useMemo(() => (overview ? computeMetrics(overview) : null), [overview]);
+  const selectedVehicleId = selected?.entityType === 'vehicle' ? selected.entityId : null;
+  const tracks = useVehicleTracks(token, selectedVehicleId);
+  const trackPoints = tracks.track?.points ?? [];
+  const trackIndex = scrubIndex(trackPoints.length, trackFraction);
+
+  // 换车即回到最新（见上：残留的回放位置会指向另一台车的历史）
+  useEffect(() => {
+    setTrackFraction(1);
+  }, [selectedVehicleId]);
   const detailCard = useMemo(() => (overview ? buildDetailCard(overview, selected) : null), [overview, selected]);
 
   // 补帧只改车辆节点的 position，不触发上面的 useMemo
@@ -187,6 +208,9 @@ function MapCanvas() {
           onPaneClick={clearSelection}
           onViewportChange={handleViewportChange}
           topLeftPanel={<MetricsBar metrics={metrics} lastEventSeq={lastEventSeq} zoom={zoomState.zoom} />}
+          decorations={
+            trackShow ? <TrackLayer points={trackPoints} uptoIndex={trackIndex} showCursor /> : null
+          }
           bottomLeftPanel={
             zoomState.isCompact ? (
               <span className="udm-canvas-hint">
@@ -218,6 +242,14 @@ function MapCanvas() {
           hasSelection={Boolean(selected)}
           onClear={clearSelection}
           onFocus={handleFocusSelection}
+        />
+        <TrackPanel
+          vehicleLabel={selectedVehicleId ? (selected?.label ?? selectedVehicleId) : null}
+          state={tracks}
+          show={trackShow}
+          onShowChange={setTrackShow}
+          fraction={trackFraction}
+          onFractionChange={setTrackFraction}
         />
       </div>
     </div>

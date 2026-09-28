@@ -101,8 +101,10 @@ export function PlaceholderPage({ moduleKey, title }: PlaceholderPageProps) {
       </div>
 
       <p className="udm-page__lead">
-        目前可用的是 <Link to="/">监控工作台</Link> 与 <Link to="/map">地图</Link>；
-        其余入口都在按依赖顺序推进中。
+        这一页会被挂上路由，只因为「该模块还没实现」这件事本身。
+        模块落地后应**从 `PLANNED_MODULES` 删掉这一条、路由改指真实页面**
+        （先例见 `docs/issues.md` ISS-050）—— 否则路由表与登记表会对同一件事给出两个说法。
+        想先看已经在跑的部分，去 <Link to="/">监控工作台</Link>。
       </p>
     </div>
   );

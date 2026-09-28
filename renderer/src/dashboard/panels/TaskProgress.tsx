@@ -7,7 +7,8 @@
  * 进度条对 `draft` 这类**还没开始**的状态不显示：画一条 0% 的空槽会让人以为「卡住了」，
  * 而它的真实语义是「尚未派发」。
  */
-import { toneClass, type TaskRow } from '../model/summary';
+import { badgeToneClass, toneClass } from '../../domain/tone';
+import type { TaskRow } from '../model/summary';
 
 export interface TaskProgressProps {
   rows: TaskRow[];
@@ -36,7 +37,7 @@ export function TaskProgress({ rows, hidden }: TaskProgressProps) {
           <li className="udm-tasks__row" key={row.id}>
             <div className="udm-tasks__head">
               <span className="udm-tasks__code">{row.code}</span>
-              <span className={`udm-badge ${toneClass(row.tone, 'udm-badge')}`}>{row.statusLabel}</span>
+              <span className={`udm-badge ${badgeToneClass(row.tone)}`}>{row.statusLabel}</span>
               <span className="udm-tasks__vehicle">
                 {row.vehicleCode ? `车辆 ${row.vehicleCode}` : '未指派车辆'}
               </span>

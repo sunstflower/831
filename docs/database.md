@@ -398,10 +398,14 @@ ORDER BY ts;
    | --- | --- | --- |
    | `0001_init.sql` | 首期 16 张业务表 + `schema_version`、18 条索引 | 已落地 |
    | `0002_data_import.sql` | 四类导入数据文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）所需的新表与新列；含 `edges.code`（业务键，D-35） | **草案，待评审**；表/列建议见 `docs/data-interfaces.md` §10，订单领域见 `docs/order-data-map-design.md` §3 |
+   | `0003_object_types.sql` | 重建 `alerts` 表以放宽 `object_type` 的 CHECK：加入 `restriction` / `taskTemplate`（`OBJECT_TYPES` 扩项，`docs/database.md` §6 规则 4） | 已落地（2026-09-26）。**编号说明**：`0002` 已指派给导入管线，故取下一个空号；本文件按文件名排序会先于将来的 `0002` 应用，两者互不依赖（本条只动 `alerts` 的 CHECK） |
+   | `0004_task_pause_reason.sql` | `tasks` 新增 `pause_reason` 列（`design.md` §4.3 要求 pause 写暂停原因，而 0001 建表时漏了该列）；`resume` 时清空 | 已落地（2026-09-26）。非破坏性新增可空列，走裸 `ALTER TABLE` |
 
    > 早期草案中的 `0002_seed.sql`（SQL 种子）与 `0002_order_ingestion.sql` 均已**作废** ——
    > 前者被代码侧 seed 取代，后者合并进 `0002_data_import.sql`（避免两个同号迁移）。
 2. 迁移器在一个事务中执行单个文件；成功写 `schema_version(version, description, applied_at)`。
 3. 破坏性变更（删列/改类型）用「新表 + 数据搬迁 + 改名」三步，并在 `AGENTS.md` 记录决策。
 4. 新增枚举值需同步 `shared/src/enums.ts`、`design.md`、`docs/api.md` 与 DB `CHECK`（新迁移重建约束）。
+   **本条已有可执行护栏**：`desktop/src/db/db.test.ts` 会真的往 `alerts` 插一条各枚举值的探针记录，
+   漏做迁移即红（先例 `0003_object_types.sql`）。此前它只是一句文档要求，漏做要到写入时才炸。
 5. 统计数据（二期）只加视图或聚合查询，不改动首期业务表语义。

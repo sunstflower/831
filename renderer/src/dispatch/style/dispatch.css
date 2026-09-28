@@ -1,0 +1,209 @@
+/*
+ * 调度中心（M4）的排版。
+ *
+ * 只定义本模块**特有**的类；按钮、卡片、表格、徽标、空态、告警条一律复用 `styles/ui.css`
+ * 里的通用件（`.udm-btn` / `.udm-card` / `.udm-table` / `.udm-empty` / `.udm-alert`）——
+ * 每个模块各写一套按钮的代价不是多写几十行 CSS，而是「同一个按钮在三个页面有三种圆角」。
+ *
+ * 类名归属：全部以 `.udm-dispatch__` 起头，由 `styles/classnames.test.ts` 保证
+ * 「JSX 里用到的类名都真的有定义」（漏写在界面上只表现为排版坏掉，不会报错）。
+ */
+
+/* 两栏：左边「选什么」（候选池 + 策略），右边「算出来什么」。
+   窄屏（<1080px）落回单栏 —— 调度台在笔记本分屏时经常只有半个屏幕宽。 */
+.udm-dispatch {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: var(--udm-space-4, 16px);
+  align-items: start;
+}
+
+@media (max-width: 1080px) {
+  .udm-dispatch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.udm-dispatch__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--udm-space-4, 16px);
+  min-width: 0;
+}
+
+.udm-dispatch__block {
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-md);
+  background: var(--udm-surface-2);
+  padding: 12px;
+}
+
+.udm-dispatch__block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.udm-dispatch__block-title {
+  margin: 0;
+  font-size: var(--udm-font-sm);
+  font-weight: 600;
+  color: var(--udm-text);
+}
+
+.udm-dispatch__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* 候选池：一行一条任务，勾选框 + 编码 + 明细。滚动而非撑高页面 ——
+   园区可能有几十条待派任务，让它把「策略」推到折叠线以下就看不到重点了 */
+.udm-dispatch__candidates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.udm-dispatch__candidate {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: var(--udm-radius-sm);
+  cursor: pointer;
+}
+
+.udm-dispatch__candidate:hover {
+  background: var(--udm-surface-3);
+}
+
+.udm-dispatch__candidate-title {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-dispatch__candidate-meta {
+  display: block;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+}
+
+.udm-dispatch__strategies {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.udm-dispatch__strategy {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: var(--udm-radius-sm);
+  cursor: pointer;
+}
+
+.udm-dispatch__strategy:hover {
+  background: var(--udm-surface-3);
+}
+
+.udm-dispatch__strategy[data-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.udm-dispatch__strategy-desc {
+  display: block;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+}
+
+.udm-dispatch__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 推荐条：三种色调都对应真实结论（可派 / 结论一致 / 一单都派不出去），不是装饰 */
+.udm-dispatch__reco {
+  border-radius: var(--udm-radius-md);
+  padding: 10px 12px;
+  font-size: var(--udm-font-sm);
+  border: 1px solid transparent;
+}
+
+.udm-dispatch__reco--ok {
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.45);
+}
+
+.udm-dispatch__reco--info {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.udm-dispatch__reco--warn {
+  background: rgba(250, 204, 21, 0.14);
+  border-color: rgba(250, 204, 21, 0.45);
+}
+
+.udm-dispatch__notice {
+  border-radius: var(--udm-radius-md);
+  padding: 10px 12px;
+  font-size: var(--udm-font-sm);
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.45);
+}
+
+.udm-dispatch__hint {
+  margin: 8px 0 0;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+}
+
+/* 被推荐的策略所在行：整行加一层底色，比只标一个小徽标更容易扫到 */
+.udm-dispatch__row--pick {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.udm-dispatch__reason {
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+}
+
+.udm-dispatch__logs {
+  margin-top: var(--udm-space-4, 16px);
+}
+
+/* 二次确认弹层里的清单：左对齐 + 等宽数字，逐条读起来像一张回执 */
+.udm-dispatch__confirm-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--udm-font-sm);
+}
+
+.udm-dispatch__confirm-list li {
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-dispatch__confirm-sub {
+  margin: 12px 0 4px;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+}

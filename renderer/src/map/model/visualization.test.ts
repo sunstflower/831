@@ -2,7 +2,7 @@
  * 本轮新增可视化行为的护栏。
  *
  * 与 `toFlow.test.ts` 分开：那份文件锁定**原有契约**（顺序、图层、坐标回退），
- * 本份锁定**新增的可视化决策**（聚焦压暗、底板弱化、起终点去重叠）。
+ * 本份锁定**新增的可视化决策**（聚焦压暗、底板弱化、共点图层去重叠）。
  */
 import { describe, expect, it } from 'vitest';
 import { SEED_IDS } from '@udm/shared';
@@ -77,25 +77,31 @@ describe('toFlow · 路网底板弱化（有路线时把权重让给路线）', 
   });
 });
 
-describe('toFlow · 起终点去重叠（实测缺陷：三者同位互相遮挡）', () => {
-  it('任务起终点不再与站点/车辆坐标完全重合', () => {
+describe('toFlow · 共点图层去重叠（实测缺陷：同位元素互相遮挡）', () => {
+  it('挂在同一个节点上的车辆/站点/任务端点三者坐标两两不同', () => {
     const overview = buildMockOverview();
     const { nodes } = toFlow(overview);
     const site = nodes.find((node) => node.id === siteNodeId(SEED_IDS.siteDepotA))!;
     const from = nodes.find((node) => node.id === taskEndpointId(SEED_IDS.demoTask, 'from'))!;
     const vehicle = nodes.find((node) => node.id === vehicleNodeId(SEED_IDS.vehicleAgv))!;
     const same = (a: { x: number; y: number }, b: { x: number; y: number }) => a.x === b.x && a.y === b.y;
+    // 原先这条断言写的是 `toBe(true)`：车辆与站点**故意**完全同位，于是两个标签框互相压住
+    // （ISS-053）。现在站点抬起、端点让到两侧，四者（含路网节点）必须两两可分辨。
     expect(same(from.position, site.position)).toBe(false);
     expect(same(from.position, vehicle.position)).toBe(false);
-    expect(same(vehicle.position, site.position)).toBe(true);
+    expect(same(vehicle.position, site.position)).toBe(false);
+    // 方向也要对：站点在车辆**上方**（画布 y 更小），端点在同一水平线上
+    expect(site.position.y).toBeLessThan(vehicle.position.y);
+    // 用 `toBeCloseTo` 而不是 `toBe`：车辆走 `toFlowXY`（业务 y=0 取负得 `-0`），
+    // 端点走 `shiftFlow`（`-0` 已归一成 `0`），`Object.is` 会把这对数值相等的值判为不同。
+    expect(from.position.y).toBeCloseTo(vehicle.position.y, 6);
   });
 
-  it('起点与终点分别向对角两侧让开（互不重叠）', () => {
+  it('起点与终点分别向左右两侧让开（互不重叠）', () => {
     const { nodes } = toFlow(buildMockOverview());
     const from = nodes.find((node) => node.id === taskEndpointId(SEED_IDS.demoTask, 'from'))!;
     const to = nodes.find((node) => node.id === taskEndpointId(SEED_IDS.demoTask, 'to'))!;
-    expect(from.position.x).not.toBe(to.position.x);
-    expect(from.position.y).not.toBe(to.position.y);
+    expect(from.position.x).toBeLessThan(to.position.x);
   });
 
   it('偏移是纯展示变换：只影响画布坐标，不改业务坐标', () => {

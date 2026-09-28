@@ -1,6 +1,8 @@
 # 模块开发文档：基础数据（M2）
 
-> 版本：v1.0 · 面向开发 · 状态：**设计中（待实现）**
+> 版本：v1.2 · 面向开发 · 状态：**已实现**（五类主数据 —— 站点 / 车辆 / 路网节点与有向边 / 禁行规则 / 任务模板 ——
+> 的读、写、启停与（禁行规则独有的）物理删除均已落地并有测试；接口范围见 `docs/api.md` §3.2 的「已实现范围」；
+> 详情接口 `GET /api/{资源}/{id}` **未实现**，界面不用它）
 > 关联：`design.md` §4.2 / §6.2 · `docs/api.md` §3.2 · `docs/database.md` §2.2-§2.4 · `docs/data-interfaces.md` §4（F2 仿真地图）
 > 定位：把 `design.md` §4.2 的 7 条 `Req-M2-*` 落成可直接编码的口径 —— 文件划分、校验顺序、
 > 软删与引用完整性、审计动作命名、错误映射、测试清单。任何实现偏差必须先回写本文档与 `AGENTS.md`。
@@ -50,12 +52,36 @@ M2 是**唯一的主数据写入口**：站点、车辆、路网（节点 / 有�
 | 依赖 | 来源 | 说明 |
 | --- | --- | --- |
 | 表结构 | `desktop/migrations/0001_init.sql` | 本模块涉及的表与列；DDL 契约见 `docs/database.md` §2.2-§2.4（**表数不在此复述**，D-34） |
-| 分页与参数校验 | `desktop/src/ipc/api.ts` 现有内联工具 | 接口数增长后抽 `ipc/validators.ts`（`docs/issues.md` ISS-015） |
+| 分页与参数校验 | `desktop/src/ipc/paging.ts`（分页，宽进）· `desktop/src/ipc/validators.ts`（字段，严出） | 已抽出（`ISS-015` 关闭，口径见 `AGENTS.md` D-40）；本模块**业务合法性**校验另写 `domain/base/validate.ts` |
 | 审计写入 | `desktop/src/services/audit.ts` 的 `writeAudit` | 已有实现，直接复用 |
 | 事件推送 | `desktop/src/services/event-bus.ts` 的 `EventBus.emit` | 新增事件须登记 `EVENT_PERMISSIONS`（D-32） |
 | 枚举 | `shared/src/enums.ts` | **唯一来源**；本模块不得自定义状态取值 |
 
 ## 3. 代码结构规划
+
+> **已落地部分（2026-09-26，本模块收口）**：**五类主数据的读、写、启停（禁行规则另有物理删除）全部实现**。
+> 落地清单（按层）：
+>
+> | 层 | 文件 | 内容 |
+> | --- | --- | --- |
+> | 共享规则 | `shared/src/base-rules.ts` | 字段长度 / 数值域 / 枚举 / 自环 / 时间可解析 / `code` 不可改（**唯一作者**，主进程与 Mock 共用，D-44） |
+> | 共享键 | `shared/src/edge-code.ts` | 边的业务 `code` 推导与解析（含禁行规则目标编码的派生） |
+> | 仓库 | `desktop/src/db/repositories/{site,vehicle,graph,restriction,template}.repo.ts` | 读列表 + 单条读写 + 状态写入 + 跨表引用计数 |
+> | 领域 | `desktop/src/domain/base/{context,validate,site,vehicle,graph,restriction,template}.service.ts` | 一个事务 + 一条审计；跨表校验（唯一性 / 引用 / 方向对 / 多态目标 / 时间窗配对） |
+> | 传输 | `desktop/src/ipc/{api,router,validators,paging}.ts` | 19 条路由（读 6 + 写 13）+ 方法/路径参数分发（D-43） |
+> | 渲染 | `renderer/src/base/` + `renderer/src/pages/BaseDataPage.tsx` | 六个页签：列表 + 新增 / 编辑弹层 + 启停 + 二次确认删除（`base:write` 才渲染） |
+> | Mock | `renderer/src/api/mock-base-write.ts` | 浏览器形态的写路径：**规则共享、存储各自**（含排序与主进程 SQL 对齐） |
+>
+> 与规划图的三处**有意差异**（实现时按实际为准）：
+>   1. 边的业务 `code` 由 `@udm/shared` 的 `edge-code.ts` 推导（`edges.code` 列要等 D-35 落地），
+>      因此它不在 `shared/src/types.ts` 附近，而是单独一个文件；
+>   2. `errors.ts` **没有**落地 —— M2 的错误码全部登记在 `shared/src/errors.ts` 的 `ERROR_CODES`
+>      （D-33 的唯一登记处），本模块不再另建一份；
+>   3. 读取路径**先于**写路径落地：它不需要 `OBJECT_TYPES` 扩项（Q1），却能让基础数据页显示**真实库**
+>      而不是假数据，也先把分页与筛选口径（D-40）固定下来，写接口直接复用。
+>
+> 下面这份规划图里的文件**均已落地**（含 `restriction.service.ts` / `template.service.ts`）；
+> 保留它作为「模块内文件划分」的口径，实际差异以本节上方的清单为准。
 
 ```text
 shared/src/types.ts                  # 追加 M2 的 CRUD DTO（SiteDTO / VehicleDTO / NodeDTO / EdgeDTO / RestrictionDTO / TaskTemplateDTO）
@@ -222,19 +248,24 @@ SELECT 1 FROM vehicles WHERE current_node_id = :nodeId LIMIT 1;   -- 按需
 | 实体 | `OBJECT_TYPES` 中的取值 | 说明 |
 | --- | --- | --- |
 | 站点 / 车辆 / 节点 / 边 | `site` / `vehicle` / `node` / `edge` | 直接可用 |
-| 任务模板 | **无对应取值** | 与 `restriction` 同属缺口，见 §11 Q1 |
-| 禁行规则 | **无对应取值** | 同上 |
+| 任务模板 | `taskTemplate` | 2026-09-26 扩枚举并迁移 `alerts` 的 CHECK（D-45，见 §11 Q1） |
+| 禁行规则 | `restriction` | 同上 |
+
+`objectType` 的取值与 `OBJECT_TYPES` 的一致性有一条可执行护栏：
+`desktop/src/db/db.test.ts` 往 `alerts` 插入各枚举值的探针行 —— 枚举加了值而没同步 CHECK 时会直接报红。
 
 > **不要用 `system` 兜底**：按 D-33「同一概念只允许一个 code / 一个键」，
 > 把两类实体都塞进 `system` 会让审计页无法按对象筛选，等于把缺口藏起来。
-> 倾向是**扩枚举**（新增 `restriction` / `taskTemplate`），但这会触及 `alerts.object_type` 的
-> `CHECK` 约束（`docs/database.md` §6 规则 4：需新迁移重建），故列为 §11 Q1 **待评审**。
+> 已按「扩枚举」落地（新增 `restriction` / `taskTemplate`，取值 camelCase 与既有成员一致），
+> 并用迁移 `desktop/migrations/0003_object_types.sql` 重建 `alerts.object_type` 的 CHECK
+> （`docs/database.md` §6 规则 4 的新表 / 搬迁 / 改名三步）—— 决策见 `AGENTS.md` D-45。
 
 ### 7.2 事件
 
 | 何时 emit | 事件 | 载荷要点 |
 | --- | --- | --- |
-| 站点/车辆/节点/边/模板变更 | `map.updated` | `{ reason }` —— 通用刷新信号（公开，无需权限映射） |
+| 站点/车辆/节点/边/禁行规则变更 | `map.updated` | `{ reason }` —— 通用刷新信号（公开，无需权限映射）；六类的 `reason` 形如 `site.created` / `restriction.deleted` |
+| 任务模板变更 | **不发事件** | 模板与地图无关，发 `map.updated` 会让地图做一次无意义的重拉快照（事件按**影响**分类，不按来源） |
 | 车辆状态变更 | `vehicle.changed` | `{ vehicleId, code, status, x, y, battery, taskId? }` |
 | 边封路 | `map.updated` | 另**触发告警评估**（M8 落地后接入） |
 
@@ -279,7 +310,7 @@ SELECT 1 FROM vehicles WHERE current_node_id = :nodeId LIMIT 1;   -- 按需
 | B9 | 边自环 | `VALIDATION.FAILED` |
 | B10 | 边方向对重复 | `BASE.CODE_EXISTS` |
 | B11 | 禁用不存在的边 | `EDGE.NOT_FOUND` |
-| B12 | 禁行规则 `targetId` 不存在 | `NODE.NOT_FOUND` / `EDGE.NOT_FOUND` |
+| B12 | 禁行规则 `targetId` 不存在（含「类型与 id 不匹配」） | `MAP.RESTRICTION_TARGET_NOT_FOUND`（**不是** `NODE.NOT_FOUND`：多态引用下两条分支说的是同一件事，D-33 同一概念一个 code） |
 | B13 | 删除禁行规则 | 行**物理消失**（与其它实体的软删区分） |
 | B14 | 更新站点 `code` | 被拒绝或忽略，`code` 保持不变 |
 | B15 | 每次写操作 | `audit_logs` 恰好多 1 条，含 before/after 与 `traceId` |
@@ -293,10 +324,25 @@ SELECT 1 FROM vehicles WHERE current_node_id = :nodeId LIMIT 1;   -- 按需
 
 ### 9.3 验收走查（对照 Req-M2-1..7）
 
+> **已走查通过（2026-09-26，真实 Electron + 真实 IPC + 真实 SQLite）**：第 1、3、6 步 ——
+> 建站点（坐标留空按绑定节点派生）、改名、停用/启用，四种操作各落一条 `audit_logs`（`module=base`），
+> 地图同步刷新出新站点且控制台 0 错误；第 2 步的「停用/启用」部分同样走通（占用中的车在界面上就不给点）。
+> 第 3 步的「建边 + `lengthM` 推导」与「禁用被引用节点被拒」同样通过。
+>
+> **本批新增走查（2026-09-26，六类资源的写路径收口）**：在真实 Electron 里
+> ① 禁行规则：建一条边规则（列表中显示**派生**的目标编码）→ 把结束时间改到开始之前（字段级报错，弹层不关）
+> → 删除（二次确认 → 行消失 + `audit_logs` 一条 `action='delete'`）；
+> ② 任务模板：新增（优先级默认「普通」、起终点类型默认「不限」）→ 改名 → 回读确认；
+> ③ 权限：monitor 账号下这两页**没有**任何新增 / 编辑 / 删除按钮。
+> 走查后以 `npm run db:reset` 复位开发库（避免演示残留被当成 seed 的一部分）。
+>
+> **未走查**：第 2 步中「状态变化影响 M4 候选集」、第 4 步的「重新规划后绕开」（禁行规则本身已能建删，
+> 但「绕开」需要 M5 的路径搜索）、第 5 步（用模板创建任务，需 M3 就位）。
+
 1. 建站点（编码唯一校验通过 / 重复被拒）（Req-M2-1）。
 2. 建车辆并停用/启用；确认状态变化影响 M4 候选集（Req-M2-2 / Req-M2-7）。
 3. 建节点与有向边；边 `lengthM` 留空自动推导；禁用被引用节点被拒（Req-M2-3）。
-4. 对某边建禁行规则后重新规划路径，路径绕开该边（Req-M2-4，需 M5 就位）。
+4. 对某边建禁行规则后重新规划路径，路径绕开该边（Req-M2-4：规则的建 / 改 / 删已走通，**「绕开」待 M5 就位**）。
 5. 用模板创建任务，默认字段被套用（Req-M2-5，需 M3 就位）。
 6. 上述任一步后查审计页，可按 `module=base` 与动作筛选到记录（Req-M2-6）。
 
@@ -307,20 +353,28 @@ Step 1  shared/src/types.ts 追加 M2 DTO              → typecheck 通过
 Step 2  Repository 五个（site/vehicle/graph/restriction/template）  → B1-B14 绿
 Step 3  domain/base 五个服务 + validate + errors     → B15-B16 绿
 Step 4  ipc/api.ts 注册 §3.2 全部路由 + 权限          → 契约测试通过
-Step 5  renderer 基础数据页（五个分页签）             → 走查 1-6 通过
+Step 5  renderer 基础数据页（六个分页签）             → 走查 1-6 通过
 ```
 
-**DoD**：7 条 `Req-M2-*` 全部通过走查；审计断言覆盖每个写方法；`docs/api.md` §3.2 无未实现路径；
-`BasePage` 替换 `PlaceholderPage`（`renderer/src/app/App.tsx` 的 `/base-data`）；提交前按 `AGENTS.md` 纪律记录。
+**当前进度（2026-09-26，本模块已收口）**：Step 1-5 全部落地。两处与规划不同的取舍：
+① DTO 放 `shared/src/base-rules.ts`（它们是校验函数的输出、可选性由规则决定，与「读出来的 DTO」分开）；
+② 页面是**六个**分页签（站点 / 车辆 / 路网节点 / 有向边 / 禁行规则 / 任务模板），不是五个 ——
+规划期把「路网」当成一个页签，落地时按接口拆成了节点与边两个（两者的列与筛选完全不同）。
+完成标准里的 B1-B16 用例编号对应 §9.1 / §9.2，实际落地的测试文件见 `AGENTS.md` 的「验证基线」。
+
+**DoD（当前状态）**：7 条 `Req-M2-*` 中，除「状态影响 M4 候选集」（M4 未就位）与
+「模板创建任务套用默认值」（M3 未就位）外均已走查；审计断言覆盖每个写方法；
+`docs/api.md` §3.2 的**已实现范围**内无未实现路径（详情接口明确不在范围内）；
+`BaseDataPage` 已替换 `/base-data` 的占位页；提交前按 `AGENTS.md` 纪律记录。
 
 ## 11. 风险与待评审
 
 | 编号 | 事项 | 倾向 |
 | --- | --- | --- |
-| Q1 | `OBJECT_TYPES` 缺「禁行规则」与「任务模板」两个取值，审计 `objectType` 无处安放（见 §7.1） | **倾向扩枚举**（值取 `restriction`、`taskTemplate`，与既有 `objectType` 的 camelCase 风格一致）。注意 `alerts.object_type` 有 `CHECK` 约束，按 `docs/database.md` §6 规则 4 需新迁移重建；`audit_logs.object_type` 无约束，可先落。需评审确认后再改代码 |
+| Q1 | `OBJECT_TYPES` 缺「禁行规则」与「任务模板」两个取值，审计 `objectType` 无处安放（见 §7.1） | **已定案（2026-09-26）**：扩枚举（`restriction` / `taskTemplate`）+ 迁移 `desktop/migrations/0003_object_types.sql` 重建 `alerts.object_type` 的 CHECK，见 `AGENTS.md` **D-45** 与 `docs/issues.md` ISS-039。`order` 仍**不**加入 —— 它是导入域的中间实体，等 D-15 的导入管线定案（评审批次 ISS-017/ISS-018） |
 | Q2 | `vehicles.current_node_id` 是否纳入 `BASE.NODE_IN_USE` 判定 | **倾向纳入**（运行态位置也是引用） |
-| Q3 | 边封路 → 「相关任务告警评估」的判定范围与去重键 | 随 M8 定义，本模块只 emit `map.updated` |
-| Q4 | 校验失败是否写审计（`result='failure'`） | **倾向不写**（审计记行为，不记噪声）；若写则须防止被刷 |
+| Q3 | 边封路 → 「相关任务告警评估」的判定范围与去重键 | 随 M8 定义，本模块只 emit `map.updated`（**已实现**：`edge.status` 事件带 `edgeId`/`status`，评估器接上即可用；见 `docs/api.md` §3.2.4 的说明）。**同一口径适用于禁行规则**（`restriction.created/updated/deleted` 也只发 `map.updated`）|
+| Q4 | 校验失败是否写审计（`result='failure'`） | **倾向不写**（审计记行为，不记噪声）；若写则须防止被刷。**已落地的写路径按「不写」执行**：`VALIDATION.FAILED` / `BASE.CODE_EXISTS` 等失败请求不落 `audit_logs`，只有成功的写与启停留痕（幂等重复的启停也不留第二条） |
 | Q5 | M2 是否需要「路网批量导入」入口 | 倾向**复用 `docs/data-interfaces.md` 的 F2 导入管线**，不在 M2 另开一套 |
 | Q6 | 站点边绑定（`edge_id` / 泊位）何时落地 | 见 `docs/issues.md` ISS-024；D-30 双写过渡，不在 M2 首期强制 |
 

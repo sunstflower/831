@@ -23,7 +23,7 @@ function OrderEndpointNodeImpl({ data, selected }: NodeProps & { data: OrderEndp
         .join(' ')}
       title={`订单 ${data.entityId} ${data.role === 'from' ? '起点' : '终点'}${lowConfidence ? '（匹配置信度低）' : ''}`}
     >
-      <span className="udm-node-order__glyph">{data.role === 'from' ? '取' : '送'}</span>
+      <span>{data.role === 'from' ? '取' : '送'}</span>
       <CenterHandles />
     </div>
   );

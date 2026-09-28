@@ -1,0 +1,275 @@
+/**
+ * 运维类页面（M1 用户 / M8 告警 / M9 审计 / M10 设置）的样式。
+ *
+ * 归属说明（D-36）：只被本组页面使用的类放这里；`.udm-btn` / `.udm-card` / `.udm-table` /
+ * `.udm-field` / `.udm-badge` / `.udm-empty` / `.udm-alert` / `.udm-list__banner` 这些
+ * 已被 2 处以上使用的基元留在 `styles/ui.css`，本文件只做**组合**与版式。
+ *
+ * ## 为什么这四页共用一份而不是各写一份
+ *
+ * 它们的版式骨架是同一个：顶部「图标 + 标题 + 状态徽标」、一行筛选、下面一张表格卡片，
+ * 告警页额外多一栏详情。各写一份的结果是「审计页修了筛选条的间距、设置页没修」——
+ * 与 `renderer/src/ops/model.ts` 合在一份是同一个理由（D-34）。
+ *
+ * ## 间距与配色只用令牌
+ *
+ * 数值一律走 `styles/theme.css` 的 `--udm-space-*` / `--udm-font-*` / `--udm-radius-*`。
+ * 这里出现裸数值的话，下一次调整全局节奏时这四页会掉队 —— 它们恰恰是最常被打开的四页。
+ */
+
+/* ==================== 筛选条 ==================== */
+
+/**
+ * 一行筛选：字段带可见标签（与 `.udm-list__filters` 的「只读屏器可见标签」不同）。
+ *
+ * 为什么这里要可见标签：这四个页面各有 3-4 个**同类**下拉（类型/级别/状态/对象），
+ * 隐藏标签后使用者必须逐个展开才知道哪个是哪个 —— 列表页的搜索框是唯一一个输入框，
+ * 所以它隐藏标签没问题，这里不行。
+ */
+.udm-ops__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--udm-space-3);
+  padding: var(--udm-space-3) var(--udm-space-4);
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-md);
+}
+
+/* 筛选条内的字段是横排的，`.udm-field` 自带的下外边距会在 `align-items:flex-end` 下顶出空隙 */
+.udm-ops__filters .udm-field {
+  margin-bottom: 0;
+  min-width: 132px;
+}
+
+.udm-ops__filters select {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: var(--udm-font-md);
+  color: var(--udm-text);
+  background: var(--udm-surface-1);
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-sm);
+}
+
+.udm-ops__filters select:focus {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: -1px;
+}
+
+/* 右侧按钮组（刷新 / 导出 / 新建）：推到行尾，与筛选字段分开 */
+.udm-ops__filters > .udm-btn:first-of-type {
+  margin-left: auto;
+}
+
+/* ==================== 主从两栏 ==================== */
+
+/**
+ * 列表 + 详情：窄屏落回单列。
+ *
+ * `minmax(0, …)` 而不是 `1fr`：表格内容会把网格列撑到内容宽度，
+ * 于是「溢出滚动」变成「页面横向滚动」—— 表格的 `overflow-x:auto` 就失效了。
+ */
+.udm-ops__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.8fr);
+  gap: var(--udm-space-4);
+  align-items: start;
+}
+
+@media (max-width: 1180px) {
+  .udm-ops__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/** 列表行可点选时给出手型光标；选中行由 `styles/ui.css` 的 `.udm-table tr.is-selected` 上色。 */
+.udm-ops__split .udm-table tbody tr {
+  cursor: pointer;
+}
+
+/* ==================== 行内文本 ==================== */
+
+/** 紧随正文的补充说明（如「（当前登录）」）。 */
+.udm-ops__hint {
+  margin-left: var(--udm-space-1);
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+}
+
+/** 行内的枚举/字段名：机器可读的 token 用等宽，与人类语言区分开。 */
+.udm-ops__code {
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text);
+  background: var(--udm-surface-3);
+  border-radius: var(--udm-radius-sm);
+}
+
+/** traceId：截断显示，完整值在 `title` 里。等宽 + 数字等宽，方便肉眼比对两处是不是同一个。 */
+.udm-ops__trace {
+  max-width: 12ch;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+  text-overflow: ellipsis;
+}
+
+/* ==================== 建议下一步 ==================== */
+
+/**
+ * 建议框：与错误提示（红）区分开的**中性蓝**。
+ *
+ * 用红色的话，一条待处理的告警会看起来像「操作失败了」——
+ * 它其实是在告诉你下一步该做什么。
+ */
+.udm-ops__next {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--udm-space-2);
+  margin: var(--udm-space-3) 0 0;
+  padding: 10px 12px;
+  color: var(--udm-text);
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: var(--udm-radius-sm);
+}
+
+.udm-ops__next svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--udm-accent);
+}
+
+.udm-ops__next strong {
+  display: block;
+  margin-bottom: var(--udm-space-1);
+  font-size: var(--udm-font-sm);
+}
+
+.udm-ops__next ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--udm-font-sm);
+  line-height: 1.7;
+  color: var(--udm-text-dim);
+}
+
+/* ==================== 处置区 ==================== */
+
+/** 详情底部的操作区：与上方信息用发丝线隔开。 */
+.udm-ops__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--udm-space-3);
+  margin-top: var(--udm-space-4);
+  padding-top: var(--udm-space-3);
+  border-top: 1px solid var(--udm-hairline);
+}
+
+/** 按钮靠右对齐：主操作（解决）在最右，与弹层的「取消 / 确认」同一位置习惯。 */
+.udm-ops__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--udm-space-2);
+}
+
+/* ==================== 设置表单 ==================== */
+
+/** 自适应网格：宽屏两列、窄屏一列，卡片高度随内容。 */
+.udm-ops__settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--udm-space-3);
+}
+
+.udm-ops__setting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--udm-space-1);
+  padding: var(--udm-space-3);
+  background: var(--udm-surface-3);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-sm);
+}
+
+/* 校验失败的那一项整体描红：一眼能定位到是哪一格，而不是靠读提示文字找 */
+.udm-ops__setting.is-invalid {
+  border-color: var(--udm-danger);
+}
+
+.udm-ops__setting > label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--udm-space-2);
+}
+
+.udm-ops__setting-label {
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text);
+}
+
+.udm-ops__setting-input {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+}
+
+.udm-ops__setting-input input,
+.udm-ops__setting-input select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text);
+  background: var(--udm-surface-1);
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-sm);
+}
+
+/* 勾选框不该被拉伸成一整行（上面的 `flex:1` 是给文本框的） */
+.udm-ops__setting-input input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--udm-accent);
+}
+
+.udm-ops__setting-input input:focus,
+.udm-ops__setting-input select:focus {
+  outline: 2px solid var(--udm-accent);
+  outline-offset: -1px;
+}
+
+/** 单位：跟在输入框右侧的小字（「秒」「米」「%」）。 */
+.udm-ops__unit {
+  flex: 0 0 auto;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-2xs);
+}
+
+.udm-ops__setting-remark {
+  margin: 0;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+  line-height: 1.6;
+}
+
+/**
+ * 字段级错误。
+ *
+ * `font-style: normal` 是必需的：页面上这几处用的是 `<em>`（语义是「强调」），
+ * 而浏览器默认把它渲染成斜体 —— 中文斜体在深色背景上几乎不可读。
+ */
+.udm-ops__setting-error {
+  margin: 0;
+  color: var(--udm-danger);
+  font-size: var(--udm-font-xs);
+  font-style: normal;
+}

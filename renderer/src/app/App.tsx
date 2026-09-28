@@ -4,7 +4,17 @@
  */
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
-import { DashboardPage, LoginPage, PlaceholderPage } from '../pages';
+import {
+  AlertsPage,
+  AuditPage,
+  BaseDataPage,
+  DashboardPage,
+  DispatchPage,
+  LoginPage,
+  SettingsPage,
+  TasksPage,
+  UsersPage
+} from '../pages';
 import { MapView } from '../map/MapView';
 import { RequireSession } from './RequireSession';
 
@@ -22,16 +32,25 @@ export function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/map" element={<MapView />} />
         {/*
-         * 未实现模块统一落到 `PlaceholderPage`，其内容来自 `app/modules.ts` 的登记表 ——
-         * 标题、模块编号、计划能力、依赖契约都只写一份，路由这里只传键。
+         * 页面一律指向各自的组件；`PlaceholderPage` 现在**没有任何路由在用**（M1-M10
+         * 九个模块的页面都已落地）。保留它的唯一作用是：新增模块时先挂占位页，
+         * 而不是给一个空白页 —— `app/modules.ts` 的 `PLANNED_MODULES` 仍登记着
+         * 「将来会有什么能力、依赖哪些接口」，占位页会把它渲出来。
          */}
-        <Route path="/tasks" element={<PlaceholderPage moduleKey="tasks" title="任务管理" />} />
-        <Route path="/dispatch" element={<PlaceholderPage moduleKey="dispatch" title="调度中心" />} />
-        <Route path="/base-data" element={<PlaceholderPage moduleKey="base-data" title="基础数据" />} />
-        <Route path="/alerts" element={<PlaceholderPage moduleKey="alerts" title="告警中心" />} />
-        <Route path="/audit" element={<PlaceholderPage moduleKey="audit" title="审计日志" />} />
-        <Route path="/settings" element={<PlaceholderPage moduleKey="settings" title="系统设置" />} />
-        <Route path="/users" element={<PlaceholderPage moduleKey="users" title="用户管理" />} />
+        {/* M3 任务管理：列表 + 新建/编辑 + 状态流转 + 详情（`pages/TasksPage.tsx`） */}
+        <Route path="/tasks" element={<TasksPage />} />
+        {/* M5 路径规划已落地；M4 调度引擎仍是占位（页面内如实标注未实现的部分） */}
+        <Route path="/dispatch" element={<DispatchPage />} />
+        {/* M2 基础数据：读取路径已落地，写路径仍是占位（页面内如实标注） */}
+        <Route path="/base-data" element={<BaseDataPage />} />
+        {/* M8 告警中心：闭环处置（认领 / 解决 / 归档），按钮由 `shared` 的状态机派生 */}
+        <Route path="/alerts" element={<AlertsPage />} />
+        {/* M9 审计日志：只读 + CSV 导出（导出按钮仅 admin 可见） */}
+        <Route path="/audit" element={<AuditPage />} />
+        {/* M10 系统设置：表单按 `SETTINGS_SCHEMA` 动态渲染，只提交改过的键 */}
+        <Route path="/settings" element={<SettingsPage />} />
+        {/* M1 用户管理：账号维护 + 改自己的密码（两条「别把自己锁在门外」的护栏在服务端） */}
+        <Route path="/users" element={<UsersPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

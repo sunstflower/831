@@ -5,7 +5,8 @@
  * 每条给出「级别 / 类型 / 对象 / 状态」四要素与一处提示：告警必须能回答
  * 「谁出事了、多严重、该不该我现在动手」（`design.md` §4.8 的字段基线）。
  */
-import { toneClass, type AlertRow } from '../model/summary';
+import { toneClass } from '../../domain/tone';
+import type { AlertRow } from '../model/summary';
 
 export interface AlertFeedProps {
   rows: AlertRow[];

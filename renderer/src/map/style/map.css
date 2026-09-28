@@ -864,3 +864,118 @@
     grid-template-columns: minmax(0, 1fr) 240px;
   }
 }
+
+/* ==================== 7. 轨迹回放（M6 §3.6.2 / M7 采样写入） ==================== */
+
+/**
+ * 折线图层：贴在视口受变换的那一层上（`ViewportPortal`），因此这里用**画布坐标**。
+ *
+ * 零尺寸 + `overflow: visible` 是关键：轨迹点会落在原点两侧（业务 y 轴被翻转，
+ * 见 `projection.ts`），若给 svg 一个 100% 的尺寸，负半轴的部分会被裁掉 ——
+ * 表现是「折线只剩一半」，且缩放后还会变（因为裁剪边界随视口移动）。
+ *
+ * `pointer-events: none`：折线是装饰，绝不能抢走节点/边的点击（D-21 的命中原则）。
+ */
+.udm-track-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/** 折线用路线色（与 `--udm-canvas-route` 同源），虚线以区别于当前生效的路线高亮。 */
+.udm-track-layer__line {
+  fill: none;
+  stroke: var(--udm-canvas-route);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-dasharray: 6 4;
+  opacity: 0.85;
+}
+
+/** 回放游标：一个醒目但半透明的圆点，标出「现在回看到哪」。 */
+.udm-track-layer__cursor {
+  fill: rgba(56, 189, 248, 0.35);
+  stroke: var(--udm-canvas-route);
+  stroke-width: 2;
+}
+
+.udm-track .udm-panel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+}
+
+/** 采样点数：放在标题右侧，回答「这条轨迹有多少证据」。 */
+.udm-track__count {
+  margin-left: auto;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-track__empty {
+  margin: 0;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+  line-height: 1.7;
+}
+
+.udm-track__error {
+  margin: 0;
+  color: var(--udm-danger);
+  font-size: var(--udm-font-xs);
+  line-height: 1.7;
+}
+
+.udm-track__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  margin-top: var(--udm-space-2);
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+  cursor: pointer;
+}
+
+.udm-track__toggle input {
+  accent-color: var(--udm-accent);
+}
+
+.udm-track__scrub {
+  margin-top: var(--udm-space-3);
+}
+
+.udm-track__scrub > label {
+  display: block;
+  margin-bottom: var(--udm-space-1);
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+}
+
+.udm-track__scrub input[type='range'] {
+  width: 100%;
+  accent-color: var(--udm-accent);
+}
+
+.udm-track__scrub-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--udm-space-2);
+  margin-top: var(--udm-space-2);
+}
+
+/** 游标详情：与摘要用发丝线隔开，它是「回看到的那一刻」而不是整条轨迹的统计。 */
+.udm-track__cursor {
+  margin-top: var(--udm-space-3);
+  padding-top: var(--udm-space-2);
+  border-top: 1px solid var(--udm-hairline);
+}
+
+.udm-track__actions {
+  margin-top: var(--udm-space-3);
+}

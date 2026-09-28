@@ -663,24 +663,22 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph SHARED["shared · 契约唯一来源"]
-    S1["src/enums.ts<br/>strategy / rejectReason 【设计中】"]
-    S2["src/types.ts<br/>DTO 与快照类型 【设计中】"]
+    S1["src/enums.ts<br/>strategy / rejectReason 【已落地】"]
+    S2["src/types.ts<br/>调度 DTO 与预览契约 【已落地】"]
   end
 
   subgraph DOMAIN["desktop/src/domain/dispatch 【设计中】"]
     D0["dispatch.service.ts<br/>编排：鉴权 → 快照 → 算法 → 事务 → 日志/审计/事件"]
-    D1["snapshot.ts<br/>buildSnapshot 组装与构图"]
-    D2["evaluate.ts<br/>约束评估 + 代价计算"]
-    D3["occupancy.ts<br/>占用区间与相交检测"]
-    D4["explain.ts<br/>人类可读解释"]
-    D5["errors.ts<br/>M4 错误码"]
+    D1["snapshot.ts<br/>buildSnapshot 组装（站点 → 节点解析）"]
+    D4["explain.ts<br/>人类可读解释（Step 3）"]
+    D5["errors.ts<br/>M4 错误码（Step 3）"]
   end
 
-  subgraph ALGO["desktop/src/algorithms/dispatch 【设计中】"]
-    A0["index.ts<br/>runDispatch(snapshot, strategy)"]
-    A1["greedy.ts<br/>贪心，默认"]
-    A2["hungarian.ts<br/>匈牙利指派，不可行格为无穷"]
-    A3["types.ts<br/>算法层内部输入输出"]
+  subgraph ALGO["shared/src/dispatch-*.ts 【内核已落地】"]
+    A0["dispatch.ts<br/>runDispatch(snapshot, strategy)"]
+    A1["dispatch-strategies.ts<br/>贪心（默认）+ 匈牙利"]
+    A2["dispatch-evaluate.ts<br/>六步评估 + 代价 + 占用区间"]
+    A3["dispatch-types.ts<br/>快照类型 + 算法常量"]
   end
 
   subgraph REPO["desktop/src/db/repositories 【部分实现】"]
@@ -692,14 +690,13 @@ flowchart TB
   S2 --> ALGO
   D0 --> D1
   D0 --> A0
-  D1 --> D2
-  D2 --> D3
+  D1 --> A0
   D0 --> REPO
   A0 --> A1
   A0 --> A2
   A0 --> A3
 
-  BAN["【边界】边界约束<br/>algorithms 禁止 import db 与 domain<br/>service 不写 SQL，只调 Repository"]
+  BAN["【边界】边界约束<br/>内核（shared/src/dispatch-*.ts）禁止 import db 与 domain<br/>service 不写 SQL，只调 Repository"]
   BAN -.- ALGO
   BAN -.- D0
 ```
@@ -724,17 +721,17 @@ flowchart TB
 flowchart TB
   subgraph L0["地基"]
     M1["M1 登录与权限【部分实现】"]
-    M2["M2 基础数据 【设计中】"]
+    M2["M2 基础数据 【已实现】"]
   end
 
   subgraph L1["业务主线"]
-    M3["M3 任务管理 【设计中】"]
-    M4["M4 调度引擎 【设计中】"]
-    M5["M5 路径规划 【设计中】"]
+    M3["M3 任务管理 【已实现】"]
+    M4["M4 调度引擎 【已实现】<br/>（内核 + 服务 + 六条接口 + 调度中心页）"]
+    M5["M5 路径规划 【已实现】"]
   end
 
   subgraph L2["呈现与运行"]
-    M6["M6 地图可视化 【设计中】"]
+    M6["M6 地图可视化 【已实现】"]
     M7["M7 运行监控与执行 【设计中】"]
     M8["M8 告警 【设计中】"]
   end
@@ -833,34 +830,32 @@ flowchart TB
 | --- | --- |
 | `include=orders,orderEndpoints` 未实现 | 参数与类型已就位；订单摄入 `0002_data_import` 落地后接入，**未匹配地区的订单不上图** |
 | `/api/map/tracks/{vehicleId}` 未实现 | 轨迹回放图层（`docs/api.md` §3.6.2）尚无服务端与前端 |
-| `EventBus` 未按会话权限过滤 | 与第 10 章同一问题，M6/M8 落地时一并补 |
 | 车辆运行态推进未实现 | 车辆位置目前只在 `vehicle.changed` 事件到达时变化；尚无模拟执行器持续产生事件，故静止车辆不动 |
 
-### 8.3 已实现 vs 待实现（截至 2026-09-21 实测）
+### 8.3 已实现 vs 待实现（截至 2026-09-26 实测）
 
 ```mermaid
 flowchart LR
   subgraph DONE["【已实现】已落地且有实测支撑"]
     D1["shared 枚举 8 类<br/>权限点 20 个"]
-    D2["错误目录 125 条<br/>导入域 90 条"]
+    D2["错误目录 126 条<br/>导入域 90 条"]
     D3["SQLite 连接与事务"]
-    D4["迁移 0001 幂等"]
+    D4["迁移全部幂等<br/>（编号与条数以 docs/database.md §6 为准）"]
     D5["seed 可重入"]
     D6["IPC Router 鉴权 + traceId"]
     D7["登录 / 登出 / 会话"]
     D8["审计写入"]
     D9["事件总线落库 + 按权限过滤"]
-    D10["8 条接口<br/>health / auth×3 / settings×2 / users / map.overview"]
-    D11["renderer 全套<br/>入口 / 三层适配器 / store / 路由 / 页面"]
+    D10["IPC 接口<br/>health / auth×3 / settings×2 / users<br/>map.overview<br/>M2 六类资源的读与写<br/>M3 任务 / M5 路径 / M4 调度<br/>（清单与条数见 docs/api.md §3，不在此复述）"]
+    D11["renderer 全套<br/>入口 / 三层适配器 / store / 路由 / 页面<br/>基础数据页（M2 六页签，含写路径）<br/>任务管理页（M3：列表 / 表单 / 状态操作 / 详情）<br/>调度中心页（M4 调度台 + M5 路径规划与对比）"]
     D12["M6 地图<br/>React Flow 路网 + 车辆图层"]
-    D13["测试基线<br/>18 套件 110 用例全绿"]
+    D13["M3 任务状态机 + M5 路径内核<br/>唯一作者在 shared/src（task-state.ts · route-*.ts）"]
+    D14["测试基线全绿<br/>套件数与用例数以 AGENTS.md 验证基线为准"]
+    D15["M4 调度内核与服务<br/>六步约束评估 · 代价函数 · 贪心 + 匈牙利<br/>（纯函数在 shared/src/dispatch-*.ts；<br/>service / Repository / 六条路由 / 调度台页面）"]
   end
 
   subgraph TODO["【设计中】待实现"]
-    T2["M2 站点车辆路网 CRUD"]
-    T3["M3 任务状态机"]
-    T4["M4 调度引擎"]
-    T5["M5 路径规划与图搜索"]
+    T4["跨批次串行排程与遗传策略<br/>（同车在后续批次继续接单；genetic 二期）"]
     T7["M7 执行器与监控"]
     T8["M8 告警闭环"]
     T9["M10 设置写接口"]
@@ -877,9 +872,9 @@ flowchart LR
 ```mermaid
 flowchart LR
   P1["P1 地基 【已实现】 基本完成<br/>workspaces · shared · 迁移 · seed<br/>IPC 骨架"]
-  P2["P2 认证与主数据 【设计中】<br/>M1 补全 · M2 全量"]
-  P3["P3 任务与地图 【设计中】<br/>M3 状态机 · M6 静态图层"]
-  P4["P4 算法内核 【设计中】<br/>M4 · M5 · 模拟执行器"]
+  P2["P2 认证与主数据 【进行中】<br/>M1 补全 · M2 五类主数据读写已落地<br/>（余：详情接口与批量导入）"]
+  P3["P3 任务与地图 【进行中】<br/>M3 任务状态机已落地 · M5 路径规划已落地<br/>M6 静态图层已实现"]
+  P4["P4 算法内核 【已实现】<br/>M4 调度全链路与 M5 路径规划已落地<br/>（余：模拟执行器，属 M7）"]
   P5["P5 监控告警 【设计中】<br/>M7 · M8 · 事件推送"]
   P6["P6 收尾 【设计中】<br/>M9 查询 · M10 设置<br/>演示数据 · 打包"]
 
@@ -887,7 +882,7 @@ flowchart LR
 
   G1["验收门<br/>dev:electron 起窗<br/>health 返回 db true【部分实现】"]
   G2["验收门<br/>三角色登录<br/>主数据 CRUD"]
-  G3["验收门<br/>任务创建提交<br/>地图列表联动"]
+  G3["验收门<br/>任务创建提交<br/>地图列表联动【已实现，批量导入除外】"]
   G4["验收门<br/>U1-U11 / S1-S8 绿<br/>preview → apply → start 通"]
   G5["验收门<br/>异常 → 告警 → 接管闭环"]
   G6["验收门<br/>安装包离线启动"]
@@ -904,7 +899,7 @@ flowchart LR
 > **历史注记（2026-09-20 已解除）**：本图此前标注两个 P1 阻塞 —— `renderer` 缺 `src/main.tsx`（导致 `npm run build` 失败、`dev:electron` 白屏）、
 > `tests/setup.ts` 缺 `@testing-library/jest-dom`（导致 `npm test` 跑 0 个用例）。两者均已修复，现基线为 `npm test` 18 套件 110 用例全绿、`npm run build` 通过。
 >
-> **P1 剩余缺口**：7 个业务页仍为 `PlaceholderPage`（M1-M5 / M8-M10），见 `docs/issues.md` ISS-010。
+> **P1 剩余缺口**：4 个业务页仍为 `PlaceholderPage`（M1 用户管理 / M8 告警 / M9 审计 / M10 设置），见 `docs/issues.md` ISS-010。
 
 ---
 
@@ -935,7 +930,13 @@ flowchart LR
 | `execution.progress` | taskId, vehicleId, progress, x, y | 高频进度（节流 ≥ 250ms） |
 | `settings.changed` | key, value | 设置变更广播 |
 
-> **当前实现差距**：`EventBus` 已能落库并推送，但**尚未按会话权限过滤事件**（`docs/api.md` §4 要求「由主进程按会话权限过滤后推送」）。M6/M8 落地时需补该过滤，否则监控员可能收到超出其权限的事件。另：`EventBus` 目前没有「一个事件推给多个窗口时每窗口独立权限」的处理，多窗口场景需一并设计。
+> **已补（2026-09-21，D-32）**：`EventBus` **按会话权限过滤后再推送**（deny-by-default）——
+> `EVENT_PERMISSIONS` 显式登记「事件类型 → 所需权限点」，未登记的类型视为公开；
+> 窗口在 `attach` 时绑定会话、登录/登出经 `bindSession` 升降权；事件落 `event_log` 不受过滤影响。
+> 多窗口场景天然覆盖：**每个窗口各自按自己的会话判权限**（这正是当初被漏掉的那一环，见 `ISS-009`）。
+> 行为由 `desktop/src/services/event-bus.test.ts` 断言（未登录窗口收到 0 条登记过权限的事件等）。
+>
+> **仍存差距**：`TaskProgress` 等工作台面板的数据源仍是 `map/overview`，待 `/api/monitor/overview` 落地后切换。
 
 ---
 

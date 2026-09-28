@@ -43,7 +43,12 @@ export function LoginPage() {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
-    const result = await apiClient.invoke<LoginResult>('/api/auth/login', { username, password });
+    // 方法必须显式给：契约（`docs/api.md` §3.1.1）是 POST，
+    // 而适配器不传方法时一律按 GET 发（`client.ts` 的 `HttpMethod` 注释），
+    // 主进程按「方法 + 路径」索引，漏传会得到 `API.ROUTE_NOT_FOUND`（ISS-066）
+    const result = await apiClient.invoke<LoginResult>('/api/auth/login', { username, password }, null, {
+      method: 'POST'
+    });
     setSubmitting(false);
     if (result.code !== 0) {
       setError(result.message);

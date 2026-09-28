@@ -1,0 +1,108 @@
+/*
+ * 任务页（M3）的样式。
+ *
+ * 只放**本页特有**的排版：进度单元格、详情弹层里的分区与审计行、确认层里的一行提示。
+ * 列表骨架（工具条 / 筛选 / 表格 / 分页脚）与弹层、表单字段一律复用
+ * `styles/ui.css` 的公共部分（D-36 的归属规则：被 2 处以上使用 → `ui.css`）。
+ */
+
+/* ==================== 列表：进度单元格 ==================== */
+
+/* 进度条与百分比并排：只有条看不出「还差多少」，只有数字看不出「走了多远」 */
+.udm-task__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  min-width: 120px;
+}
+
+.udm-task__progress .udm-progress {
+  flex: 1;
+}
+
+.udm-task__percent {
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==================== 状态操作确认层 ==================== */
+
+/* 「任务：T2026… · 标题」这一行：先让人确认点的是哪一条，再读副作用说明 */
+.udm-task__confirm-task {
+  margin: 0 0 var(--udm-space-2);
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+}
+
+.udm-task__confirm-task strong {
+  color: var(--udm-text);
+}
+
+/* ==================== 详情弹层 ==================== */
+
+/*
+ * 详情比表单窄不了多少，但内容更长（计划 / 路线 / 告警 / 操作记录四段），
+ * 因此允许整层随内容滚动：`udm-overlay` 已经是 `overflow-y: auto`，
+ * 这里只要限制最大高度，避免它撑出视口后按钮被推到屏幕外。
+ */
+.udm-task__section {
+  margin-top: var(--udm-space-4);
+  padding-top: var(--udm-space-3);
+  border-top: 1px solid var(--udm-border);
+}
+
+.udm-task__section h3 {
+  margin: 0 0 var(--udm-space-2);
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+  font-weight: 500;
+}
+
+.udm-task__route {
+  margin: 0;
+  font-size: var(--udm-font-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-task__alerts,
+.udm-task__audits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--udm-font-xs);
+}
+
+.udm-task__audits li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--udm-space-2);
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--udm-border);
+}
+
+.udm-task__audits li:last-child {
+  border-bottom: none;
+}
+
+.udm-task__audit-ts {
+  color: var(--udm-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-task__audit-action {
+  color: var(--udm-text);
+}
+
+.udm-task__audit-actor {
+  color: var(--udm-text-dim);
+}
+
+.udm-task__audit-msg {
+  flex: 1 1 100%;
+  color: var(--udm-text-dim);
+}

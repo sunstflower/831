@@ -5,7 +5,8 @@
  * 等宽能让「3 / 100 / 1」对齐成列而不是各占宽窄；口径说明压到 footnote 字号，
  * 保证「看数字」优先、「看口径」按需。
  */
-import { toneClass, type Kpi } from '../model/summary';
+import { toneClass } from '../../domain/tone';
+import type { Kpi } from '../model/summary';
 
 export interface KpiCardsProps {
   kpis: Kpi[];
