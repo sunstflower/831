@@ -29,9 +29,14 @@ async function loginAsAdmin() {
   return result.data.token;
 }
 
-/** 封住 n04 的四条邻边（n04 还在图里，但谁也到不了）——用真实写接口建规则，不直接改内存。 */
-async function blockNode04(token: string) {
-  for (const edgeId of ['seed-e-N03-N04', 'seed-e-N04-N03', 'seed-e-N04-N08', 'seed-e-N08-N04']) {
+/**
+ * 封住 `N44` 的**两条入边**（`N44` 还在图里，但从 `N00` 一侧谁也到不了）。
+ *
+ * 只封入边就够了：`N44` 是路网东南角，没有别的路能进来。用真实写接口建规则，
+ * 不直接改内存 —— 这条用例要验证的正是「规则落库 → 规划绕不过去」这条链路。
+ */
+async function blockNode44(token: string) {
+  for (const edgeId of ['seed-e-E_N34_N44', 'seed-e-E_N43_N44']) {
     const created = await apiClient.invoke('/api/restrictions', { type: 'edge', targetId: edgeId, reason: '失败形态用例' }, token, {
       method: 'POST'
     });
@@ -42,7 +47,7 @@ async function blockNode04(token: string) {
 describe('DispatchPage · 规划失败形态', () => {
   it('两点不连通 → 结果显示错误码文案与具体原因，而不是空白', async () => {
     const token = await loginAsAdmin();
-    await blockNode04(token);
+    await blockNode44(token);
     render(
       <MemoryRouter>
         <DispatchPage />
@@ -51,14 +56,14 @@ describe('DispatchPage · 规划失败形态', () => {
     await waitFor(() => {
       expect(within(screen.getByLabelText('起点节点')).getAllByRole('option').length).toBeGreaterThan(1);
     });
-    fireEvent.change(screen.getByLabelText('起点节点'), { target: { value: 'seed-n01' } });
-    fireEvent.change(screen.getByLabelText('终点节点'), { target: { value: 'seed-n04' } });
+    fireEvent.change(screen.getByLabelText('起点节点'), { target: { value: 'seed-n-N00' } });
+    fireEvent.change(screen.getByLabelText('终点节点'), { target: { value: 'seed-n-N44' } });
     fireEvent.click(screen.getByRole('button', { name: '规划路线' }));
 
     const alert = await screen.findByRole('alert');
     // 目录文案（这类失败是什么）+ 内核给出的具体说明（这次为什么失败）都要出现
     expect(alert.textContent).toContain('起点与终点之间不存在可行路径');
-    expect(alert.textContent).toContain('seed-n01');
+    expect(alert.textContent).toContain('seed-n-N00');
     // 失败时不能同时显示一份「成功的结果摘要」
     expect(screen.queryByLabelText('经过的节点')).not.toBeInTheDocument();
   });

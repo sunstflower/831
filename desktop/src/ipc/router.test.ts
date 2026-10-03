@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { openDatabase } from '../db/index.js';
 import { applyMigrations } from '../db/migrate.js';
 import { seedDatabase } from '../db/seed.js';
+import { seedFixture } from '../db/seed-fixture.js';
 import { login } from '../services/auth.js';
 import { ExecutionRunner } from '../domain/execution/executor.js';
 import { EventBus } from '../services/event-bus.js';
@@ -89,10 +90,11 @@ describe('ipc router', () => {
     expect(result.code).toBe(0);
     if (result.code === 0) {
       const data = result.data as { nodes: unknown[]; edges: unknown[]; sites: unknown[]; vehicles: unknown[] };
-      expect(data.nodes).toHaveLength(12);
-      expect(data.edges).toHaveLength(34);
-      expect(data.sites).toHaveLength(3);
-      expect(data.vehicles).toHaveLength(3);
+      const fixture = seedFixture();
+      expect(data.nodes).toHaveLength(fixture.nodes.length);
+      expect(data.edges).toHaveLength(fixture.edges.length);
+      expect(data.sites).toHaveLength(fixture.sites.length);
+      expect(data.vehicles).toHaveLength(fixture.vehicles.length);
     }
     db.close();
   });

@@ -4,7 +4,7 @@ import { openDatabase } from '../../../desktop/src/db/index';
 import { applyMigrations } from '../../../desktop/src/db/migrate';
 import { seedDatabase } from '../../../desktop/src/db/seed';
 import { getMapOverview } from '../../../desktop/src/db/repositories/map.repo';
-import { buildMockOverview, GRID_COLS, GRID_ROWS } from './mock-data';
+import { buildMockOverview, mockCampusPackage } from './mock-data';
 
 /**
  * 防漂移护栏：Mock 数据必须与 `desktop/src/db/seed.ts` 产出**逐字段一致**。
@@ -14,41 +14,44 @@ import { buildMockOverview, GRID_COLS, GRID_ROWS } from './mock-data';
  * 浏览器里一切正常，切到 Electron 后选中态、事件匹配、告警角标全部静默失效。
  * 因此这里把「与 seed 同构」变成可执行的断言，而不是注释里的约定。
  */
-describe('mock-data · 与 seed 的一致性', () => {
+describe('mock-data · 与 seed 的推导同源', () => {
   const overview = buildMockOverview();
+  const pkg = mockCampusPackage();
 
-  it('路网规模与 seed 的 4×3 网格一致（12 节点 / 34 条双向边）', () => {
-    expect(overview.nodes).toHaveLength(GRID_COLS * GRID_ROWS);
-    expect(overview.nodes).toHaveLength(12);
-    expect(overview.edges).toHaveLength(34);
+  it('路网规模来自地图包本身（不是写死的数字）', () => {
+    // 断言「等于地图包的长度」而不是「等于 30」：换一份地图包时，用例仍然是对的，
+    // 而写死数字的用例会在换数据时报一个与语义无关的错
+    expect(overview.nodes).toHaveLength(pkg.nodes.length);
+    expect(overview.edges).toHaveLength(pkg.edges.length);
+    expect(overview.sites).toHaveLength(pkg.stations.length);
   });
 
-  it('节点 id 与 code 采用 seed 的两位补零规则（不是 seed-n-N1）', () => {
-    expect(overview.nodes.map((node) => node.id)).toEqual([
-      'seed-n01', 'seed-n02', 'seed-n03', 'seed-n04',
-      'seed-n05', 'seed-n06', 'seed-n07', 'seed-n08',
-      'seed-n09', 'seed-n10', 'seed-n11', 'seed-n12'
-    ]);
-    expect(overview.nodes.map((node) => node.code)).toContain('N01');
-    expect(overview.nodes.some((node) => node.id.includes('seed-n-N'))).toBe(false);
+  it('节点 id / code 由地图包的编码派生（不是手抄的 seed-n-N1）', () => {
+    // 每个 id 都必须等于「前缀 + 自己的 code」，而不是与 code 无关的另一套编号
+    expect(overview.nodes.every((node) => node.id === `seed-n-${node.code}`)).toBe(true);
+    expect(overview.nodes.map((node) => node.code).sort()).toEqual(pkg.nodes.map((node) => node.code).sort());
   });
 
   it('站点/车辆 id 取自 shared 的 SEED_IDS（与 seed 同源）', () => {
-    expect(overview.sites.map((site) => site.id).sort()).toEqual(
-      [SEED_IDS.siteDepotA, SEED_IDS.siteDepotB, SEED_IDS.siteCharging].sort()
-    );
+    // 演示用的三个站点必须在站点表里存在，否则演示任务会引用一个不存在的站点
+    for (const id of [SEED_IDS.siteDepot, SEED_IDS.siteDorm, SEED_IDS.siteCanteen]) {
+      expect(overview.sites.map((site) => site.id)).toContain(id);
+    }
     expect(overview.vehicles.map((vehicle) => vehicle.id).sort()).toEqual(
-      [SEED_IDS.vehicleAgv, SEED_IDS.vehicleCarrier, SEED_IDS.vehicleDrone].sort()
+      [SEED_IDS.vehicleAgv, SEED_IDS.vehicleAgv2, SEED_IDS.vehicleCarrier, SEED_IDS.vehicleCarrier2, SEED_IDS.vehicleDrone].sort()
     );
   });
 
   it('坐标/绑定节点/电量与 seed 一致', () => {
     const agv = overview.vehicles.find((vehicle) => vehicle.id === SEED_IDS.vehicleAgv);
     // AGV-01 正在执行演示任务：status 为 busy、并挂着 taskId（与 seed 一致）
-    expect(agv).toMatchObject({ code: 'AGV-01', x: 0, y: 0, battery: 100, status: 'busy', taskId: SEED_IDS.demoTask });
+    expect(agv).toMatchObject({ code: 'AGV-01', battery: 100, status: 'busy', taskId: SEED_IDS.demoTask });
 
-    const depotB = overview.sites.find((site) => site.id === SEED_IDS.siteDepotB);
-    expect(depotB).toMatchObject({ code: 'B-01', nodeId: 'seed-n12', x: 60, y: 40, type: 'depot' });
+    // 站点坐标来自样本，直接与地图包对照（手抄坐标正是 D-27 那类漂移的起点）
+    const depot = overview.sites.find((site) => site.id === SEED_IDS.siteDepot);
+    const station = pkg.stations.find((item) => item.code === 'DEPOT');
+    expect(depot).toMatchObject({ code: 'DEPOT', x: station!.x, y: station!.y, type: 'depot' });
+    expect(depot?.nodeId).toBe(`seed-n-${station!.edgeCode.split('_')[1]!}`);
   });
 
   it('边端点都能解析到节点（渲染层依赖此不变量）', () => {
@@ -62,9 +65,11 @@ describe('mock-data · 与 seed 的一致性', () => {
   it('演示任务的起终点与车辆都指向 SEED_IDS，且路线节点全部存在', () => {
     const nodeIds = new Set(overview.nodes.map((node) => node.id));
     const task = overview.tasks[0]!;
-    expect(task.fromSiteId).toBe(SEED_IDS.siteDepotA);
-    expect(task.toSiteId).toBe(SEED_IDS.siteDepotB);
+    expect(task.fromSiteId).toBe(SEED_IDS.siteDepot);
+    expect(task.toSiteId).toBe(SEED_IDS.siteDorm);
     expect(task.vehicleId).toBe(SEED_IDS.vehicleAgv);
+    // 路线必须走得通：每个节点都在图上、每一段都对应一条真实存在的边
+    expect(overview.routes[0]!.nodeIds.length).toBeGreaterThan(2);
     for (const id of overview.routes[0]!.nodeIds) {
       expect(nodeIds.has(id)).toBe(true);
     }

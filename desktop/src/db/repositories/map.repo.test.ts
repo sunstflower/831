@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { SEED_IDS, campusNodeId } from '@udm/shared';
 import { openDatabase, run, tx, nowIso } from '../index.js';
 import { applyMigrations } from '../migrate.js';
 import { seedDatabase } from '../seed.js';
+import { seedFixture } from '../seed-fixture.js';
 import { getMapOverview } from './map.repo.js';
+
+/** 路网节点 id 取自地图包推导，不写死字面量（见 seed-fixture.ts）。 */
+const N01 = campusNodeId('N01');
+const N02 = campusNodeId('N02');
 
 function setup() {
   const db = openDatabase(':memory:');
@@ -20,10 +26,14 @@ function setup() {
  */
 function clearDemoExecution(db: ReturnType<typeof openDatabase>) {
   tx(db, () => {
-    run(db, "DELETE FROM alerts WHERE id = 'seed-alert-demo'");
-    run(db, "DELETE FROM routes WHERE id = 'seed-route-demo'");
-    run(db, "DELETE FROM tasks WHERE id = 'seed-task-demo'");
-    run(db, "UPDATE vehicles SET status = 'idle', load_kg = 0 WHERE id = 'seed-veh-agv01'");
+    // 顺序由外键决定：plan → route → task，先删引用方。
+    // 不能只删演示任务：seed 还写 6 条**待派发**任务，它们同样会进快照（未终结即上图）。
+    run(db, 'DELETE FROM dispatch_plans');
+    run(db, 'DELETE FROM dispatch_logs');
+    run(db, 'DELETE FROM routes');
+    run(db, 'DELETE FROM alerts');
+    run(db, 'DELETE FROM tasks');
+    run(db, "UPDATE vehicles SET status = 'idle', load_kg = 0");
   });
 }
 
@@ -31,12 +41,14 @@ describe('getMapOverview', () => {
   it('从 seed 库读出与种网一致的图层规模（含 seed 的演示执行数据）', () => {
     const db = setup();
     const snapshot = getMapOverview(db);
-    expect(snapshot.nodes).toHaveLength(12);
-    expect(snapshot.edges).toHaveLength(34);
-    expect(snapshot.sites).toHaveLength(3);
-    expect(snapshot.vehicles).toHaveLength(3);
-    // seed 会写一条演示任务/路线/告警，让首屏就能看到路线高亮
-    expect(snapshot.tasks).toHaveLength(1);
+    const fixture = seedFixture();
+    // 规模从 `data/campus/` 的推导来：这条用例要证明的是「seed 的图层规模 == 地图包」
+    expect(snapshot.nodes).toHaveLength(fixture.nodes.length);
+    expect(snapshot.edges).toHaveLength(fixture.edges.length);
+    expect(snapshot.sites).toHaveLength(fixture.sites.length);
+    expect(snapshot.vehicles).toHaveLength(fixture.vehicles.length);
+    // seed 会写演示执行任务 + 6 条待派发任务，让首屏就能看到路线高亮与可派发的活
+    expect(snapshot.tasks).toHaveLength(fixture.tasks.length);
     expect(snapshot.routes).toHaveLength(1);
     expect(snapshot.routes[0]?.status).toBe('active');
     expect(snapshot.alerts).toHaveLength(1);
@@ -65,13 +77,13 @@ describe('getMapOverview', () => {
         `INSERT INTO tasks (id, code, title, status, priority, cargo_kg, from_site_id, to_site_id,
                             assigned_vehicle_id, progress, assigned_at, created_at, updated_at)
          VALUES (?, ?, ?, 'running', 'normal', 10, ?, ?, ?, 0.5, ?, ?, ?)`,
-        ['t-1', 'T-0001', '测试任务', 'seed-site-a', 'seed-site-b', 'seed-veh-agv01', at, at, at]
+        ['t-1', 'T-0001', '测试任务', SEED_IDS.siteDepot, SEED_IDS.siteDorm, SEED_IDS.vehicleAgv, at, at, at]
       );
     });
 
     const snapshot = getMapOverview(db);
-    const agv = snapshot.vehicles.find((vehicle) => vehicle.id === 'seed-veh-agv01');
-    const other = snapshot.vehicles.find((vehicle) => vehicle.id === 'seed-veh-car01');
+    const agv = snapshot.vehicles.find((vehicle) => vehicle.id === SEED_IDS.vehicleAgv);
+    const other = snapshot.vehicles.find((vehicle) => vehicle.id === SEED_IDS.vehicleCarrier);
     expect(agv?.taskId).toBe('t-1');
     expect(other?.taskId).toBeNull();
     expect(snapshot.tasks).toHaveLength(1);
@@ -89,7 +101,7 @@ describe('getMapOverview', () => {
         `INSERT INTO tasks (id, code, title, status, priority, cargo_kg, from_site_id, to_site_id,
                             progress, finished_at, created_at, updated_at)
          VALUES (?, ?, ?, 'finished', 'normal', 10, ?, ?, 1, ?, ?, ?)`,
-        ['t-done', 'T-0002', '已完成', 'seed-site-a', 'seed-site-b', at, at, at]
+        ['t-done', 'T-0002', '已完成', SEED_IDS.siteDepot, SEED_IDS.siteDorm, at, at, at]
       );
     });
     expect(getMapOverview(db).tasks).toHaveLength(0);
@@ -105,17 +117,17 @@ describe('getMapOverview', () => {
         db,
         `INSERT INTO tasks (id, code, title, status, priority, cargo_kg, from_site_id, to_site_id,
                             assigned_vehicle_id, progress, assigned_at, created_at, updated_at)
-         VALUES ('t-1', 'T-0001', '任务', 'running', 'normal', 10, 'seed-site-a', 'seed-site-b',
-                 'seed-veh-agv01', 0.2, ?, ?, ?)`,
-        [at, at, at]
+         VALUES ('t-1', 'T-0001', '任务', 'running', 'normal', 10, ?, ?,
+                 ?, 0.2, ?, ?, ?)`,
+        [SEED_IDS.siteDepot, SEED_IDS.siteDorm, SEED_IDS.vehicleAgv, at, at, at]
       );
       const insertRoute = (id: string) =>
         run(
           db,
           `INSERT INTO routes (id, task_id, algorithm, from_node_id, to_node_id, via_node_ids, node_ids,
                                edge_ids, distance_m, duration_s, created_at)
-           VALUES (?, 't-1', 'aStar', 'seed-n01', 'seed-n05', '[]', ?, '[]', 20, 20, ?)`,
-          [id, JSON.stringify(['seed-n01', 'seed-n05']), at]
+           VALUES (?, 't-1', 'aStar', ?, ?, '[]', ?, '[]', 20, 20, ?)`,
+          [id, N01, N02, JSON.stringify([N01, N02]), at]
         );
       const insertPlan = (id: string, routeId: string, status: string) =>
         run(
@@ -137,7 +149,7 @@ describe('getMapOverview', () => {
     expect(snapshot.routes).toHaveLength(2);
     expect(byId.get('r-new')?.status).toBe('active');
     expect(byId.get('r-old')?.status).toBe('superseded');
-    expect(byId.get('r-new')?.nodeIds).toEqual(['seed-n01', 'seed-n05']);
+    expect(byId.get('r-new')?.nodeIds).toEqual([N01, N02]);
     expect(byId.get('r-new')?.vehicleId).toBe('seed-veh-agv01');
     db.close();
   });
@@ -151,8 +163,8 @@ describe('getMapOverview', () => {
         db,
         `INSERT INTO routes (id, task_id, algorithm, from_node_id, to_node_id, via_node_ids, node_ids,
                              edge_ids, distance_m, duration_s, created_at)
-         VALUES ('r-manual', NULL, 'aStar', 'seed-n01', 'seed-n05', '[]', ?, '[]', 20, 20, ?)`,
-        [JSON.stringify(['seed-n01', 'seed-n05']), at]
+         VALUES ('r-manual', NULL, 'aStar', ?, ?, '[]', ?, '[]', 20, 20, ?)`,
+        [N01, N02, JSON.stringify([N01, N02]), at]
       );
     });
     const snapshot = getMapOverview(db);
@@ -171,8 +183,8 @@ describe('getMapOverview', () => {
         db,
         `INSERT INTO routes (id, task_id, algorithm, from_node_id, to_node_id, via_node_ids, node_ids,
                              edge_ids, distance_m, duration_s, created_at)
-         VALUES ('r-bad', NULL, 'aStar', 'seed-n01', 'seed-n05', '[]', 'not-json', '[]', 20, 20, ?)`,
-        [at]
+         VALUES ('r-bad', NULL, 'aStar', ?, ?, '[]', 'not-json', '[]', 20, 20, ?)`,
+        [N01, N02, at]
       );
     });
     expect(getMapOverview(db).routes[0]?.nodeIds).toEqual([]);
@@ -187,8 +199,8 @@ describe('getMapOverview', () => {
       run(
         db,
         `INSERT INTO alerts (id, type, level, object_type, object_id, message, status, created_at)
-         VALUES ('a-new', 'vehicle_offline', 'warning', 'vehicle', 'seed-veh-drn01', '离线', 'new', ?)`,
-        [at]
+         VALUES ('a-new', 'vehicle_offline', 'warning', 'vehicle', ?, '离线', 'new', ?)`,
+        [SEED_IDS.vehicleDrone, at]
       );
       run(
         db,

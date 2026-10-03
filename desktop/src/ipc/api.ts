@@ -33,6 +33,7 @@ import {
 } from '@udm/shared';
 import { get, nowIso, type Db } from '../db/index.js';
 import { getAlertDetail, listAlerts, runAlertAction } from '../domain/alert/alert.service.js';
+import { alertRisks } from '../domain/alert/risk.service.js';
 import { exportAuditCsv, listAuditLogs } from '../domain/audit/audit.service.js';
 import type { ExecutionRunner } from '../domain/execution/executor.js';
 import { MONITOR_DEFAULT_TASK_STATUSES, monitorOverview, monitorTasks, monitorVehicles } from '../domain/monitor/monitor.service.js';
@@ -775,6 +776,26 @@ export function createApiRoutes(deps: ApiDependencies): Route[] {
         });
         return { records, total, page, pageSize };
       }
+    },
+    /*
+     * 任务风险预检（`docs/api.md` §3.8.3）。
+     *
+     * **不是**告警：它不读也不写 `alerts` 表、不进状态机、没有 `id`，因此**没有**
+     * 认领/解决/归档这些动作 —— 一条「预计会超时」被认领掉毫无意义，等它真的超时，
+     * 执行器会照常落一条 `alert.created`。这条区分写在契约里，否则使用者会以为
+     * 「认领掉就不响了」。
+     *
+     * 权限用 `alert:read`：看得到告警的人就该看得到「接下来会出什么问题」，
+     * 三个角色都有这个权限点；而它**不**要求 `dispatch:*` —— 监控员没有调度权，
+     * 但恰恰最需要这份清单去提醒调度。
+     *
+     * 放在 `/api/alerts/:id` **之前**：虽然路由器先做字面量精确匹配（`risks` 不会被
+     * `:id` 抢走），但把静态段排在动态段前面，读代码的人不必先去确认那件事。
+     */
+    {
+      path: '/api/alerts/risks',
+      permission: 'alert:read',
+      handler: () => alertRisks(db)
     },
     {
       path: '/api/alerts/:id',

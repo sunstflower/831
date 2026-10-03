@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuditContext, DomainError } from '@udm/shared';
+import { SEED_IDS } from '@udm/shared';
 import { all, openDatabase, run, type Db } from '../../db/index.js';
 import { applyMigrations } from '../../db/migrate.js';
 import { seedDatabase } from '../../db/seed.js';
@@ -73,10 +74,10 @@ function setTaskStatus(db: Db, id: string, status: string): void {
 }
 
 const BASELINE = {
-  title: 'A 仓 → B 仓',
+  title: '配送中心 → 北苑宿舍',
   cargoKg: 100,
-  fromSiteId: 'seed-site-a',
-  toSiteId: 'seed-site-b'
+  fromSiteId: SEED_IDS.siteDepot,
+  toSiteId: SEED_IDS.siteDorm
 };
 
 describe('task.service · 创建', () => {
@@ -115,12 +116,12 @@ describe('task.service · 创建', () => {
 
   it('套模板：标题/优先级/载重取模板缺省值，结束时间由「时间窗长度」推出', () => {
     const task = createTask(ctx, {
-      templateId: 'seed-tpl-std',
-      fromSiteId: 'seed-site-a',
-      toSiteId: 'seed-site-b',
+      templateId: SEED_IDS.templateStandard,
+      fromSiteId: SEED_IDS.siteDepot,
+      toSiteId: SEED_IDS.siteDorm,
       timeWindowStart: '2026-09-27T08:00:00.000Z'
     });
-    expect(task.title).toBe('仓到仓标准配送');
+    expect(task.title).toBe('配送中心 → 楼宇标准配送');
     expect(task.priority).toBe('normal');
     expect(task.cargoKg).toBe(100);
     // seed 模板的时间窗长度是 60 分钟
@@ -128,18 +129,18 @@ describe('task.service · 创建', () => {
   });
 
   it('模板要求的起终点类型不符 → 字段级错误（模板上的类型不是装饰品）', () => {
-    // TPL-CHG 要求「仓库 → 充电桩」，而 seed-site-b 是仓库
+    // TPL-RET 要求「楼宇 → 配送中心」，而起点的配送中心是 depot 类型
     const error = expectDomainError(
       () =>
         createTask(ctx, {
-          templateId: 'seed-tpl-chg',
-          fromSiteId: 'seed-site-a',
-          toSiteId: 'seed-site-b',
+          templateId: SEED_IDS.templateReturn,
+          fromSiteId: SEED_IDS.siteDepot,
+          toSiteId: SEED_IDS.siteDorm,
           cargoKg: 10
         }),
       'VALIDATION.FAILED'
     );
-    expect(error.detail?.['fields']).toMatchObject({ toSiteId: expect.stringContaining('charging') });
+    expect(error.detail?.['fields']).toMatchObject({ fromSiteId: expect.stringContaining('dock') });
   });
 
   it('模板不存在 → TEMPLATE.NOT_FOUND', () => {
@@ -148,14 +149,14 @@ describe('task.service · 创建', () => {
 
   it('起终点站点：不存在 → SITE.NOT_FOUND；已停用 → VALIDATION.FAILED 并标在字段上', () => {
     expectDomainError(() => createTask(ctx, { ...BASELINE, fromSiteId: 'nope' }), 'SITE.NOT_FOUND');
-    run(db, "UPDATE sites SET status = 'disabled' WHERE id = 'seed-site-b'");
+    run(db, "UPDATE sites SET status = 'disabled' WHERE id = ?", [SEED_IDS.siteDorm]);
     const error = expectDomainError(() => createTask(ctx, { ...BASELINE }), 'VALIDATION.FAILED');
     expect(error.detail?.['fields']).toMatchObject({ toSiteId: expect.stringContaining('已停用') });
   });
 
   it('起终点相同 → 字段级错误（不让 DDL 的 CHECK 当第一道关卡）', () => {
     const error = expectDomainError(
-      () => createTask(ctx, { ...BASELINE, toSiteId: 'seed-site-a' }),
+      () => createTask(ctx, { ...BASELINE, toSiteId: SEED_IDS.siteDepot }),
       'VALIDATION.FAILED'
     );
     expect(error.detail?.['fields']).toMatchObject({ toSiteId: expect.stringContaining('同一个站点') });
@@ -211,7 +212,7 @@ describe('task.service · 编辑', () => {
   it('编辑不允许改模板（否则「这条任务按哪个模板建的」会变成一个可抹掉的事实）', () => {
     const task = createTask(ctx, { ...BASELINE });
     const error = expectDomainError(
-      () => updateTask(ctx, task.id, { templateId: 'seed-tpl-std' }),
+      () => updateTask(ctx, task.id, { templateId: SEED_IDS.templateStandard }),
       'VALIDATION.FAILED'
     );
     expect(error.detail?.['fields']).toMatchObject({ templateId: expect.stringContaining('创建时') });
@@ -261,14 +262,14 @@ describe('task.service · 状态操作', () => {
   });
 
   it('cancel：回收车辆到 idle、清掉派发痕迹、计划置 cancelled、写取消原因', () => {
-    insertPlan(db, 'seed-task-demo', 'seed-veh-agv01');
+    insertPlan(db, SEED_IDS.demoTask, SEED_IDS.vehicleAgv);
     const result = operateTask(ctx, 'seed-task-demo', 'cancel', { reason: '客户取消' });
     expect(result.status).toBe('cancelled');
     expect(result.cancelReason).toBe('客户取消');
     expect(result.assignedVehicleId).toBeNull();
     expect(result.currentPlan).toBeNull();
     // 车辆回到 idle（Req-M3-6）
-    expect(all<{ status: string }>(db, "SELECT status FROM vehicles WHERE id = 'seed-veh-agv01'")[0]?.status).toBe('idle');
+    expect(all<{ status: string }>(db, 'SELECT status FROM vehicles WHERE id = ?', [SEED_IDS.vehicleAgv])[0]?.status).toBe('idle');
     // 旧计划不删除，只改状态（D-04）
     expect(all<{ status: string }>(db, "SELECT status FROM dispatch_plans WHERE task_id = 'seed-task-demo'")[0]?.status).toBe('cancelled');
     const audit = all<{ action: string; before: string | null }>(
@@ -280,15 +281,15 @@ describe('task.service · 状态操作', () => {
   });
 
   it('cancel：车辆处于故障时**不谎报 idle**，并把提示写进审计消息', () => {
-    setVehicleStatus(db, 'seed-veh-agv01', 'fault', '2026-09-26T00:00:00.000Z');
+    setVehicleStatus(db, SEED_IDS.vehicleAgv, 'fault', '2026-09-26T00:00:00.000Z');
     operateTask(ctx, 'seed-task-demo', 'cancel', { reason: '车坏了' });
-    expect(all<{ status: string }>(db, "SELECT status FROM vehicles WHERE id = 'seed-veh-agv01'")[0]?.status).toBe('fault');
+    expect(all<{ status: string }>(db, 'SELECT status FROM vehicles WHERE id = ?', [SEED_IDS.vehicleAgv])[0]?.status).toBe('fault');
     const audit = all<{ message: string | null }>(db, "SELECT message FROM audit_logs WHERE action = 'cancel'")[0];
     expect(audit?.message).toContain('未回 idle');
   });
 
   it('reassign：回到 pending、车辆回收、原计划置 superseded（不是 cancelled）', () => {
-    insertPlan(db, 'seed-task-demo', 'seed-veh-agv01');
+    insertPlan(db, SEED_IDS.demoTask, SEED_IDS.vehicleAgv);
     const result = operateTask(ctx, 'seed-task-demo', 'reassign', { reason: '换台车' });
     expect(result.status).toBe('pending');
     expect(result.transition).toEqual({ from: 'running', to: 'pending' });

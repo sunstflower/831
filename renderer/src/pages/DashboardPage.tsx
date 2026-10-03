@@ -1,11 +1,17 @@
 /**
  * 监控工作台（`design.md` §7.1 的「概览指标、异常任务、事件流」落点）。
  *
- * **数据来源的诚实说明**：本页读的是 `GET /api/map/overview`（Req-M6-5 的「画布唯一数据入口」），
- * 而不是 `/api/monitor/*` —— 后者属 M7，尚未实现（ISS-010）。因此：
- *   - 页面上标注了数据来源与刷新方式，不让「看起来有数」被误当成「M7 已完成」；
- *   - 全部指标都由已有快照派生，**不新增接口、不新增契约**（新增接口属 M7 的活）；
- *   - 一旦 `/api/monitor/overview` 落地，只需替换数据源 hook，本页的 `model/` 与面板不用改。
+ * **数据来源的诚实说明**：本页读的是 `GET /api/map/overview`（Req-M6-5 的「画布唯一数据入口」）
+ * 的**同一份快照**，而不是分别去调 `/api/monitor/overview`、`/api/monitor/tasks`、`/api/alerts`。
+ *
+ * 这不是因为 M7 没实现（`/api/monitor/*` 已落地，页面上标注了它的用处），而是口径问题：
+ * 本页把车队、任务、告警三组数字**放在同一屏上相互对照**（「3 台车可用 / 2 个任务在跑 /
+ * 1 条告警待确认」），四个独立请求会在页面上留下「车队是上个月的、告警是这个月的」这种
+ * 交错不一致 —— 而它看起来完全正常，正是最难发现的一类错。单快照保证所有数字来自
+ * **同一时刻**（D-23 的同一考量：结构类数据只认快照）。
+ *
+ * M7 的 `/api/monitor/*` 服务的是另一类需求：**不带路网的计数聚合**（外部集成、轻量轮询）
+ * 与**执行控制**（开始执行 / 手动接管，见 `pages/TasksPage.tsx` 的操作列）。
  *
  * 布局（栅格见 `dashboard/style/dashboard.css`）：
  *   1. 四个 KPI 卡 —— 决定「现在要不要人介入」；
@@ -184,8 +190,10 @@ export function DashboardPage() {
           <div className="udm-card__body">
             <SourceCard metrics={metrics} lastEventSeq={lastEventSeq} />
             <p className="udm-sources__note">
-              概览读的是地图快照接口；M7 运行监控的专属接口（<code>/api/monitor/*</code>）尚未实现，
-              因此本页指标与地图页同源。
+              本页与地图页读的是**同一份快照**（<code>/api/map/overview</code>），
+              因此车队、任务、告警三组数字必然来自同一时刻。M7 的
+              <code>/api/monitor/*</code> 提供不带路网的计数聚合与执行控制，
+              供集成与任务页使用（见 <code>docs/api.md</code> §3.7）。
             </p>
           </div>
         </section>

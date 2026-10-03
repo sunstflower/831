@@ -191,13 +191,34 @@ export interface VehicleCreate {
   type: VehicleType;
   capacityKg: number;
   maxSpeedMps: number;
-  x: number;
-  y: number;
+  /**
+   * 坐标：**可空**。留空表示「跟着 `currentNodeId` 走」（与站点同一口径）。
+   * 直接写 0 与「没给」是两件事，因此这里保留 `null` 而不是兜底成 0 ——
+   * 兜底会把「没给坐标」变成一辆停在原点 (0,0) 的车，而原点往往不在路网上。
+   */
+  x: number | null;
+  y: number | null;
+  /**
+   * 车辆当前所在节点（可空）。
+   *
+   * 为什么车辆也要有这个字段：调度评估的第一步就是「车从哪出发」
+   * （`startNodeOf()`）。没有它时内核会按坐标就近取点 —— 那是个**兜底**，
+   * 不是使用者表达的意图：车停在两节点之间时，就近取点会把空驶段算成一条
+   * 并不存在的路。让建车的人显式指定落点，坐标则可以跟着它走。
+   */
+  currentNodeId: string | null;
   battery: number;
   remark: string | null;
 }
 
-export type VehiclePatch = Partial<Omit<VehicleCreate, 'code'>>;
+/**
+ * 车辆补丁：`x` / `y` **不许是 `null`**。
+ *
+ * 建车时 `null` = 「跟着所在节点走」；但 PATCH 里 `null` 只能读成「不改」，
+ * 与 `undefined` 同义 —— 两种写法表达同一件事，迟早有人用错一种。
+ * 因此把这两个字段收窄成 `number`：想改坐标就给出数，不想改就别传。
+ */
+export type VehiclePatch = Partial<Omit<VehicleCreate, 'code' | 'x' | 'y'>> & { x?: number; y?: number };
 
 export interface NodeCreate {
   code: string;
@@ -215,6 +236,13 @@ export interface EdgeCreate {
   toNodeId: string;
   lengthM: number | null;
   speedLimitMps: number | null;
+  /**
+   * 通行权重（`edges.weight`）：≥ 1 的惩罚系数，1 = 畅通。
+   *
+   * 缺省 1（不填 = 畅通）而不是 `null`：这是一个**有默认值的量**，
+   * 界面上留空与「填 1」必须是同一件事，否则同一条边会出现两种写法。
+   */
+  weight: number;
   remark: string | null;
 }
 
@@ -223,6 +251,7 @@ export type EdgePatch = Partial<{
   toNodeId: string;
   lengthM: number;
   speedLimitMps: number | null;
+  weight: number;
   remark: string | null;
 }>;
 
@@ -400,11 +429,23 @@ export function validateVehicleInput(
   const type = readEnum(raw, 'type', VEHICLE_TYPES, { required: requiredWhen(mode, raw, 'type') }, fields);
   const capacityKg = readNumber(raw, 'capacityKg', { required: requiredWhen(mode, raw, 'capacityKg'), min: Number.EPSILON }, fields);
   const maxSpeedMps = readNumber(raw, 'maxSpeedMps', { required: requiredWhen(mode, raw, 'maxSpeedMps'), min: Number.EPSILON }, fields);
-  const x = readNumber(raw, 'x', { required: raw['x'] !== undefined }, fields);
-  const y = readNumber(raw, 'y', { required: requiredWhen(mode, raw, 'y') }, fields);
+  const currentNodeId = readText(raw, 'currentNodeId', { required: false, maxLength: 64 }, fields);
+  /*
+   * 坐标在**建车时**要么自己填、要么由所在节点派生（与站点的口径一致）。
+   *
+   * 因此「选了节点」可以两个都不填；既没有节点又没有坐标才报必填 ——
+   * 一辆没有位置的车在地图上是孤点，调度也确定不了出发地。
+   */
+  const hasNode = typeof raw['currentNodeId'] === 'string' && raw['currentNodeId'].trim() !== '';
+  const coordinateRequired = raw['x'] !== undefined || (mode === 'create' && !hasNode);
+  const x = readNumber(raw, 'x', { required: coordinateRequired }, fields);
+  const y = readNumber(raw, 'y', { required: raw['y'] !== undefined || (mode === 'create' && !hasNode) }, fields);
   const battery = readNumber(raw, 'battery', { required: raw['battery'] !== undefined, min: 0, max: 100 }, fields);
   const remark = readText(raw, 'remark', { required: false, maxLength: FIELD_LIMITS.remark }, fields);
-  if (!code.ok || !name.ok || !type.ok || !capacityKg.ok || !maxSpeedMps.ok || !x.ok || !y.ok || !battery.ok || !remark.ok) {
+  if (
+    !code.ok || !name.ok || !type.ok || !capacityKg.ok || !maxSpeedMps.ok ||
+    !currentNodeId.ok || !x.ok || !y.ok || !battery.ok || !remark.ok
+  ) {
     return { ok: false, fields };
   }
   if (mode === 'patch') {
@@ -420,6 +461,7 @@ export function validateVehicleInput(
     if (x.value !== null) patch.x = x.value;
     if (y.value !== null) patch.y = y.value;
     if (battery.value !== null) patch.battery = battery.value;
+    if (raw['currentNodeId'] !== undefined) patch.currentNodeId = currentNodeId.value;
     if (raw['remark'] !== undefined) patch.remark = remark.value;
     return { ok: true, value: patch };
   }
@@ -431,8 +473,9 @@ export function validateVehicleInput(
       type: type.value as VehicleType,
       capacityKg: capacityKg.value ?? 0,
       maxSpeedMps: maxSpeedMps.value ?? 0,
-      x: x.value ?? 0,
-      y: y.value ?? 0,
+      x: x.value,
+      y: y.value,
+      currentNodeId: currentNodeId.value,
       // 缺省 100%：新车第一次上线时电量是满的；显式传 0 仍被接受（域是 [0,100]）
       battery: battery.value ?? 100,
       remark: remark.value
@@ -479,8 +522,12 @@ export function validateEdgeInput(raw: Record<string, unknown>, mode: 'create' |
   const toNodeId = readText(raw, 'toNodeId', { required: mode === 'create', maxLength: 64 }, fields);
   const lengthM = readNumber(raw, 'lengthM', { required: raw['lengthM'] !== undefined, min: Number.EPSILON }, fields);
   const speedLimitMps = readNumber(raw, 'speedLimitMps', { required: false, min: Number.EPSILON }, fields);
+  // 权重下限是 1，**不是** `Number.EPSILON`：`weight < 1` 会让 A* 的启发式变成高估，
+  // 于是返回一条非最优路线而且不报错（见 0005 迁移的注释）。这里把它拦在传输层，
+  // DDL 的 CHECK 只是最后一道兜底，两者必须一致。
+  const weight = readNumber(raw, 'weight', { required: false, min: 1 }, fields);
   const remark = readText(raw, 'remark', { required: false, maxLength: FIELD_LIMITS.remark }, fields);
-  if (!code.ok || !fromNodeId.ok || !toNodeId.ok || !lengthM.ok || !speedLimitMps.ok || !remark.ok) {
+  if (!code.ok || !fromNodeId.ok || !toNodeId.ok || !lengthM.ok || !speedLimitMps.ok || !weight.ok || !remark.ok) {
     return { ok: false, fields };
   }
   // 自环：DDL 有 `CHECK (from_node_id <> to_node_id)` 兜底，但**必须在这里先拦**，
@@ -498,6 +545,7 @@ export function validateEdgeInput(raw: Record<string, unknown>, mode: 'create' |
     if (toNodeId.value !== null) patch.toNodeId = toNodeId.value;
     if (lengthM.value !== null) patch.lengthM = lengthM.value;
     if (raw['speedLimitMps'] !== undefined) patch.speedLimitMps = speedLimitMps.value;
+    if (weight.value !== null) patch.weight = weight.value;
     if (raw['remark'] !== undefined) patch.remark = remark.value;
     const from = patch.fromNodeId;
     const to = patch.toNodeId;
@@ -514,6 +562,8 @@ export function validateEdgeInput(raw: Record<string, unknown>, mode: 'create' |
       toNodeId: toNodeId.value ?? '',
       lengthM: lengthM.value,
       speedLimitMps: speedLimitMps.value,
+      // 缺省 1：不填 = 畅通（与列默认值、与 `RouteEdgeInput.weight` 的兜底同一口径）
+      weight: weight.value ?? 1,
       remark: remark.value
     }
   };

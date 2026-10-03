@@ -168,6 +168,18 @@ export interface PlanRow {
   chargeRisk: string;
   cost: string;
   doneAt: string;
+  /**
+   * 这条计划**分配到的路线**：`起点 → 终点 · N 段 · M m`。
+   *
+   * 为什么在主表里单独给一列（对比表已有合计里程）：合计里程回答「哪个策略少跑路」，
+   * 但回答不了「**这一单**为什么走了 300 m 而不是 150 m」—— 那是路线分配的差别，
+   * 而使用者要的正是「同一批任务交给不同策略，路线分配哪里不一样」。
+   */
+  route: string;
+  /** 途经段数（`route.nodeIds.length - 1`）；没有路线时为 0。 */
+  routeSegments: number;
+  /** 执行段里程（m，取整）；没有路线时为 0。 */
+  routeDistanceM: number;
 }
 
 /** 一条派发计划 → 表格行。 */
@@ -183,8 +195,25 @@ export function planRowOf(plan: PlanPreview, taskCodes: Map<string, string>): Pl
     lateS: seconds(plan.costDetail.penaltyLateS),
     chargeRisk: plan.costDetail.chargeRisk.toFixed(2),
     cost: plan.cost.toFixed(1),
-    doneAt: clockOf(plan.occupiedTo)
+    doneAt: clockOf(plan.occupiedTo),
+    route: routeTextOf(plan),
+    routeSegments: plan.route ? Math.max(0, plan.route.nodeIds.length - 1) : 0,
+    routeDistanceM: plan.route ? Math.round(plan.route.distanceM) : 0
   };
+}
+
+/**
+ * 一条计划的路线摘要（`载货段 N 段 / M m`）。
+ *
+ * 没有路线时说「无路线」而不是留空：空单元格读起来像「界面没做完」，
+ * 而「有一单没算出路线」是一条要立刻看到的事实（风险预检也会为它报一条）。
+ */
+function routeTextOf(plan: PlanPreview): string {
+  if (!plan.route) {
+    return '无路线';
+  }
+  const segments = Math.max(0, plan.route.nodeIds.length - 1);
+  return `${segments} 段 · ${Math.round(plan.route.distanceM)} m`;
 }
 
 export interface RejectRow {
@@ -233,6 +262,66 @@ export function rejectRowOf(item: RejectItem, taskCodes: Map<string, string>): R
   };
 }
 
+/* ==================== 批量指标（「哪个更快、快多少」的数据来源） ==================== */
+
+/** 秒数 → 人读时长（`95s` 读不出「快了多少」，`1 分 35 秒` 可以）。 */
+export function durationText(value: number): string {
+  const total = Math.round(value);
+  if (total < 60) {
+    return `${total} 秒`;
+  }
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return rest === 0 ? `${minutes} 分` : `${minutes} 分 ${rest} 秒`;
+}
+
+/**
+ * 一批计划的**可比指标**：对比表里的「执行里程 / 行驶耗时 / 完成时刻 / 用车」。
+ *
+ * 口径必须定在这里而不是散在组件里，否则「哪个策略更快」这句话会随渲染点变化：
+ *   - `distanceM` 只累加**执行段**（任务起点 → 终点）。空驶段没有路线摘要
+ *     （`PlanPreview.route` 是执行段，见 `shared/src/dispatch-evaluate.ts`），
+ *     因此它不是「总里程」—— 列名也必须照实写「执行里程」；
+ *   - `driveS` 是空驶 + 执行，即**车真正在动的时间**；等待与晚点不算行驶；
+ *   - `finishAt` 取**最后一条计划**的完成时刻（整批做完的时刻）；
+ *   - `relayTasks` 是「同一辆车接了第 2 单起」的单数 —— 它正是贪心比匈牙利多派的那部分。
+ */
+export interface OutcomeMetrics {
+  distanceM: number;
+  driveS: number;
+  finishAt: string | null;
+  vehicleCount: number;
+  relayTasks: number;
+}
+
+export function outcomeMetricsOf(outcome: StrategyResult): OutcomeMetrics {
+  const vehicles = new Set<string>();
+  const perVehicle = new Map<string, number>();
+  let distanceM = 0;
+  let driveS = 0;
+  let lastDone = Number.NEGATIVE_INFINITY;
+  let finishAt: string | null = null;
+
+  for (const plan of outcome.plans) {
+    vehicles.add(plan.vehicleId);
+    perVehicle.set(plan.vehicleId, (perVehicle.get(plan.vehicleId) ?? 0) + 1);
+    distanceM += plan.route?.distanceM ?? 0;
+    driveS += plan.costDetail.deadheadTimeS + plan.costDetail.executeTimeS;
+    const done = Date.parse(plan.occupiedTo);
+    if (!Number.isNaN(done) && done > lastDone) {
+      lastDone = done;
+      finishAt = plan.occupiedTo;
+    }
+  }
+
+  let relayTasks = 0;
+  for (const count of perVehicle.values()) {
+    relayTasks += Math.max(0, count - 1);
+  }
+
+  return { distanceM, driveS, finishAt, vehicleCount: vehicles.size, relayTasks };
+}
+
 export interface OutcomeRow {
   strategy: string;
   label: string;
@@ -242,10 +331,19 @@ export interface OutcomeRow {
   totalCost: string;
   elapsedMs: number;
   recommended: boolean;
+  /** 执行里程合计（m，取整展示）——「哪个策略少跑路」的直接依据。 */
+  distance: string;
+  /** 行驶耗时合计（空驶 + 执行）——「哪个策略更快」的直接依据。 */
+  drive: string;
+  /** 整批完成时刻（`HH:mm:ss`）；没有计划时为 `—`。 */
+  finishAt: string;
+  /** 用车数与其中的接力单数（`4 台（含接力 1 单）`）。 */
+  fleet: string;
 }
 
 /** 单条策略的小结（对比表的一行）。 */
 export function outcomeRowOf(outcome: StrategyResult, recommendedStrategy: string | null): OutcomeRow {
+  const metrics = outcomeMetricsOf(outcome);
   return {
     strategy: outcome.strategy,
     label: strategyLabel(outcome.strategy),
@@ -254,8 +352,142 @@ export function outcomeRowOf(outcome: StrategyResult, recommendedStrategy: strin
     rejectedCount: outcome.summary.rejectedCount,
     totalCost: outcome.summary.totalCost.toFixed(1),
     elapsedMs: Math.round(outcome.summary.elapsedMs),
-    recommended: outcome.strategy === recommendedStrategy
+    recommended: outcome.strategy === recommendedStrategy,
+    distance: `${Math.round(metrics.distanceM)} m`,
+    drive: durationText(metrics.driveS),
+    finishAt: metrics.finishAt ? clockOf(metrics.finishAt) : '—',
+    fleet:
+      metrics.relayTasks > 0
+        ? `${metrics.vehicleCount} 台（含接力 ${metrics.relayTasks} 单）`
+        : `${metrics.vehicleCount} 台`
   };
+}
+
+export interface DifferenceLine {
+  /** 被比较的策略（与被推荐的策略相对）。 */
+  strategy: string;
+  label: string;
+  /** 一句话列出「它在哪里更好」；一条都没有时说明它全面落后。 */
+  text: string;
+}
+
+/**
+ * 「推荐的那个 vs 其它」的**逐项差异**。
+ *
+ * 推荐语只回答「选哪个」，回答不了「差在哪」—— 使用者要知道的是
+ * 「另一个少跑 450 m、早 2 分 20 秒完成，但少派 1 单」这种可核对的话。
+ * 因此这里逐项比指派数、执行里程、行驶耗时、完成时刻，**每一项都给出差值**。
+ *
+ * 只说「另一个更好的项」：把它落后的项也一并列出，读起来像在同时推荐两个策略。
+ */
+export function differenceLinesOf(
+  outcomes: readonly StrategyResult[],
+  recommendedStrategy: string | null
+): DifferenceLine[] {
+  if (!recommendedStrategy || outcomes.length < 2) {
+    return [];
+  }
+  const recommended = outcomes.find((item) => item.strategy === recommendedStrategy);
+  if (!recommended) {
+    return [];
+  }
+  const base = outcomeMetricsOf(recommended);
+  return outcomes
+    .filter((item) => item.strategy !== recommendedStrategy)
+    .map((item) => {
+      const other = outcomeMetricsOf(item);
+      const parts: string[] = [];
+      const assigned = item.summary.assigned - recommended.summary.assigned;
+      if (assigned > 0) parts.push(`多派 ${assigned} 单`);
+      const savedM = Math.round(base.distanceM - other.distanceM);
+      if (savedM > 0) parts.push(`少跑 ${savedM} m`);
+      const savedS = base.driveS - other.driveS;
+      if (savedS > 0.5) parts.push(`少行驶 ${durationText(savedS)}`);
+      // 完成时刻：两边都有计划时才能比「谁先做完」
+      const baseDone = base.finishAt ? Date.parse(base.finishAt) : Number.NaN;
+      const otherDone = other.finishAt ? Date.parse(other.finishAt) : Number.NaN;
+      if (!Number.isNaN(baseDone) && !Number.isNaN(otherDone)) {
+        const earlierS = (baseDone - otherDone) / 1000;
+        // `durationText` 自带「59 秒」里的空格，这里不再补一个 —— 「早 59 秒 完成」多了一处断句
+        if (earlierS > 0.5) parts.push(`早 ${durationText(earlierS)}完成`);
+      }
+      const label = strategyLabel(item.strategy);
+      return {
+        strategy: item.strategy,
+        label,
+        text:
+          parts.length > 0
+            ? `「${label}」更优的地方：${parts.join('、')}`
+            : `「${label}」在指派数、里程、耗时、完成时刻上没有一项优于「${strategyLabel(recommendedStrategy)}」`
+      };
+    });
+}
+
+/**
+ * 派发明细的**按车辆分组视图**：一辆车一块，块内按时间排序列出它接的单。
+ *
+ * 为什么必须有这一屏：平铺的「任务 → 车辆」表看不出**接力**。一辆车接了 2 单时，
+ * 表里只是两行同名的车，使用者读不出「先 A 后 B、B 用的是 A 做完之后的同一台车」——
+ * 而这正是「贪心比匈牙利多派 1 单」的全部原因。
+ *
+ * `relay` 为真即「这台车在一批里接了不止一单」，`seq` 是它的接单顺序。
+ */
+export interface VehiclePlanStep {
+  seq: number;
+  taskId: string;
+  taskCode: string;
+  beginsAt: string;
+  doneAt: string;
+  deadheadS: string;
+  executeS: string;
+  distanceM: number;
+  cost: string;
+}
+
+export interface VehiclePlanGroup {
+  vehicleId: string;
+  vehicleCode: string;
+  relay: boolean;
+  steps: VehiclePlanStep[];
+}
+
+export function vehiclePlanGroupsOf(
+  outcome: StrategyResult,
+  taskCodes: Map<string, string>
+): VehiclePlanGroup[] {
+  const groups = new Map<string, VehiclePlanGroup>();
+  for (const plan of outcome.plans) {
+    let group = groups.get(plan.vehicleId);
+    if (!group) {
+      group = { vehicleId: plan.vehicleId, vehicleCode: plan.vehicleCode, relay: false, steps: [] };
+      groups.set(plan.vehicleId, group);
+    }
+    group.steps.push({
+      seq: 0,
+      taskId: plan.taskId,
+      taskCode: codeOf(taskCodes, plan.taskId),
+      beginsAt: clockOf(plan.occupiedFrom),
+      doneAt: clockOf(plan.occupiedTo),
+      deadheadS: seconds(plan.costDetail.deadheadTimeS),
+      executeS: seconds(plan.costDetail.executeTimeS),
+      distanceM: plan.route?.distanceM ?? 0,
+      cost: plan.cost.toFixed(1)
+    });
+  }
+
+  const list = [...groups.values()];
+  for (const group of list) {
+    // 组内按开始时刻升序：接力看的就是「先跑哪一单」
+    group.steps.sort((a, b) => (a.beginsAt < b.beginsAt ? -1 : a.beginsAt > b.beginsAt ? 1 : 0));
+    group.steps.forEach((step, index) => {
+      step.seq = index + 1;
+    });
+    group.relay = group.steps.length > 1;
+  }
+  // 车辆之间也按「第一单的开始时刻」排：界面顺序与时间轴一致
+  const firstAt = (group: VehiclePlanGroup) => (group.steps[0] ? group.steps[0].beginsAt : '');
+  list.sort((a, b) => (firstAt(a) < firstAt(b) ? -1 : firstAt(a) > firstAt(b) ? 1 : 0));
+  return list;
 }
 
 export interface Recommendation {

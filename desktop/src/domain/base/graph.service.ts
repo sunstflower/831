@@ -171,6 +171,7 @@ export function createEdge(ctx: CrudContext, raw: Record<string, unknown>) {
       toNodeId: input.toNodeId,
       lengthM,
       speedLimitMps: input.speedLimitMps,
+      weight: input.weight,
       remark: input.remark
     });
     const created = requireEdge(ctx.db, id);

@@ -28,8 +28,9 @@ import { apply, listDispatchLogs, listStrategies, manualAssign, preview, recompu
  * 权限（S8：dispatcher 可通过、monitor 被拒）**不在本层**：与其它模块一致，
  * 权限由 `ipc/router.ts` 在路由注册表上集中强制（见 `ipc/api.dispatch.test.ts`）。
  *
- * 用 seed 的真实网格（`seed-n01`..`seed-n12`，每段 20 m）与真实站点 / 车辆：
- * 期望值因此能手工核对（D-26 同类口径），且不会因为造一批假节点而与地图页看得不一样。
+ * 用 seed 的**真实站点 / 车辆 / 校园路网**：期望值因此与界面、与手工走查对得上
+ * （D-26 同类口径）。里程与耗时**不写死字面量** —— 它们由拥堵权重与占道封路共同决定，
+ * 写死会让「换一份地图数据」变成 20 个用例同时变红（本轮实测）。
  */
 const ACTOR: AuditContext = { actorId: 'seed-admin', actorName: 'admin', role: 'admin', traceId: 'trace-m4' };
 
@@ -64,8 +65,8 @@ function pendingTask(ctx: CrudContext, overrides: Record<string, unknown> = {}) 
   return createTask(ctx, {
     title: `调度用例任务 ${seq}`,
     cargoKg: 100,
-    fromSiteId: SEED_IDS.siteDepotA,
-    toSiteId: SEED_IDS.siteDepotB,
+    fromSiteId: SEED_IDS.siteDepot,
+    toSiteId: SEED_IDS.siteDorm,
     submit: true,
     ...overrides
   });
@@ -152,15 +153,18 @@ describe('M4 调度服务 · preview', () => {
   it('超高载重任务被拒：reason 与 detail 都带具体数字（Req-M4-2）', () => {
     // 把演示车 AGV-01 放开，否则它会以 VEHICLE_NOT_AVAILABLE 抢先成为「第一个失败原因」
     run(db, "UPDATE vehicles SET status = 'idle' WHERE id = ?", [SEED_IDS.vehicleAgv]);
-    const task = pendingTask(ctx, { cargoKg: 900 });
+    // 载重必须**超过全部车辆**的上限（当前最大是 CAR-02 的 1200 kg），
+    // 否则「没有车能装」会变成「另一台车能装」——那测的就不是拒绝原因了
+    const task = pendingTask(ctx, { cargoKg: 2000 });
 
     const outcome = preview(ctx, { taskIds: [task.id], strategy: 'greedy' }).strategies[0]!;
     expect(outcome.plans).toHaveLength(0);
     expect(outcome.rejected).toHaveLength(1);
+    // 第一个被评估的车（按 code 升序）给出「载重超限」这一条原因
     expect(outcome.rejected[0]).toMatchObject({
       taskId: task.id,
       reason: 'LOAD_EXCEEDED',
-      detail: { cargoKg: 900, vehicleCode: 'AGV-01' }
+      detail: { cargoKg: 2000, vehicleCode: 'AGV-01' }
     });
     expect(outcome.explain.some((line) => line.includes('载重超限'))).toBe(true);
     expect(count(db, 'SELECT COUNT(*) AS total FROM dispatch_plans')).toBe(0);
@@ -179,7 +183,7 @@ describe('M4 调度服务 · preview', () => {
 
   it('站点未绑定路网节点是配置问题：VALIDATION.FAILED 且字段级指向 fromSiteId', () => {
     const task = pendingTask(ctx);
-    run(db, 'UPDATE sites SET node_id = NULL WHERE id = ?', [SEED_IDS.siteDepotA]);
+    run(db, 'UPDATE sites SET node_id = NULL WHERE id = ?', [SEED_IDS.siteDepot]);
     const error = expectDomainError(() => preview(ctx, { taskIds: [task.id], strategy: 'greedy' }), 'VALIDATION.FAILED');
     expect(Object.keys((error.detail['fields'] ?? {}) as object)).toEqual(['fromSiteId']);
   });
@@ -225,7 +229,11 @@ describe('M4 调度服务 · apply', () => {
     )!;
     expect(route.task_id).toBe(task.id);
     expect((JSON.parse(route.edge_ids) as string[]).length).toBeGreaterThan(0);
-    expect(route.distance_m).toBe(100);
+    // 落库的路线与预览里那条**逐字段一致**（「所见即所得」，Req-M4-3）。
+    // 不写死具体里程：里程由校园路网与拥堵权重决定，写死只会每次换数据都变红
+    const previewRoute = previewResult.strategies[0]!.plans[0]!.route!;
+    expect(route.distance_m).toBe(previewRoute.distanceM);
+    expect(route.distance_m).toBeGreaterThan(0);
     // 日志与审计
     expect(count(db, "SELECT COUNT(*) AS total FROM dispatch_logs WHERE request_id = ? AND action = 'apply'", previewResult.requestId)).toBe(1);
     const auditActions = all<{ action: string }>(
@@ -251,8 +259,8 @@ describe('M4 调度服务 · apply', () => {
     const second = pendingTask(ctx, {
       cargoKg: 400,
       priority: 'normal',
-      fromSiteId: SEED_IDS.siteDepotB,
-      toSiteId: SEED_IDS.siteDepotA
+      fromSiteId: SEED_IDS.siteDorm,
+      toSiteId: SEED_IDS.siteDepot
     });
     const previewResult = preview(ctx, { taskIds: [first.id, second.id], strategy: 'greedy' });
     const outcome = previewResult.strategies[0]!;
@@ -279,13 +287,15 @@ describe('M4 调度服务 · apply', () => {
   });
 
   it('跨批次：车辆已是 reserved 时不再接新单（有意的保守边界，见 §3.4.3）', () => {
-    const first = pendingTask(ctx, { cargoKg: 400 });
+    // 900 kg 只有 CAR-02（1200 kg）装得下 —— 用「唯一的可行车」把这条边界钉死，
+    // 否则一辆车被预留后，另一辆空闲车会顶上，用例就测不到「跨批次不接单」
+    const first = pendingTask(ctx, { cargoKg: 900 });
     const firstPreview = preview(ctx, { taskIds: [first.id], strategy: 'greedy' });
     apply(ctx, { requestId: firstPreview.requestId, strategy: 'greedy' });
-    expect(vehicleStatus(db, SEED_IDS.vehicleCarrier)).toBe('reserved');
+    expect(vehicleStatus(db, SEED_IDS.vehicleCarrier2)).toBe('reserved');
 
-    // 第二单**另起一次预览**：这时 CAR-01 已 reserved，不参与候选
-    const second = pendingTask(ctx, { cargoKg: 400 });
+    // 第二单**另起一次预览**：这时 CAR-02 已 reserved，不参与候选
+    const second = pendingTask(ctx, { cargoKg: 900 });
     const secondPreview = preview(ctx, { taskIds: [second.id], strategy: 'greedy' });
     const outcome = secondPreview.strategies[0]!;
     expect(outcome.plans).toHaveLength(0);
@@ -302,8 +312,8 @@ describe('M4 调度服务 · apply', () => {
     const second = pendingTask(ctx, {
       cargoKg: 400,
       priority: 'normal',
-      fromSiteId: SEED_IDS.siteDepotB,
-      toSiteId: SEED_IDS.siteDepotA
+      fromSiteId: SEED_IDS.siteDorm,
+      toSiteId: SEED_IDS.siteDepot
     });
     const previewResult = preview(ctx, { taskIds: [first.id, second.id], strategy: 'greedy' });
     apply(ctx, { requestId: previewResult.requestId, strategy: 'greedy' });

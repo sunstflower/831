@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { campusNodeId } from '@udm/shared';
 import { openDatabase, type Db } from '../db/index.js';
 import { applyMigrations } from '../db/migrate.js';
 import { seedDatabase } from '../db/seed.js';
@@ -33,6 +34,9 @@ function setup() {
   const monitor = login(db, sessions, { username: 'monitor', password: 'monitor123' }, 't-mon');
   return { db, router, bus, admin, dispatcher, monitor };
 }
+
+const NODE_ID = campusNodeId('N01');
+const NODE_ID_2 = campusNodeId('N02');
 
 describe('ipc · M2 写接口', () => {
   let db: Db;
@@ -239,14 +243,15 @@ describe('ipc · M2 写接口', () => {
       path: '/api/restrictions',
       method: 'POST',
       token: admin.token,
-      payload: { type: 'edge', targetId: 'seed-e-N01-N05', reason: '道路施工' }
+      payload: { type: 'node', targetId: NODE_ID, reason: '道路施工' }
     });
     expect(created.code).toBe(0);
     const id = (created as { data: { id: string } }).data.id;
     // 目标编码是派生字段：列表与详情都要有（否则界面上这一列永远是空的）
-    const list = await router.invoke({ path: '/api/restrictions', token: admin.token, payload: { type: 'edge' } });
+    // 按 type 过滤成 `node`：seed 自带的 2 条占道规则是 `edge` 类型，不会混进来
+    const list = await router.invoke({ path: '/api/restrictions', token: admin.token, payload: { type: 'node' } });
     expect(list.code === 0 && (list.data as { total: number }).total).toBe(1);
-    expect((list as { data: { records: Array<{ targetCode: string }> } }).data.records[0]!.targetCode).toBe('E_N01_N05');
+    expect((list as { data: { records: Array<{ targetCode: string }> } }).data.records[0]!.targetCode).toBe('N01');
 
     const expired = await router.invoke({ path: `/api/restrictions/${id}`, method: 'PUT', token: admin.token, payload: { status: 'expired' } });
     expect(expired.code === 0 && (expired.data as { status: string }).status).toBe('expired');
@@ -254,7 +259,7 @@ describe('ipc · M2 写接口', () => {
     const deleted = await router.invoke({ path: `/api/restrictions/${id}`, method: 'DELETE', token: admin.token });
     expect(deleted).toMatchObject({ code: 0, data: { deleted: true } });
     // 物理删除：列表里真的没有它（不是打标记），且审计里留了 delete
-    const after = await router.invoke({ path: '/api/restrictions', token: admin.token });
+    const after = await router.invoke({ path: '/api/restrictions', token: admin.token, payload: { type: 'node' } });
     expect(after.code === 0 && (after.data as { total: number }).total).toBe(0);
     const deleteAudit = db.prepare("SELECT COUNT(*) AS total FROM audit_logs WHERE action = 'delete' AND object_type = 'restriction'").get() as { total: number };
     expect(deleteAudit.total).toBe(1);
@@ -266,7 +271,7 @@ describe('ipc · M2 写接口', () => {
         path: '/api/restrictions',
         method: 'POST',
         token,
-        payload: { type: 'node', targetId: 'seed-n01', reason: 'x' }
+        payload: { type: 'node', targetId: NODE_ID, reason: 'x' }
       });
       expect(create).toMatchObject({ code: 'AUTH.FORBIDDEN' });
       const remove = await router.invoke({ path: '/api/restrictions/anything', method: 'DELETE', token });
@@ -275,11 +280,11 @@ describe('ipc · M2 写接口', () => {
   });
 
   it('DELETE 落在对的记录上：只删目标那一条，其它规则不受影响', async () => {
-    const first = await router.invoke({ path: '/api/restrictions', method: 'POST', token: admin.token, payload: { type: 'node', targetId: 'seed-n01', reason: 'A' } });
-    const second = await router.invoke({ path: '/api/restrictions', method: 'POST', token: admin.token, payload: { type: 'node', targetId: 'seed-n02', reason: 'B' } });
+    const first = await router.invoke({ path: '/api/restrictions', method: 'POST', token: admin.token, payload: { type: 'node', targetId: NODE_ID, reason: 'A' } });
+    const second = await router.invoke({ path: '/api/restrictions', method: 'POST', token: admin.token, payload: { type: 'node', targetId: NODE_ID_2, reason: 'B' } });
     const firstId = (first as { data: { id: string } }).data.id;
     await router.invoke({ path: `/api/restrictions/${firstId}`, method: 'DELETE', token: admin.token });
-    const list = await router.invoke({ path: '/api/restrictions', token: admin.token });
+    const list = await router.invoke({ path: '/api/restrictions', token: admin.token, payload: { type: 'node' } });
     const rules = (list as { data: { records: Array<{ id: string; reason: string }> } }).data.records;
     expect(rules.map((rule) => rule.reason)).toEqual(['B']);
     expect(rules[0]!.id).toBe((second as { data: { id: string } }).data.id);

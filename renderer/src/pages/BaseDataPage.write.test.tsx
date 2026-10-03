@@ -11,7 +11,7 @@ import type { InvokeOptions } from '../api/client';
  * 基础数据页的**写操作**（jsdom + mock 适配器）。
  *
  * 与 `BaseDataPage.test.tsx` 分开一个文件，是因为 mock 适配器是**内存库**：
- * 写测试会真的改数据（新增站点、把 B-01 停用），而渲染/查询测试断言的是
+ * 写测试会真的改数据（新增站点、把 ST01 停用），而渲染/查询测试断言的是
  * 「seed 的初始形态」。两者共用一个文件时，用例顺序一变就会互相污染 ——
  * 那种失败看起来像是「功能坏了」，排查成本远高于拆成两个文件。
  *
@@ -45,7 +45,7 @@ async function renderPage(role: 'admin' | 'monitor' = 'admin') {
   );
 }
 
-async function loaded(code = 'A-01') {
+async function loaded(code = 'DEPOT') {
   await waitFor(() => expect(screen.getByText(code)).toBeInTheDocument());
 }
 
@@ -87,8 +87,8 @@ describe('BaseDataPage · 新增', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('编码'), { target: { value: 'W-09' } });
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '北门站点' } });
-    // seed 的 N04 在 (60, 0)
-    await pickNode('绑定节点', 'seed-n04');
+    // seed 的 N44 在 (600, 600)（校园路网东南角）
+    await pickNode('绑定节点', 'seed-n-N44');
     fireEvent.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已新增站点记录'));
@@ -99,8 +99,8 @@ describe('BaseDataPage · 新增', () => {
     await waitFor(() => expect(screen.getByText('W-09')).toBeInTheDocument());
     const row = rowOf('W-09');
     expect(within(row).getByText('北门站点')).toBeInTheDocument();
-    expect(within(row).getByText('60, 0')).toBeInTheDocument();
-    expect(within(row).getByText('seed-n04')).toBeInTheDocument();
+    expect(within(row).getByText('600, 600')).toBeInTheDocument();
+    expect(within(row).getByText('seed-n-N44')).toBeInTheDocument();
   });
 
   it('必填项为空时**在客户端就拦住**：字段下标红，且不发请求（没有成功提示）', async () => {
@@ -126,13 +126,13 @@ describe('BaseDataPage · 新增', () => {
     await loaded();
 
     fireEvent.click(screen.getByRole('button', { name: '新增站点' }));
-    fireEvent.change(screen.getByLabelText('编码'), { target: { value: 'A-01' } });
+    fireEvent.change(screen.getByLabelText('编码'), { target: { value: 'DEPOT' } });
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '重复编码' } });
     fireEvent.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => expect(screen.getByText('编码已存在')).toBeInTheDocument());
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByLabelText('编码')).toHaveValue('A-01');
+    expect(screen.getByLabelText('编码')).toHaveValue('DEPOT');
   });
 });
 
@@ -140,26 +140,26 @@ describe('BaseDataPage · 编辑', () => {
   it('编码在编辑态只读（服务端对补丁里的 code 直接报错，界面就不该让人改）', async () => {
     await renderPage();
     await loaded();
-    fireEvent.click(within(rowOf('A-01')).getByRole('button', { name: '编辑' }));
+    fireEvent.click(within(rowOf('DEPOT')).getByRole('button', { name: '编辑' }));
     expect(screen.getByLabelText('编码')).toBeDisabled();
   });
 
   it('改绑定节点后坐标跟随新节点 —— 证明这次没把没动过的 x/y 一起提交', async () => {
     await renderPage();
     await loaded();
-    // A-01 在 N01 (0,0)；改成 B-01 所在的 N12 (60,40)
-    fireEvent.click(within(rowOf('A-01')).getByRole('button', { name: '编辑' }));
-    await pickNode('绑定节点', 'seed-n12');
+    // DEPOT 在 (300, -80)；改绑到 N00 (0, 0) 后坐标必须跟着它走
+    fireEvent.click(within(rowOf('DEPOT')).getByRole('button', { name: '编辑' }));
+    await pickNode('绑定节点', 'seed-n-N00');
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已保存站点修改'));
-    await waitFor(() => expect(within(rowOf('A-01')).getByText('60, 40')).toBeInTheDocument());
+    await waitFor(() => expect(within(rowOf('DEPOT')).getByText('0, 0')).toBeInTheDocument());
   });
 
   it('什么都没改就保存 → 明说「没有任何修改」，不发请求', async () => {
     await renderPage();
     await loaded();
-    fireEvent.click(within(rowOf('A-01')).getByRole('button', { name: '编辑' }));
+    fireEvent.click(within(rowOf('DEPOT')).getByRole('button', { name: '编辑' }));
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => expect(screen.getByText('没有任何修改')).toBeInTheDocument());
@@ -173,12 +173,12 @@ describe('BaseDataPage · 停用 / 启用', () => {
     await renderPage();
     await loaded();
 
-    fireEvent.click(within(rowOf('B-01')).getByRole('button', { name: '停用' }));
-    await waitFor(() => expect(within(rowOf('B-01')).getByText('已停用')).toBeInTheDocument());
+    fireEvent.click(within(rowOf('ST01')).getByRole('button', { name: '停用' }));
+    await waitFor(() => expect(within(rowOf('ST01')).getByText('已停用')).toBeInTheDocument());
     expect(screen.getByRole('status')).toHaveTextContent('已停用');
 
-    fireEvent.click(within(rowOf('B-01')).getByRole('button', { name: '启用' }));
-    await waitFor(() => expect(within(rowOf('B-01')).getByText('启用')).toBeInTheDocument());
+    fireEvent.click(within(rowOf('ST01')).getByRole('button', { name: '启用' }));
+    await waitFor(() => expect(within(rowOf('ST01')).getByText('启用')).toBeInTheDocument());
   });
 
   it('调度占用中的车不能停用：按钮直接禁用并说明原因（不让使用者点了才被拒）', async () => {
@@ -192,6 +192,85 @@ describe('BaseDataPage · 停用 / 启用', () => {
     expect(busyButton).toHaveAttribute('title', expect.stringContaining('执行任务'));
     // 空闲车照常可停用
     expect(within(rowOf('CAR-01')).getByRole('button', { name: '停用' })).toBeEnabled();
+  });
+});
+
+describe('BaseDataPage · 新增车辆', () => {
+  /**
+   * 用户要的是「能加车、加完就能用」。这两个动作**必须一起证明**：
+   * 只证明「列表里多了一行」，加出来的可能是一台永远派不出去的车
+   * （没有落点 → 调度算不出空驶段），而界面上完全看不出来。
+   */
+  it('选所在节点、坐标留空 → 坐标跟随节点，且这台车马上能被派到任务', async () => {
+    await renderPage();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: '车辆' }));
+    await waitFor(() => expect(screen.getByText('AGV-01')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: '新增车辆' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('编码'), { target: { value: 'CAR-09' } });
+    fireEvent.change(within(dialog).getByLabelText('名称'), { target: { value: '加班车' } });
+    fireEvent.change(within(dialog).getByLabelText('额定载重 (kg)'), { target: { value: '800' } });
+    fireEvent.change(within(dialog).getByLabelText('最高速度 (m/s)'), { target: { value: '3' } });
+    // 坐标两个框都留空：位置由所在节点决定（与站点表单同一口径）
+    await pickNode('所在节点', 'seed-n-N13');
+    fireEvent.click(within(dialog).getByRole('button', { name: '创建' }));
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已新增车辆记录'));
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'CAR-09' } });
+    await waitFor(() => expect(screen.getByText('CAR-09')).toBeInTheDocument());
+    // 车辆表没有坐标列（它显示的是「所在节点」），因此这里断言节点，
+    // 坐标的正确性用接口回读证明（见下）—— 坐标是**服务端**按节点派生的，不是客户端拼的
+    expect(within(rowOf('CAR-09')).getByText('seed-n-N13')).toBeInTheDocument();
+
+    const token = useSessionStore.getState().token;
+    const listed = await apiClient.invoke<{ records: Array<{ id: string; code: string; status: string; currentNodeId: string | null }> }>(
+      '/api/vehicles',
+      { keyword: 'CAR-09', page: 1, pageSize: 5 },
+      token
+    );
+    expect(listed.code).toBe(0);
+    const created = listed.code === 0 ? listed.data.records.find((item) => item.code === 'CAR-09') : undefined;
+    expect(created).toMatchObject({ status: 'idle', currentNodeId: 'seed-n-N13' });
+
+    // 真正的验收标准：这台车能被派到一条真实任务上（手动指派是最确定的证明方式）
+    const pending = await apiClient.invoke<{ records: Array<{ id: string; code: string }> }>(
+      '/api/tasks',
+      { status: 'pending', page: 1, pageSize: 5 },
+      token
+    );
+    expect(pending.code).toBe(0);
+    const task = pending.code === 0 ? pending.data.records[0] : undefined;
+    expect(task, '测试前置：需要有待派任务').toBeDefined();
+    const dispatched = await apiClient.invoke(
+      '/api/dispatch/manual-assign',
+      { taskId: task!.id, vehicleId: created!.id, reason: '新车试派' },
+      token,
+      { method: 'POST' }
+    );
+    expect(dispatched.code, JSON.stringify(dispatched)).toBe(0);
+  });
+
+  it('既没选节点也没填坐标 → 客户端不拦，但服务端明确报必填（不静默落到原点）', async () => {
+    await renderPage();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: '车辆' }));
+    await waitFor(() => expect(screen.getByText('AGV-01')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: '新增车辆' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('编码'), { target: { value: 'CAR-10' } });
+    fireEvent.change(within(dialog).getByLabelText('名称'), { target: { value: '无位置车' } });
+    fireEvent.change(within(dialog).getByLabelText('额定载重 (kg)'), { target: { value: '800' } });
+    fireEvent.change(within(dialog).getByLabelText('最高速度 (m/s)'), { target: { value: '3' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '创建' }));
+
+    // 报错挂在**坐标字段**上，且弹层不关（输入不丢）
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+    await waitFor(() => expect(within(dialog).getByLabelText('初始 x (m)')).toHaveAttribute('aria-invalid', 'true'));
+    expect(within(dialog).getByLabelText('初始 y (m)')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });
 
@@ -243,23 +322,25 @@ describe('BaseDataPage · 禁行规则（唯一允许物理删除的实体）', 
     await renderPage();
     await loaded();
     await openTab('禁行规则');
-    expect(screen.getByText(/还没有禁行规则/)).toBeInTheDocument();
+    // seed 自带两条「样本占道」规则（单车道被占 → 整条路不可通行），
+    // 因此这里不能断言空态；先确认它们在列表里，再验证「新增」这条路径
+    await waitFor(() => expect(screen.getByText('E_N12_N13')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: '新增禁行规则' }));
     // 目标选择器是**多态**的：类型决定候选；切换类型时必须清掉旧目标（否则会提交
     // 「类型是 edge、id 是某个节点」这种必然被拒的组合）
     fireEvent.change(screen.getByLabelText('目标类型'), { target: { value: 'edge' } });
-    await pickNode('目标', 'seed-e-N01-N05');
+    await pickNode('目标', 'seed-e-E_N00_N10');
     fireEvent.change(screen.getByLabelText('原因'), { target: { value: '道路施工' } });
     fireEvent.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => expect(screen.getByText(/已新增禁行规则记录/)).toBeInTheDocument());
-    // `E_N01_N05` 是**派生**出来的目标编码（不是存下来的）—— 界面上必须看得到，
+    // `E_N00_N10` 是**派生**出来的目标编码（不是存下来的）—— 界面上必须看得到，
     // 否则使用者只看到一个 UUID，无法确认自己封的是哪条路
-    await waitFor(() => expect(screen.getByText('E_N01_N05')).toBeInTheDocument());
-    expect(within(rowOf('E_N01_N05')).getByText('有向边')).toBeInTheDocument();
-    expect(within(rowOf('E_N01_N05')).getByText('不限时段')).toBeInTheDocument();
-    expect(within(rowOf('E_N01_N05')).getByText('全部车辆')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('E_N00_N10')).toBeInTheDocument());
+    expect(within(rowOf('E_N00_N10')).getByText('有向边')).toBeInTheDocument();
+    expect(within(rowOf('E_N00_N10')).getByText('不限时段')).toBeInTheDocument();
+    expect(within(rowOf('E_N00_N10')).getByText('全部车辆')).toBeInTheDocument();
   });
 
   it('删除要二次确认；取消不动数据，确认后行真的消失', async () => {
@@ -268,26 +349,26 @@ describe('BaseDataPage · 禁行规则（唯一允许物理删除的实体）', 
     await openTab('禁行规则');
     fireEvent.click(screen.getByRole('button', { name: '新增禁行规则' }));
     fireEvent.change(screen.getByLabelText('目标类型'), { target: { value: 'node' } });
-    await pickNode('目标', 'seed-n01');
+    await pickNode('目标', 'seed-n-N00');
     fireEvent.change(screen.getByLabelText('原因'), { target: { value: '临时封路' } });
     fireEvent.click(screen.getByRole('button', { name: '创建' }));
-    await waitFor(() => expect(screen.getByText('N01')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('N00')).toBeInTheDocument());
 
     // 取消：确认层关闭、行还在
-    fireEvent.click(within(rowOf('N01')).getByRole('button', { name: '删除' }));
+    fireEvent.click(within(rowOf('N00')).getByRole('button', { name: '删除' }));
     const confirm = screen.getByRole('alertdialog');
     expect(confirm).toHaveTextContent('不可撤销');
     fireEvent.click(within(confirm).getByRole('button', { name: '取消' }));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(screen.getByText('N01')).toBeInTheDocument();
+    expect(screen.getByText('N00')).toBeInTheDocument();
 
     // 确认：真删（物理删除）—— 行**消失**而不是变成「已失效」
-    fireEvent.click(within(rowOf('N01')).getByRole('button', { name: '删除' }));
+    fireEvent.click(within(rowOf('N00')).getByRole('button', { name: '删除' }));
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '确认删除' }));
     await waitFor(() => expect(screen.getByText(/已删除/)).toBeInTheDocument());
     // 只断言「这一行没了」而不是「列表空了」：mock 是模块级内存库，
     // 同一文件里先前用例建过的规则仍在（断言空态会让这条用例与执行顺序绑死）
-    await waitFor(() => expect(screen.queryByText('N01')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('N00')).not.toBeInTheDocument());
     expect(screen.queryByText('临时封路')).not.toBeInTheDocument();
   });
 

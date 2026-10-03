@@ -143,23 +143,26 @@ describe('图层布局不变量（ISS-053）', () => {
     }
   });
 
-  it('AGV-01 与站点 A-01 的具体几何：站点在车上、端点在两侧', () => {
+  it('共点四层（路网节点 / 站点 / 车辆 / 任务端点）的具体几何：站点在车上、端点在两侧', () => {
     const graph = buildFlow();
-    // N01 同时承载：路网节点、站点 A-01、车辆 AGV-01、演示任务的起点
+    // 演示数据里 AGV-01 停在配送中心，而配送中心的站点、演示任务的起点也在同一个路口上
     const vehicle = graph.nodes.find((node) => node.type === 'vehicle')!;
     const site = graph.nodes.find((node) => node.type === 'site')!;
     const endpoint = graph.nodes.find((node) => node.type === 'taskEndpoint')!;
+    // 锚点是**数据坐标**（配送中心不在原点，所以不能假设 x=0）；断言用「相对锚点的偏移」
+    const anchor = anchorOfFlow(vehicle);
 
     // 车辆**不动**：位置就是「车在哪」这个信息本身（见 LAYER_OFFSET 的说明）
-    expect(zero(vehicle.position.x)).toBe(0);
-    expect(zero(vehicle.position.y)).toBe(0);
+    expect(zero(vehicle.position.x - anchor.x)).toBe(0);
+    expect(zero(vehicle.position.y - anchor.y)).toBe(0);
     // 而站点确实被抬起来了（不是「也没动」）
-    expect(zero(site.position.x)).toBe(0);
-    expect(site.position.y).toBeCloseTo(-LAYER_OFFSET.site.y, 6);
+    expect(zero(site.position.x - anchor.x)).toBe(0);
+    expect(site.position.y).toBeCloseTo(anchor.y - LAYER_OFFSET.site.y, 3);
 
     // 站点抬起：底边必须高于车辆顶边，中间留出可见间隙（0 间隙也算「贴着」）
     const siteBottom = site.position.y + NODE_SIZE.site!.height / 2;
     const vehicleTop = vehicle.position.y - NODE_SIZE.vehicle!.height / 2;
+    expect(zero(endpoint.position.y - anchor.y)).toBe(0);
     expect(siteBottom).toBeLessThan(vehicleTop);
     // 而且间隙要真的看得见（≥ 8px），否则文字仍有视觉粘连
     expect(vehicleTop - siteBottom).toBeGreaterThanOrEqual(8);

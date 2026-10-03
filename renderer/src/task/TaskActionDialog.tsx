@@ -13,10 +13,30 @@
  */
 import { useEffect, useId, useRef } from 'react';
 import { IconAlert } from '../components/icons';
-import type { TaskActionDef } from './actions';
+
+/**
+ * 确认层**实际用到**的动作字段（结构类型，不绑定具体动作族）。
+ *
+ * 为什么不用 `TaskActionDef`：执行动作（M7 的开始执行 / 手动接管，见 `task/execution.ts`）
+ * 走的是另一组接口与权限点，但「确认层需要知道的」与任务动作完全一样
+ * （文案、副作用说明、是否必填原因）。绑死一个类型就得为同一套弹层写第二份，
+ * 而两份文案迟早分叉（D-34）。
+ */
+export interface TaskActionDialogDef {
+  label: string;
+  /**
+   * 确认按钮的样式：危险动作（取消、重派、接管）用红色，其余用主色。
+   * 与任务动作的 `TaskActionDef.style` 同义 —— 这里列出来是为了让弹层不依赖某个动作族。
+   */
+  style: 'ghost' | 'danger';
+  /** 副作用说明（唯一作者是各动作模块）。 */
+  note: string;
+  /** 是否必须填写原因。 */
+  reasonRequired: boolean;
+}
 
 export interface TaskActionDialogProps {
-  def: TaskActionDef;
+  def: TaskActionDialogDef;
   /** 被操作任务的标题（`编码 · 标题`），让使用者确认自己点的是哪一条。 */
   taskLabel: string;
   reason: string;

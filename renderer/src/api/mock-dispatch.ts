@@ -214,6 +214,7 @@ function buildSnapshot(
         toNodeId: row.toNodeId,
         lengthM: row.lengthM,
         speedLimitMps: row.speedLimitMps,
+        weight: row.weight,
         status: row.status
       })),
       restrictions: baseData.restrictions.map((row) => ({
@@ -244,6 +245,7 @@ function planRoute(
       toNodeId: row.toNodeId,
       lengthM: row.lengthM,
       speedLimitMps: row.speedLimitMps,
+      weight: row.weight,
       status: row.status
     })),
     restrictions: baseData.restrictions.map((row) => ({

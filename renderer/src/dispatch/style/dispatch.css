@@ -174,6 +174,28 @@
   color: var(--udm-text-dim);
 }
 
+/*
+ * 提示条里带一个动作（「在地图上查看这 N 台车」）时横排。
+ *
+ * 「已派发 N 单」是一句话，不是一个按钮 —— 两者挤成一行时按钮会被读成句子的一部分。
+ * 这里用 `flex` + 右侧留白把动作推到行尾。
+ */
+.udm-dispatch__notice {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-3);
+}
+
+.udm-dispatch__to-map {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/** 没有路线的那一行：整格变黄 —— 它是「这一单算不出路」的唯一提示。 */
+.udm-dispatch__noroute {
+  color: #fbbf24;
+}
+
 /* 被推荐的策略所在行：整行加一层底色，比只标一个小徽标更容易扫到 */
 .udm-dispatch__row--pick {
   background: rgba(56, 189, 248, 0.12);
@@ -206,4 +228,85 @@
   margin: 12px 0 4px;
   font-size: var(--udm-font-xs);
   color: var(--udm-text-dim);
+}
+
+/* 策略对比表下方的逐项差异：回答「另一个差在哪」，与推荐语分工不同 */
+.udm-dispatch__diffs {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+}
+
+.udm-dispatch__diffs li::before {
+  content: '·';
+  margin-right: 6px;
+}
+
+/*
+ * 按车辆分组的派发明细。
+ *
+ * 为什么单独一块而不是在表格里加一列：接力是一棵「车辆 → 多单」的树，
+ * 平铺的表格表达不了层次，硬塞只能靠重复车辆名，读的人要自己把两行拼起来。
+ */
+.udm-dispatch__fleet {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.udm-dispatch__fleet-group {
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-md);
+  padding: 8px 10px;
+}
+
+.udm-dispatch__fleet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: var(--udm-font-sm);
+}
+
+.udm-dispatch__fleet-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--udm-font-xs);
+  /* 时刻与里程要逐位对齐才好比较，等宽数字是这里的可读性关键 */
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-dispatch__fleet-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.udm-dispatch__fleet-seq {
+  min-width: 48px;
+  color: var(--udm-text-dim);
+}
+
+.udm-dispatch__fleet-task {
+  font-weight: 600;
+}
+
+.udm-dispatch__fleet-meta {
+  color: var(--udm-text-dim);
+}
+
+/* 接力清单里的时间区间：与上下的等宽数字对齐，扫一眼就能看出「首尾相接」 */
+.udm-dispatch__fleet-time {
+  font-variant-numeric: tabular-nums;
 }

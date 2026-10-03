@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { TASK_ACTIONS, TASK_API_ACTIONS, type TaskDetail, type TaskListItem } from '@udm/shared';
+import { SEED_IDS, TASK_ACTIONS, TASK_API_ACTIONS, type TaskDetail, type TaskListItem } from '@udm/shared';
 import { all, openDatabase, type Db } from '../db/index.js';
 import { applyMigrations } from '../db/migrate.js';
 import { seedDatabase } from '../db/seed.js';
+import { seedFixture } from '../db/seed-fixture.js';
 import { login } from '../services/auth.js';
 import { ExecutionRunner } from '../domain/execution/executor.js';
 import { EventBus } from '../services/event-bus.js';
@@ -38,8 +39,8 @@ function setup() {
 const DRAFT = {
   title: '接口用例任务',
   cargoKg: 50,
-  fromSiteId: 'seed-site-a',
-  toSiteId: 'seed-site-b'
+  fromSiteId: SEED_IDS.siteDepot,
+  toSiteId: SEED_IDS.siteDorm
 };
 
 describe('ipc · 任务接口（M3）', () => {
@@ -64,11 +65,13 @@ describe('ipc · 任务接口（M3）', () => {
     expect(result.code).toBe(0);
     if (result.code === 0) {
       const page = result.data as { records: TaskListItem[]; total: number; page: number; pageSize: number };
-      expect(page).toMatchObject({ page: 1, total: 1 });
-      expect(page.records[0]).toMatchObject({
-        code: 'T-DEMO-0001',
+      const fixture = seedFixture();
+      // seed 的 7 条任务都会出现在列表里（1 演示 + 6 待派发）
+      expect(page).toMatchObject({ page: 1, total: fixture.tasks.length });
+      const demo = page.records.find((row) => row.code === 'T-DEMO-0001')!;
+      expect(demo).toMatchObject({
         status: 'running',
-        fromSiteName: 'A 仓库',
+        fromSiteName: fixture.sites.find((site) => site.id === SEED_IDS.siteDepot)!.name,
         vehicleCode: 'AGV-01'
       });
     }
@@ -102,7 +105,11 @@ describe('ipc · 任务接口（M3）', () => {
     expect(result.code).toBe(0);
     if (result.code === 0) {
       const detail = result.data as TaskDetail;
-      expect(detail.route).toMatchObject({ nodeCount: 6, edgeCount: 5 });
+      const demoRoute = seedFixture().demoRoute;
+      expect(detail.route).toMatchObject({
+        nodeCount: demoRoute.nodeIds.length,
+        edgeCount: demoRoute.nodeIds.length - 1
+      });
       expect(detail.currentPlan).toBeNull();
       expect(detail.pauseReason).toBeNull();
       expect(detail.auditSummaries).toEqual([]);

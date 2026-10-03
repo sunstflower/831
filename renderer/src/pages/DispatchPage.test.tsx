@@ -79,44 +79,44 @@ describe('DispatchPage · 路径规划', () => {
     expect(screen.getByText('还没有规划结果')).toBeInTheDocument();
   });
 
-  it('规划 n01 → n12：显示摘要、节点链与「无需提醒」', async () => {
+  it('规划 N01 → N12：显示摘要、节点链与「无需提醒」', async () => {
     await renderPage();
-    planRoute('seed-n01', 'seed-n12');
+    planRoute('seed-n-N01', 'seed-n-N12');
     await waitFor(() => {
-      expect(screen.getByText('100 m')).toBeInTheDocument();
+      expect(screen.getByText('300 m')).toBeInTheDocument();
     });
     // 摘要里的五项（里程 / 耗时 / 节点数 / 边数 / 算法）
-    expect(screen.getByText('66.7 s')).toBeInTheDocument();
-    expect(screen.getByText('6 个')).toBeInTheDocument();
-    expect(screen.getByText('5 条')).toBeInTheDocument();
+    expect(screen.getByText('200 s')).toBeInTheDocument();
+    expect(screen.getByText('3 个')).toBeInTheDocument();
+    expect(screen.getByText('2 条')).toBeInTheDocument();
     // 节点链用编码示人，并且首尾是选中的那两个
     const chain = screen.getByLabelText('经过的节点');
     expect(chain.textContent).toContain('N01');
     expect(chain.textContent).toContain('N12');
-    expect(chain.textContent).not.toContain('seed-n01');
-    // seed 的网格每段 20 m、限速一致 → 没有慢速段/绕行警告
+    expect(chain.textContent).not.toContain('seed-n-N01');
+    // 这条路两段都是主路、weight=1 → 没有慢速段/绕行警告
     expect(screen.getByText(/没有需要提醒的地方/)).toBeInTheDocument();
   });
 
   it('带途经点时节点链里出现该节点', async () => {
     await renderPage();
-    planRoute('seed-n01', 'seed-n12', 'N05');
+    planRoute('seed-n-N01', 'seed-n-N12', 'N22');
     await waitFor(() => {
       expect(screen.getByText(/没有需要提醒的地方|限速|绕行/)).toBeInTheDocument();
     });
-    expect(screen.getByLabelText('经过的节点').textContent).toContain('N05');
+    expect(screen.getByLabelText('经过的节点').textContent).toContain('N22');
   });
 
   it('途经点写了不存在的编码 → 明确报出哪个词认不出来，而不是静默丢掉', async () => {
     await renderPage();
-    planRoute('seed-n01', 'seed-n12', 'N99');
+    planRoute('seed-n-N01', 'seed-n-N12', 'N99');
     expect(await screen.findByText(/N99/)).toBeInTheDocument();
     expect(screen.getByText('还没有规划结果')).toBeInTheDocument();
   });
 
   it('参数不合法时**清掉上一次的结果**：旧路线不能被读成这次的答案', async () => {
     await renderPage();
-    planRoute('seed-n01', 'seed-n12');
+    planRoute('seed-n-N01', 'seed-n-N12');
     await waitFor(() => expect(screen.getByLabelText('经过的节点')).toBeInTheDocument());
     // 改成一个认不出的途经点再规划 → 结果区必须回到空态
     fireEvent.change(screen.getByLabelText('途经点（可选）'), { target: { value: 'N99' } });
@@ -127,10 +127,10 @@ describe('DispatchPage · 路径规划', () => {
 
   it('对比两个算法：表格两行 + 一致结论', async () => {
     const { container } = await renderPage();
-    planRoute('seed-n01', 'seed-n12');
+    planRoute('seed-n-N01', 'seed-n-N12');
     // 先等上一条请求结束：进行中时两个按钮都是 disabled（防重复提交），
     // 抢着点会「什么都没发生」，而那种失败在断言层面表现得像功能坏了
-    await waitFor(() => expect(screen.getByText('100 m')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('300 m')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: '对比 A* / Dijkstra' }));
     await waitFor(() => {
       expect(screen.getByText('两个算法结果一致：里程与耗时完全相同')).toBeInTheDocument();
@@ -139,7 +139,7 @@ describe('DispatchPage · 路径规划', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]!.textContent).toContain('A*');
     expect(rows[1]!.textContent).toContain('Dijkstra');
-    // 两行的里程都必须是格式化后的「100 m」，而不是 100 或 100.0
-    expect(rows[0]!.textContent).toContain('100 m');
+    // 两行的里程都必须是格式化后的「300 m」，而不是 300 或 300.0
+    expect(rows[0]!.textContent).toContain('300 m');
   });
 });

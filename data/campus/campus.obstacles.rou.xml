@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <vType id="obstacle" vClass="delivery" length="6.0" maxSpeed="0.1" color="230,180,60"/>
+    <route id="r_obst_1" edges="E_N12_N13"/>
+    <route id="r_obst_2" edges="E_N32_N33"/>
+    <vehicle id="OBST_1" type="obstacle" route="r_obst_1" depart="0" departPos="5" departSpeed="0"><stop lane="E_N12_N13_0" startPos="40" endPos="50" duration="86400"/></vehicle>
+    <vehicle id="OBST_2" type="obstacle" route="r_obst_2" depart="0" departPos="5" departSpeed="0"><stop lane="E_N32_N33_0" startPos="40" endPos="50" duration="86400"/></vehicle>
+</routes>

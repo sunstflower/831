@@ -296,22 +296,16 @@ export interface AlertDTO {
   createdAt: string;
 }
 
-export interface TaskListItem {
-  id: string;
-  code: string;
-  title: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  cargoKg: number;
-  fromSiteId: string;
-  toSiteId: string;
-  timeWindowStart: string | null;
-  timeWindowEnd: string | null;
-  assignedVehicleId: string | null;
-  progress: number;
-  createdAt: string;
-}
-
+/*
+ * 这里**没有**第二个 `TaskListItem`。
+ *
+ * 它原先在这里又声明了一遍（字段是任务列表的**旧版**形态：没有
+ * `fromSiteName` / `toSiteName` / `vehicleCode`）。TypeScript 的**接口声明合并**
+ * 不会报错 —— 它把两份声明合并成一个类型，于是「旧版缺的字段」被新版的补上，
+ * 编译照过，谁都看不出有两份。真正的危害是**下一个人改这一份没生效**：
+ * 例如在这里给 `progress` 加个注释、或把它改成可选，实际生效的是另一处。
+ * 这与 D-34 要治的是同一个病：同一个事实只能有一个作者。
+ */
 /**
  * 车辆列表项（`GET /api/vehicles`，`docs/api.md` §3.2.2）。
  *
@@ -522,6 +516,13 @@ export interface EdgeListItem {
   toNodeCode: string;
   lengthM: number;
   speedLimitMps: number | null;
+  /**
+   * 通行权重（≥ 1 的惩罚系数，1 = 畅通）。
+   *
+   * 它**不影响里程**：施工中的 150 m 仍然是 150 m，只是走完它要更久。
+   * 规划取时间，所以这个字段进的是耗时（`lengthM × weight ÷ speed`）。
+   */
+  weight: number;
   status: EdgeStatus;
   remark: string | null;
 }
@@ -548,6 +549,8 @@ export interface MapSnapshotEdge {
   toNodeId: string;
   lengthM?: number;
   speedLimitMps?: number | null;
+  /** 通行权重（≥ 1）。地图用它给「慢边」上色，见 `docs/module-M6-map.md`。 */
+  weight?: number;
   status?: 'enabled' | 'disabled';
 }
 
@@ -736,6 +739,93 @@ export interface AlertDetail extends AlertListItem {
   };
   /** 建议的下一步（唯一来源 `@udm/shared` 的 `ALERT_NEXT_STEPS`）。 */
   suggestedNextSteps: string[];
+}
+
+/* ================================================================== *
+ * M8 告警 · 任务风险预检（`docs/api.md` §3.8.3）
+ * ================================================================== */
+
+/**
+ * 风险类型。
+ *
+ * 与 `AlertType`（已发生的五类告警）**不是一回事**：这里是**前瞻**枚举 ——
+ * 「按现在这份派发，接下来会撞上什么」。因此它们不落 `alerts` 表、不进告警状态机，
+ * 也不该被当成「已经出事了」。
+ *
+ * 七个类型对应两类问题：
+ *   - **任务冲突**：`VEHICLE_OVERLAP`（同车两单时间重叠）、`VEHICLE_UNAVAILABLE`
+ *     （派给了一台此刻跑不了的车）、`BATTERY_RISK`（电量撑不到跑完）、
+ *     `PLAN_WITHOUT_ROUTE`（派了但没有路线，地图上画不出来）；
+ *   - **任务超时**：`LATE_FINISH`（预计完成晚于时间窗末端）、`WINDOW_EXPIRED`
+ *     （时间窗已过但任务还没做完）、`UNASSIGNED_TASK`（待派发任务还没安排）。
+ */
+export const PLAN_RISK_KINDS = [
+  'VEHICLE_OVERLAP',
+  'VEHICLE_UNAVAILABLE',
+  'BATTERY_RISK',
+  'PLAN_WITHOUT_ROUTE',
+  'LATE_FINISH',
+  'WINDOW_EXPIRED',
+  'UNASSIGNED_TASK'
+] as const;
+
+export type PlanRiskKind = (typeof PLAN_RISK_KINDS)[number];
+
+/**
+ * 一条风险。
+ *
+ * `detail` 里的每个数字都必须能对上界面上的那句话（`lateS` 对应「晚点 N 秒」）——
+ * 与 `RejectItem.detail` 同口径：先有数据、再有文案，避免只有一句读不出依据的话。
+ */
+export interface PlanRiskItem {
+  kind: PlanRiskKind;
+  level: AlertLevel;
+  message: string;
+  /** 建议动作（与 `AlertDetail.suggestedNextSteps` 同用途：告警页要回答「然后呢」）。 */
+  suggestion: string;
+  taskIds: string[];
+  taskCodes: string[];
+  vehicleIds: string[];
+  vehicleCodes: string[];
+  detail: Record<string, unknown>;
+}
+
+/**
+ * 一条**已生效**的派发（任务 → 车辆 → 占用区间）。
+ *
+ * 与 `dispatch_plans` 的一行对应，是「任务分配派发区块」的数据源。
+ * 放在报告里而不是单开一个接口：预检本来就要读这一批计划，
+ * 再开一条 `GET /api/dispatch/assignments` 只会让同一个页面打两次同样口径的查询，
+ * 而两次之间**数据可能已经变了**（页面显示的风险与派发对不上）。
+ */
+export interface PlanAssignment {
+  taskId: string;
+  taskCode: string;
+  taskStatus: TaskStatus;
+  vehicleId: string;
+  vehicleCode: string;
+  /** 落库的路线 id；`null` = 有计划没路线（同时也会出现在 `records` 里）。 */
+  routeId: string | null;
+  occupiedFrom: string;
+  occupiedTo: string;
+}
+
+/** 风险预检报告（`GET /api/alerts/risks`）。 */
+export interface PlanRiskReport {
+  records: PlanRiskItem[];
+  total: number;
+  counts: { critical: number; warning: number; info: number };
+  /** 扫描用的服务端时刻：逾期类风险的「现在」以此为准（客户端时钟不参与判断）。 */
+  scannedAt: string;
+  /**
+   * 这次扫描看到的**已生效派发**（未完成任务名下）。
+   *
+   * 排序由服务端定死（车辆编码 → 开始时刻），界面直接按顺序分组渲染 ——
+   * 让两边各排一次序就会出现「同一批派发在两条链路上顺序不同」。
+   */
+  assignments: PlanAssignment[];
+  /** 参与扫描的待派发任务（`pending` 且没有计划），界面用它显示「还没安排」的缺口。 */
+  unassignedTasks: Array<{ taskId: string; taskCode: string; timeWindowEnd: string | null }>;
 }
 
 /* ================================================================== *

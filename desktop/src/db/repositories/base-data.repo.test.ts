@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { campusNodeId } from '@udm/shared';
 import { openDatabase, run, type Db } from '../index.js';
 import { applyMigrations } from '../migrate.js';
 import { seedDatabase } from '../seed.js';
@@ -55,13 +56,14 @@ describe('listSites', () => {
 
   it('keyword 同时匹配编码与名称', () => {
     const db = setup();
-    const byCode = listSites(db, { ...ALL, keyword: 'A-01' });
+    const byCode = listSites(db, { ...ALL, keyword: 'ST01' });
     expect(byCode.total).toBeGreaterThan(0);
-    expect(byCode.records.every((site) => site.code === 'A-01')).toBe(true);
+    expect(byCode.records.every((site) => site.code === 'ST01')).toBe(true);
 
-    const byName = listSites(db, { ...ALL, keyword: '仓库' });
-    expect(byName.total).toBeGreaterThanOrEqual(byCode.total);
-    expect(byName.records.every((site) => site.name.includes('仓库'))).toBe(true);
+    // 名称关键词取样本里**出现两次以上**的类别（教学楼 A / B），否则「≥ 编码命中数」没有意义
+    const byName = listSites(db, { ...ALL, keyword: '教学楼' });
+    expect(byName.total).toBeGreaterThanOrEqual(2);
+    expect(byName.records.every((site) => site.name.includes('教学楼'))).toBe(true);
   });
 
   it('type / status 过滤生效，且 pageSize 真的切片', () => {
@@ -139,10 +141,16 @@ describe('listNodes / listEdges', () => {
     const db = setup();
     const { records, total } = listEdges(db, ALL);
     const sample = records[0]!;
-    expect(sample.code).toBe(`E_${sample.fromNodeCode}_${sample.toNodeCode}`);
+    // 推导规则取两端 code 的**字典序**：小的一侧为基码，反向加 `_R`。
+    // 因此「正向边」与「反向边」的断言写法不同 —— 样本里这两种都存在
+    // （`E_DEPOT_N20` 与 `E_GATE_S_DEPOT_R`），只写一种会让用例依赖「第一条恰好是哪条」。
+    const [small, large] = [sample.fromNodeCode, sample.toNodeCode].sort();
+    expect(sample.code).toBe(
+      sample.fromNodeCode === small ? `E_${small}_${large}` : `E_${small}_${large}_R`
+    );
 
-    // seed 的路网是**双向成对**写入的（`seed.ts` 对每个相邻索引对同时写 a→b 与 b→a），
-    // 因此 34 条边 = 17 对 × 2 个方向，其中一半推导结果带 `_R`。
+    // 样本的路网是**双向成对**写入的（每条通道同时给 a→b 与 b→a），
+    // 因此带 `_R` 的边恰好占一半。
     // 这里不写死「几条带 _R」，只断言结构：每个 code 唯一，且每条 `_R` 都能找到配对的基码
     const codes = records.map((edge) => edge.code);
     expect(new Set(codes).size).toBe(codes.length);
@@ -252,7 +260,17 @@ describe('listNodes / listEdges', () => {
  *      若写成 `JOIN`，那条规则会凭空消失，使用者看不到它、也就无法清理它。
  */
 describe('listRestrictions', () => {
-  /** 直接写表：规则没有 seed 数据，而写路径的合法性由领域服务与接口层覆盖。 */
+  /**
+   * 直接写表：写路径的合法性由领域服务与接口层覆盖。
+   *
+   * 注意 seed 现在自带 **2 条**占道规则（`campus.obstacles.rou.xml` 的两处施工），
+   * 所以这组用例先清空 `restrictions`，让计数断言只面对自己插入的行 ——
+   * 否则每加一处占道都要回来改一次这里的数字。
+   */
+  function emptyRestrictions(db: Db): void {
+    run(db, 'DELETE FROM restrictions');
+  }
+
   function insertRule(db: Db, row: { id: string; type: 'node' | 'edge'; targetId: string; createdAt: string; reason?: string }): void {
     run(
       db,
@@ -264,8 +282,9 @@ describe('listRestrictions', () => {
 
   it('节点目标的 targetCode 取 nodes.code；边目标按两端节点 code 推导', () => {
     const db = setup();
-    insertRule(db, { id: 'r-node', type: 'node', targetId: 'seed-n01', createdAt: '2026-01-02T00:00:00.000Z' });
-    const edge = listEdges(db, ALL).records.find((item) => item.fromNodeCode === 'N01' && item.toNodeCode === 'N05')!;
+    emptyRestrictions(db);
+    insertRule(db, { id: 'r-node', type: 'node', targetId: campusNodeId('N01'), createdAt: '2026-01-02T00:00:00.000Z' });
+    const edge = listEdges(db, ALL).records.find((item) => item.fromNodeCode === 'N01' && item.toNodeCode === 'N02')!;
     insertRule(db, { id: 'r-edge', type: 'edge', targetId: edge.id, createdAt: '2026-01-01T00:00:00.000Z' });
 
     const { records, total } = listRestrictions(db, ALL);
@@ -278,6 +297,7 @@ describe('listRestrictions', () => {
 
   it('目标被删后规则**仍在列表里**，targetCode 为 null（用 JOIN 会让它凭空消失）', () => {
     const db = setup();
+    emptyRestrictions(db);
     insertRule(db, { id: 'r-orphan', type: 'node', targetId: 'ghost-node', createdAt: '2026-01-01T00:00:00.000Z' });
     const { records, total } = listRestrictions(db, ALL);
     expect(total).toBe(1);
@@ -289,7 +309,8 @@ describe('listRestrictions', () => {
 
   it('type / status 筛选与计数都不受 JOIN 影响（计数走的是不带 JOIN 的那条 SQL）', () => {
     const db = setup();
-    insertRule(db, { id: 'r-a', type: 'node', targetId: 'seed-n01', createdAt: '2026-01-01T00:00:00.000Z' });
+    emptyRestrictions(db);
+    insertRule(db, { id: 'r-a', type: 'node', targetId: campusNodeId('N01'), createdAt: '2026-01-01T00:00:00.000Z' });
     insertRule(db, { id: 'r-b', type: 'node', targetId: 'ghost', createdAt: '2026-01-02T00:00:00.000Z' });
     expect(listRestrictions(db, { ...ALL, type: 'node' }).total).toBe(2);
     expect(listRestrictions(db, { ...ALL, type: 'edge' }).total).toBe(0);
@@ -301,15 +322,17 @@ describe('listRestrictions', () => {
 /**
  * 任务模板的读取路径（§3.2.6）。
  *
- * seed 里有两个模板，因此这一组既有真实数据可断言，也不必写死条数之外的东西。
+ * seed 里有两个模板（`TPL-STD` 标准配送 / `TPL-RET` 回库回充），因此这一组既有真实数据可断言，
+ * 也不必写死条数之外的东西。
  */
 describe('listTemplates', () => {
   it('按 code 排序，投影成驼峰字段（含可空的时间窗与站点类型）', () => {
     const db = setup();
     const { records, total } = listTemplates(db, ALL);
     expect(total).toBe(2);
-    expect(records.map((row) => row.code)).toEqual(['TPL-CHG', 'TPL-STD']);
-    expect(records[0]).toMatchObject({ code: 'TPL-CHG', priority: 'low', defaultCargoKg: 0, timeWindowMinutes: 120, toSiteType: 'charging' });
+    // 排序按 code 升序：`TPL-RET` < `TPL-STD`
+    expect(records.map((row) => row.code)).toEqual(['TPL-RET', 'TPL-STD']);
+    expect(records[0]).toMatchObject({ code: 'TPL-RET', priority: 'low', defaultCargoKg: 0, timeWindowMinutes: 120, toSiteType: 'depot' });
     // 模板没有 status 列：DTO 里就不该出现这个字段（界面按它筛「全部状态」会永远筛出空表）
     expect('status' in records[0]!).toBe(false);
   });

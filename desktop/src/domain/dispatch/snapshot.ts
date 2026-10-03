@@ -86,6 +86,7 @@ interface EdgeSnapshotRow {
   to_node_id: string;
   length_m: number;
   speed_limit_mps: number | null;
+  weight: number;
   status: RouteEdgeInput['status'];
 }
 
@@ -215,13 +216,14 @@ export function loadGraphInputs(db: Db): { nodes: RouteNodeInput[]; edges: Route
   }));
   const edges = all<EdgeSnapshotRow>(
     db,
-    'SELECT id, from_node_id, to_node_id, length_m, speed_limit_mps, status FROM edges ORDER BY id'
+    'SELECT id, from_node_id, to_node_id, length_m, speed_limit_mps, weight, status FROM edges ORDER BY id'
   ).map((row) => ({
     id: row.id,
     fromNodeId: row.from_node_id,
     toNodeId: row.to_node_id,
     lengthM: row.length_m,
     speedLimitMps: row.speed_limit_mps,
+    weight: row.weight ?? 1,
     status: row.status
   }));
   return { nodes, edges };

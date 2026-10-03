@@ -7,6 +7,9 @@ import {
   confirmLinesOf,
   confirmRejectLinesOf,
   logRowOf,
+  differenceLinesOf,
+  durationText,
+  outcomeMetricsOf,
   outcomeOf,
   outcomeRowOf,
   planRowOf,
@@ -17,7 +20,8 @@ import {
   selectionState,
   strategyLabel,
   strategyOptions,
-  taskCodesOf
+  taskCodesOf,
+  vehiclePlanGroupsOf
 } from './model';
 
 /**
@@ -178,6 +182,19 @@ describe('调度中心 · 计划与拒绝行', () => {
     expect(row).toMatchObject({ taskCode: 'T20260926-0001', vehicleCode: 'CAR-01', executeS: '67s', cost: '66.6', doneAt: '08:06:07' });
   });
 
+  it('计划行给出这条计划**分配到的路线**（段数 + 里程）——「路线分配」要看得见', () => {
+    const row = planRowOf(plan({ route: { fromNodeId: 'a', toNodeId: 'd', nodeIds: ['a', 'b', 'c', 'd'], distanceM: 450.6, durationS: 150 } }), codes);
+    expect(row.route).toBe('3 段 · 451 m');
+    expect(row.routeSegments).toBe(3);
+    expect(row.routeDistanceM).toBe(451);
+  });
+
+  it('没有路线的计划写成「无路线」而不是留空（空单元格读起来像界面没做完）', () => {
+    const row = planRowOf(plan({ route: null }), codes);
+    expect(row.route).toBe('无路线');
+    expect(row.routeSegments).toBe(0);
+  });
+
   it('拒绝原因用共享词表；detail 只拼已知键，不泄漏原始 JSON', () => {
     const row = rejectRowOf(reject(), codes);
     expect(row.reason).toBe('载重超限');
@@ -257,5 +274,98 @@ describe('调度中心 · 日志与请求体', () => {
     expect(canApply(outcome(), true)).toBe(false);
     expect(canApply(outcome({ plans: [] }), false)).toBe(false);
     expect(canApply(null, false)).toBe(false);
+  });
+});
+
+describe('调度中心 · 参数对比与接力', () => {
+  const codes = taskCodesOf([
+    task({ id: 't-1', code: 'T-DEMO-0001' }),
+    task({ id: 't-2', code: 'T-DEMO-0002' })
+  ]);
+
+  it('时长文案：不足一分钟按秒，超过一分钟按「x 分 y 秒」，读得出「快了多少」', () => {
+    expect(durationText(0)).toBe('0 秒');
+    expect(durationText(59.4)).toBe('59 秒');
+    expect(durationText(60)).toBe('1 分');
+    expect(durationText(140)).toBe('2 分 20 秒');
+  });
+
+  it('批量指标：里程只累加执行段，行驶耗时含空驶，完成时刻取最晚，接力按「同车第 2 单起」计', () => {
+    const relayed = outcome({
+      plans: [
+        plan({ taskId: 't-1', occupiedFrom: '2026-09-26T08:05:00.000Z', occupiedTo: '2026-09-26T08:06:07.000Z' }),
+        plan({
+          taskId: 't-2',
+          // 与上一单首尾相接：这正是「接力」的样子（半开区间允许占用时刻重合）
+          occupiedFrom: '2026-09-26T08:06:07.000Z',
+          occupiedTo: '2026-09-26T08:09:00.000Z',
+          route: { fromNodeId: 'a', toNodeId: 'b', nodeIds: ['a', 'b'], distanceM: 200, durationS: 100 },
+          costDetail: { deadheadTimeS: 40, executeTimeS: 100, waitTimeS: 0, penaltyLateS: 0, chargeRisk: 0 }
+        })
+      ]
+    });
+    const metrics = outcomeMetricsOf(relayed);
+    expect(metrics.distanceM).toBe(300);
+    expect(metrics.driveS).toBeCloseTo(206.6, 1);
+    expect(metrics.finishAt).toBe('2026-09-26T08:09:00.000Z');
+    expect(metrics.vehicleCount).toBe(1);
+    expect(metrics.relayTasks).toBe(1);
+    // 对比表一行必须把四个数都带上，缺一个就没法回答「哪个更快」
+    expect(outcomeRowOf(relayed, 'greedy')).toMatchObject({
+      distance: '300 m',
+      drive: '3 分 27 秒',
+      finishAt: '08:09:00',
+      fleet: '1 台（含接力 1 单）'
+    });
+    expect(outcomeMetricsOf(outcome({ plans: [] }))).toMatchObject({ finishAt: null, vehicleCount: 0, relayTasks: 0 });
+  });
+
+  it('差异行只说「另一个更好的项」，逐项给出差值', () => {
+    const greedy = outcome({
+      strategy: 'greedy',
+      plans: [plan({ occupiedTo: '2026-09-26T08:06:07.000Z' })],
+      rejected: []
+    });
+    const faster = outcome({
+      strategy: 'hungarian',
+      plans: [
+        plan({
+          occupiedTo: '2026-09-26T08:05:10.000Z',
+          route: { fromNodeId: 'a', toNodeId: 'b', nodeIds: ['a', 'b'], distanceM: 40, durationS: 20 },
+          costDetail: { deadheadTimeS: 0, executeTimeS: 20, waitTimeS: 0, penaltyLateS: 0, chargeRisk: 0 }
+        })
+      ],
+      rejected: [reject()]
+    });
+    const lines = differenceLinesOf([greedy, faster], 'greedy');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.text).toContain('少跑 60 m');
+    expect(lines[0]!.text).toContain('少行驶');
+    expect(lines[0]!.text).toContain('早');
+    // 匈牙利多派不了，所以「多派」不该出现（说了就是假话）
+    expect(lines[0]!.text).not.toContain('多派');
+    // 单策略 / 没有推荐项时没有可比对象
+    expect(differenceLinesOf([greedy], 'greedy')).toEqual([]);
+    expect(differenceLinesOf([greedy, faster], null)).toEqual([]);
+  });
+
+  it('按车辆分组：组内按开始时刻排出接力顺序，组间按第一单时间排', () => {
+    const grouped = outcome({
+      plans: [
+        // 故意乱序给出：分组视图必须自己排出「第 1 单 / 第 2 单」
+        plan({ taskId: 't-2', vehicleId: 'v-2', vehicleCode: 'CAR-01', occupiedFrom: '2026-09-26T08:06:07.000Z', occupiedTo: '2026-09-26T08:09:00.000Z' }),
+        plan({ taskId: 't-1', vehicleId: 'v-1', vehicleCode: 'AGV-02', occupiedFrom: '2026-09-26T08:00:00.000Z', occupiedTo: '2026-09-26T08:01:00.000Z' }),
+        plan({ taskId: 't-1', vehicleId: 'v-2', vehicleCode: 'CAR-01', occupiedFrom: '2026-09-26T08:05:00.000Z', occupiedTo: '2026-09-26T08:06:07.000Z' })
+      ],
+      rejected: []
+    });
+    const groups = vehiclePlanGroupsOf(grouped, codes);
+    expect(groups.map((group) => group.vehicleCode)).toEqual(['AGV-02', 'CAR-01']);
+    expect(groups[0]!.relay).toBe(false);
+    expect(groups[1]!.relay).toBe(true);
+    expect(groups[1]!.steps.map((step) => step.seq)).toEqual([1, 2]);
+    expect(groups[1]!.steps[0]!.beginsAt).toBe('08:05:00');
+    expect(groups[1]!.steps[1]!.taskCode).toBe('T-DEMO-0002');
+    expect(vehiclePlanGroupsOf(outcome({ plans: [] }), codes)).toEqual([]);
   });
 });

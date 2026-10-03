@@ -52,7 +52,7 @@ describe('TasksPage · 列表', () => {
     const row = rowOf('T-DEMO-0001');
     expect(within(row).getByText('执行中')).toBeInTheDocument();
     expect(within(row).getByText('普通')).toBeInTheDocument();
-    expect(within(row).getByText('A 仓 → B 仓 演示配送')).toBeInTheDocument();
+    expect(within(row).getByText('配送中心 → 北苑学生宿舍 演示配送')).toBeInTheDocument();
     expect(within(row).getByText('AGV-01')).toBeInTheDocument();
     expect(within(row).getByText('42%')).toBeInTheDocument();
     // 无时间窗的任务说「不限时段」，而不是显示成破折号（那是数据缺失的样子）

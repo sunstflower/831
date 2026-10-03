@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { SEED_IDS } from '@udm/shared';
+import { SEED_IDS, campusNodeId } from '@udm/shared';
 import { buildMockOverview } from '../../api/mock-data';
 import { buildDetailCard } from './detail';
 import { buildEdgeLengthIndex, routeLength } from './edgeIndex';
+import { SITE_TYPE_LABEL } from '../../domain/labels';
 
 describe('buildDetailCard · 无选中 / 未知类型', () => {
   it('未选中时返回 null（由 UI 显示引导文案，而不是空卡片）', () => {
@@ -90,8 +91,11 @@ describe('buildDetailCard · 任务 / 路线 / 站点 / 节点', () => {
       entityId: SEED_IDS.demoTask
     });
     const rows = new Map(card!.rows.map((row) => [row.label, row.value]));
-    expect(rows.get('起点')).toContain('A-01');
-    expect(rows.get('终点')).toContain('B-01');
+    // 编码取快照里的真实站点（`DEPOT` / `ST09`），不写死字面量
+    const codeOf = (siteId: string) =>
+      overview.sites.find((site) => site.id === siteId)!.code;
+    expect(rows.get('起点')).toContain(codeOf(SEED_IDS.siteDepot));
+    expect(rows.get('终点')).toContain(codeOf(SEED_IDS.siteDorm));
     expect(rows.get('执行车辆')).toBe('AGV-01');
     expect(rows.get('进度')).toBe('42%');
   });
@@ -105,7 +109,7 @@ describe('buildDetailCard · 任务 / 路线 / 站点 / 节点', () => {
     });
     const rows = new Map(card!.rows.map((row) => [row.label, row.value]));
     expect(rows.get('状态')).toBe('生效中');
-    expect(rows.get('节点数')).toBe('6');
+    expect(rows.get('节点数')).toBe(String(overview.routes[0]!.nodeIds.length));
   });
 
   it('站点：给出类型、挂靠节点与坐标', () => {
@@ -113,16 +117,18 @@ describe('buildDetailCard · 任务 / 路线 / 站点 / 节点', () => {
     const card = buildDetailCard(overview, {
       flowId: 's',
       entityType: 'site',
-      entityId: SEED_IDS.siteCharging
+      entityId: SEED_IDS.siteCanteen
     });
     const rows = new Map(card!.rows.map((row) => [row.label, row.value]));
-    expect(rows.get('类型')).toBe('充电桩');
-    expect(rows.get('挂靠节点')).toBe('N04');
+    const site = overview.sites.find((item) => item.id === SEED_IDS.siteCanteen)!;
+    const anchor = overview.nodes.find((node) => node.id === site.nodeId)!;
+    expect(rows.get('类型')).toBe(SITE_TYPE_LABEL[site.type]);
+    expect(rows.get('挂靠节点')).toBe(anchor.code);
   });
 
   it('路网节点：连接边数等于与它相连的边数（双向计数），并统计其中被禁行的数量', () => {
     const overview = buildMockOverview();
-    const nodeId = 'seed-n01';
+    const nodeId = campusNodeId('N01');
     // 不写死数字：路网是**双向**的，角落节点也有「出边 + 入边」，
     // 直接按快照实际相连的边数断言，避免把「出边」误当「连接边」。
     const expected = overview.edges.filter(
@@ -137,7 +143,7 @@ describe('buildDetailCard · 任务 / 路线 / 站点 / 节点', () => {
 
   it('路网节点：被禁行的边计入「禁行边」（用于发现路网不连通）', () => {
     const overview = buildMockOverview();
-    const nodeId = 'seed-n01';
+    const nodeId = campusNodeId('N01');
     overview.edges = overview.edges.map((edge) =>
       edge.fromNodeId === nodeId || edge.toNodeId === nodeId ? { ...edge, status: 'disabled' as const } : edge
     );

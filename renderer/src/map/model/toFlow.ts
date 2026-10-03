@@ -293,6 +293,18 @@ export function toFlow(
       continue;
     }
     const disabled = edge.status === 'disabled';
+    /** 通行权重：缺省 1（畅通）。`> 1` 表示这段路更慢（施工 / 限流 / 高峰）。 */
+    const weight = edge.weight ?? 1;
+    const isSlow = weight > 1;
+    /**
+     * 有生效路线时路网底板让位（细 + 淡）。
+     *
+     * 只算一次、**两个消费者**（`<g>` 上的 `className` 与 `data.muted`）都用它 ——
+     * 判断写两遍，迟早会有一遍忘记跟着改，而且改错的那遍不会报错。
+     * 真正生效的是 `data.muted`（`NetEdge.tsx` 把它拼到 `<path>` 上），
+     * `<g>` 上那份是给调试与选择器用的兜底信息。
+     */
+    const muted = hasActiveRoute && visibility.routeEdges;
     const fromNode = nodeById.get(edge.fromNodeId);
     const toNode = nodeById.get(edge.toNodeId);
     if (!fromNode || !toNode) {
@@ -310,7 +322,9 @@ export function toFlow(
        * 这样「谁被弱化」是可单测的事实，而「弱化到什么程度」是可调的设计。
        */
       className: [
-        hasActiveRoute && visibility.routeEdges ? 'is-muted' : '',
+        muted ? 'is-muted' : '',
+        // 慢边（`weight > 1`）：调度会为它多花时间，画布上也要看得出来
+        isSlow ? 'is-slow' : '',
         isDimmed(focus, focus.edgeIds, netEdgeId(edge.id)) ? 'is-dimmed' : ''
       ]
         .filter(Boolean)
@@ -318,13 +332,22 @@ export function toFlow(
       data: {
         lengthM: edge.lengthM ?? null,
         speedLimitMps: edge.speedLimitMps ?? null,
+        weight,
         disabled,
-        /** 通行耗时（s）：有长度与限速时才可算，否则 null（不要假造）。 */
+        // 与 `<g>` 的 `className` 同源：都取上面算出的 `muted`
+        muted,
+        /**
+         * 通行耗时（s）：**与规划同一条式子** `长度 × 权重 ÷ 限速`
+         * （`shared/src/route-search.ts`）。
+         *
+         * 不带权重就会与调度算出来的耗时互相矛盾 —— 那是最难发现的一类不一致：
+         * 两个数都对，只是说的不是同一件事。没有长度/限速时才返回 null（不要假造）。
+         */
         travelSeconds:
           Number.isFinite(edge.lengthM) && Number.isFinite(edge.speedLimitMps) && (edge.speedLimitMps ?? 0) > 0
-            ? Math.round(((edge.lengthM ?? 0) / (edge.speedLimitMps ?? 1)) * 10) / 10
+            ? Math.round(((edge.lengthM ?? 0) * weight / (edge.speedLimitMps ?? 1)) * 10) / 10
             : null,
-        kind: disabled ? '禁行' : '可通行',
+        kind: disabled ? '禁行' : isSlow ? '拥堵（通行变慢）' : '可通行',
         fromCode: fromNode.code,
         toCode: toNode.code
       }

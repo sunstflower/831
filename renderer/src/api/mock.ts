@@ -136,7 +136,19 @@ export function createMockAdapter(): ApiClient {
    */
   const opsStore = buildMockOpsStore();
   /** 执行相关接口需要的两侧数据（任务表 + 基础数据），构造一次复用。 */
-  const opsDeps = { baseData, taskStore };
+  const opsDeps = {
+    baseData,
+    taskStore,
+    /*
+     * 风险预检要读「已生效的派发计划」，而调度 store 构造在它**之上**（见 `dispatchStore`）。
+     * 这里传函数而不是数组：Mock 的计划会随「应用派发 / 重算」实时增长，
+     * 传一份快照会让预检永远停在启动那一刻 —— 页面表现为「刚派完的任务不报风险」。
+     * 延迟到调用时才解引用，因此没有声明顺序问题。
+     */
+    plans: () => dispatchStore.plans,
+    // 回退取路线用（D-26：演示数据有路线但没有派发计划）
+    routeStore
+  };
   /*
    * 演示用「执行推进」定时器：**只在该实例里真的有人在跑时**才动。
    *

@@ -33,8 +33,8 @@ import type { ApiClient } from './client';
 const TASK_INPUT = {
   title: '一致性用例：A 仓 → B 仓',
   cargoKg: 100,
-  fromSiteId: SEED_IDS.siteDepotA,
-  toSiteId: SEED_IDS.siteDepotB,
+  fromSiteId: SEED_IDS.siteDepot,
+  toSiteId: SEED_IDS.siteDorm,
   submit: true,
   priority: 'normal'
 };
@@ -128,8 +128,10 @@ describe('mock 适配器 · M4 调度与主进程一致', () => {
     const mock = createMockAdapter();
     const mockToken = await loginMock(mock);
 
-    const realTaskId = await createTaskViaRouter(router, token, { cargoKg: 900 });
-    const mockTaskId = await createTaskViaMock(mock, mockToken, { cargoKg: 900 });
+    // 载重必须超过**全部车辆**的上限（当前最大是 CAR-02 的 1200 kg）：
+    // 900 kg 时 CAR-02 能装，两层的「拒绝」就变成了「成功派给另一台车」
+    const realTaskId = await createTaskViaRouter(router, token, { cargoKg: 2000 });
+    const mockTaskId = await createTaskViaMock(mock, mockToken, { cargoKg: 2000 });
 
     const real = await router.invoke({ path: '/api/dispatch/preview', method: 'POST', token, payload: { taskIds: [realTaskId], strategy: 'greedy' } });
     const mocked = await mock.invoke<PreviewLike>('/api/dispatch/preview', { taskIds: [mockTaskId], strategy: 'greedy' }, mockToken, { method: 'POST' });
@@ -208,7 +210,7 @@ describe('mock 适配器 · M4 调度与主进程一致', () => {
     const mock = createMockAdapter();
     const mockToken = await loginMock(mock);
 
-    const cargo = { first: { cargoKg: 120, priority: 'high' }, second: { cargoKg: 400, priority: 'normal', fromSiteId: SEED_IDS.siteDepotB, toSiteId: SEED_IDS.siteDepotA } };
+    const cargo = { first: { cargoKg: 120, priority: 'high' }, second: { cargoKg: 400, priority: 'normal', fromSiteId: SEED_IDS.siteDorm, toSiteId: SEED_IDS.siteDepot } };
     const realIds = [await createTaskViaRouter(router, token, cargo.first), await createTaskViaRouter(router, token, cargo.second)];
     const mockIds = [await createTaskViaMock(mock, mockToken, cargo.first), await createTaskViaMock(mock, mockToken, cargo.second)];
 

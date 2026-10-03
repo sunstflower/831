@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { DISPATCH_LOG_ACTIONS, DISPATCH_STRATEGY_SELECTIONS, OBJECT_TYPES } from '@udm/shared';
 import { all, get, openDatabase } from './index.js';
 import { applyMigrations } from './migrate.js';
+import { seedFixture } from './seed-fixture.js';
 import { countRows, seedDatabase } from './seed.js';
 
 function tableNames(): string[] {
@@ -168,11 +169,14 @@ describe('seed', () => {
       settings: countRows(db, 'settings')
     };
     expect(second).toEqual(first);
+    // 规模从 `data/campus/` + `shared/src/seed-data.ts` 的推导来，不写死字面量：
+    // 「seed 必须把地图包里的节点/边/站点全部落库」才是这条用例要证明的事
+    const fixture = seedFixture();
     expect(first.users).toBe(3);
-    expect(first.nodes).toBe(12);
-    expect(first.edges).toBe(34);
-    expect(first.sites).toBe(3);
-    expect(first.vehicles).toBe(3);
+    expect(first.nodes).toBe(fixture.nodes.length);
+    expect(first.edges).toBe(fixture.edges.length);
+    expect(first.sites).toBe(fixture.sites.length);
+    expect(first.vehicles).toBe(fixture.vehicles.length);
     expect(first.settings).toBeGreaterThanOrEqual(9);
     db.close();
   });
@@ -182,7 +186,9 @@ describe('seed', () => {
     try {
       applyMigrations(db);
       const summary = seedDatabase(db);
-      expect(summary).toMatchObject({ tasks: 1, routes: 1, alerts: 1 });
+      const fixture = seedFixture();
+      // 演示任务 + 6 条待派发任务；路线与告警各只有演示那一条
+      expect(summary).toMatchObject({ tasks: fixture.tasks.length, routes: 1, alerts: 1 });
 
       const task = get<{ id: string; status: string; assigned_vehicle_id: string; progress: number }>(
         db,
@@ -204,7 +210,7 @@ describe('seed', () => {
       );
       const nodeIds = JSON.parse(route!.node_ids) as string[];
       const edgeIds = JSON.parse(route!.edge_ids) as string[];
-      expect(nodeIds).toHaveLength(6);
+      expect(nodeIds).toEqual(fixture.demoRoute.nodeIds);
       expect(edgeIds).toHaveLength(nodeIds.length - 1);
 
       // 关键护栏：`edge_ids` 是 JSON 文本列、没有外键保护，写错不会报错。

@@ -11,12 +11,15 @@ function emptyOverview(): MapOverview {
 }
 
 describe('toFlow · 结构与顺序', () => {
-  it('产出与 seed 一致的路网规模（12 节点 / 34 边 / 3 站点 / 3 车辆）', () => {
-    const { nodes, edges } = toFlow(buildMockOverview());
-    expect(nodes.filter((n) => n.type === 'net')).toHaveLength(12);
-    expect(edges.filter((e) => e.type === 'net')).toHaveLength(34);
-    expect(nodes.filter((n) => n.type === 'site')).toHaveLength(3);
-    expect(nodes.filter((n) => n.type === 'vehicle')).toHaveLength(3);
+  it('产出的图层规模与快照一致（快照里每个节点/边都画出来）', () => {
+    const overview = buildMockOverview();
+    const { nodes, edges } = toFlow(overview);
+    // 规模从快照自身推出来：写死「12 / 34 / 3 / 3」在换地图数据后会一起变红，
+    // 而这条用例真正要证明的是「toFlow 不吞数据」
+    expect(nodes.filter((n) => n.type === 'net')).toHaveLength(overview.nodes.length);
+    expect(edges.filter((e) => e.type === 'net')).toHaveLength(overview.edges.length);
+    expect(nodes.filter((n) => n.type === 'site')).toHaveLength(overview.sites.length);
+    expect(nodes.filter((n) => n.type === 'vehicle')).toHaveLength(overview.vehicles.length);
   });
 
   it('路线高亮边排在基础路网边之后（后者在上，才能压住重叠路径）', () => {
@@ -90,7 +93,7 @@ describe('toFlow · 图层开关', () => {
     const overview = buildMockOverview();
     const on = toFlow(overview, DEFAULT_VISIBILITY);
     const off = toFlow(overview, { ...DEFAULT_VISIBILITY, netNodes: false, netEdges: false });
-    expect(off.nodes.filter((n) => n.type === 'net')).toHaveLength(12);
+    expect(off.nodes.filter((n) => n.type === 'net')).toHaveLength(overview.nodes.length);
     expect(off.nodes.filter((n) => n.type === 'net').every((n) => n.hidden)).toBe(true);
     expect(off.edges.filter((e) => e.type === 'net').every((e) => e.hidden)).toBe(true);
     expect(off.nodes).toHaveLength(on.nodes.length);

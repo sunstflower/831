@@ -3,6 +3,7 @@ import { SEED_IDS, type AuditContext } from '@udm/shared';
 import { all, get, openDatabase, run, type Db } from '../../db/index.js';
 import { applyMigrations } from '../../db/migrate.js';
 import { seedDatabase } from '../../db/seed.js';
+import { seedFixture } from '../../db/seed-fixture.js';
 import { EventBus, type EventTargetLike } from '../../services/event-bus.js';
 import { SessionStore } from '../../services/session.js';
 import { ExecutionRunner } from './executor.js';
@@ -47,7 +48,7 @@ function setup() {
   return { db, bus, runner, events };
 }
 
-/** seed 的演示任务：running + 车 busy + 一条 100 m 的路线。把它改回「已派发未开始」。 */
+/** seed 的演示任务：running + 车 busy + 一条真实路网上的路线。把它改回「已派发未开始」。 */
 function makeAssigned(db: Db): void {
   run(db, "UPDATE tasks SET status = 'assigned', progress = 0 WHERE id = ?", [SEED_IDS.demoTask]);
   run(db, "UPDATE vehicles SET status = 'reserved', load_kg = 0 WHERE id = ?", [SEED_IDS.vehicleAgv]);
@@ -137,8 +138,12 @@ describe('executor · 推进与到位', () => {
   });
 
   it('跑完全程后：任务 finished、车回 idle 且卸货、最后一帧轨迹标记 finished', () => {
-    // 100 m / (1.5 m/s × 4) ≈ 17 帧；多跑几帧确保越界后不被推过头
-    for (let index = 0; index < 20; index += 1) {
+    // 帧数由路线里程推出：每帧前进 `maxSpeed × tickMs/1000 × speedFactor`（1.5 × 1 × 4 = 6 m）。
+    // 写死「20 帧」在演示路线换成真实校园路网（数百米）后会停在半路，
+    // 而失败信息是「任务还没结束」——看起来像执行器没跑完，实际是帧数不够
+    const stepM = 1.5 * 4;
+    const frames = Math.ceil(seedFixture().demoRoute.distanceM / stepM) + 5;
+    for (let index = 0; index < frames; index += 1) {
       runner.tick();
     }
     const task = taskRow(db);

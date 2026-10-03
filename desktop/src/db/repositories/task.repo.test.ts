@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { SEED_IDS } from '@udm/shared';
 import { openDatabase, run, type Db } from '../index.js';
 import { applyMigrations } from '../migrate.js';
 import { seedDatabase } from '../seed.js';
+import { seedFixture } from '../seed-fixture.js';
 import { getTaskDetail, insertTask, listTasks, nextTaskCode, releaseTaskPlans } from './task.repo.js';
 
 /**
@@ -29,8 +31,8 @@ const BASE = {
   priority: 'normal' as const,
   cargoKg: 10,
   cargoDesc: null,
-  fromSiteId: 'seed-site-a',
-  toSiteId: 'seed-site-b',
+  fromSiteId: SEED_IDS.siteDepot,
+  toSiteId: SEED_IDS.siteDorm,
   timeWindowStart: null,
   timeWindowEnd: null,
   // 用**晚于** seed 的时间戳：seed 的 created_at 是跑测试那一刻的 now，
@@ -54,8 +56,12 @@ describe('task.repo · 列表', () => {
     add(db, { ...BASE, id: 't-1', code: 'T20260926-0001', title: '一' });
     add(db, { ...BASE, id: 't-2', code: 'T20260926-0002', title: '二' });
     add(db, { ...BASE, id: 't-3', code: 'T20260926-0003', title: '三' });
-    const codes = listTasks(db, { page: 1, pageSize: 10 }).records.map((row) => row.code);
-    expect(codes).toEqual(['T20260926-0003', 'T20260926-0002', 'T20260926-0001', 'T-DEMO-0001']);
+    // 用关键词把自己插的三行摘出来：seed 自带 7 条任务（1 演示 + 6 待派发），
+    // 它们会按 `created_at` 参与排序，把整页的期望值写成字面量只会每次跟着 seed 改
+    const codes = listTasks(db, { page: 1, pageSize: 10, keyword: 'T20260926' }).records.map((row) => row.code);
+    expect(codes).toEqual(['T20260926-0003', 'T20260926-0002', 'T20260926-0001']);
+    // 同一时刻按 code 倒序的另一面：seed 的 7 条也都在列表里
+    expect(listTasks(db, { page: 1, pageSize: 50 }).total).toBeGreaterThanOrEqual(10);
   });
 
   it('分页是全序的一部分：第 1 页与第 2 页不重叠', () => {
@@ -73,13 +79,14 @@ describe('task.repo · 列表', () => {
     add(db, { ...BASE, id: 't-1', code: 'T20260926-0001', title: '苹果配送', status: 'pending' });
     add(db, { ...BASE, id: 't-2', code: 'T20260926-0002', title: '香蕉配送', priority: 'urgent', status: 'failed' });
 
-    expect(listTasks(db, { page: 1, pageSize: 10, statuses: ['pending', 'failed'] }).total).toBe(2);
-    expect(listTasks(db, { page: 1, pageSize: 10, statuses: ['pending'] }).records[0]?.id).toBe('t-1');
-    expect(listTasks(db, { page: 1, pageSize: 10, priority: 'urgent' }).records[0]?.id).toBe('t-2');
-    expect(listTasks(db, { page: 1, pageSize: 10, keyword: '香蕉' }).total).toBe(1);
+    // 多值：`failed`/`draft` 在 seed 里都不存在，因此命中的只可能是自己插的行
+    expect(listTasks(db, { page: 1, pageSize: 10, statuses: ['failed', 'draft'] }).records.map((row) => row.id)).toEqual(['t-2']);
+    expect(listTasks(db, { page: 1, pageSize: 10, keyword: '苹果' }).records[0]?.id).toBe('t-1');
     expect(listTasks(db, { page: 1, pageSize: 10, keyword: 'T20260926-0001' }).total).toBe(1);
-    // seed 的演示任务挂在 AGV-01 上
-    expect(listTasks(db, { page: 1, pageSize: 10, vehicleId: 'seed-veh-agv01' }).total).toBe(1);
+    expect(listTasks(db, { page: 1, pageSize: 10, keyword: '香蕉' }).total).toBe(1);
+    expect(listTasks(db, { page: 1, pageSize: 10, priority: 'urgent', keyword: '香蕉' }).records[0]?.id).toBe('t-2');
+    // seed 的演示任务挂在 AGV-01 上（其余 6 条待派发任务还没有车）
+    expect(listTasks(db, { page: 1, pageSize: 10, vehicleId: SEED_IDS.vehicleAgv }).records.map((row) => row.id)).toEqual([SEED_IDS.demoTask]);
   });
 
   it('时间范围只筛**有时间窗**的任务（没时间窗的不会以别的时间参与筛选）', () => {
@@ -94,13 +101,21 @@ describe('task.repo · 列表', () => {
     add(db, { ...BASE, id: 't-2', code: 'T20260926-0002', title: '没有时间窗' });
     const inRange = listTasks(db, { page: 1, pageSize: 10, from: '2026-09-27T00:00:00.000Z', to: '2026-09-27T23:59:59.999Z' });
     expect(inRange.records.map((row) => row.id)).toEqual(['t-1']);
-    const outside = listTasks(db, { page: 1, pageSize: 10, from: '2026-09-28T00:00:00.000Z' });
+    // 用**远期**下限而不是「明天」：seed 的 6 条待派发任务的时间窗是「相对当前时刻」
+    // （见 seed.ts），写死某一天的日期会在那天过后悄悄命中它们
+    const outside = listTasks(db, { page: 1, pageSize: 10, from: '2099-01-01T00:00:00.000Z' });
     expect(outside.total).toBe(0);
   });
 
   it('派生字段：站点名与车辆编码来自 join，不由调用方补齐（D-25）', () => {
+    const fixture = seedFixture();
+    const nameOf = (id: string) => fixture.sites.find((site) => site.id === id)!.name;
     const row = listTasks(db, { page: 1, pageSize: 10, keyword: 'T-DEMO-0001' }).records[0];
-    expect(row).toMatchObject({ fromSiteName: 'A 仓库', toSiteName: 'B 仓库', vehicleCode: 'AGV-01' });
+    expect(row).toMatchObject({
+      fromSiteName: nameOf(SEED_IDS.siteDepot),
+      toSiteName: nameOf(SEED_IDS.siteDorm),
+      vehicleCode: 'AGV-01'
+    });
   });
 });
 
@@ -113,7 +128,12 @@ describe('task.repo · 详情与编码', () => {
   it('详情：路线摘要的节点数 / 边数从 JSON 列**现算**，不额外存一行冗余计数', () => {
     const detail = getTaskDetail(db, 'seed-task-demo');
     expect(detail).toBeDefined();
-    expect(detail?.route).toMatchObject({ nodeCount: 6, edgeCount: 5, algorithm: 'aStar' });
+    const demoRoute = seedFixture().demoRoute;
+    expect(detail?.route).toMatchObject({
+      nodeCount: demoRoute.nodeIds.length,
+      edgeCount: demoRoute.nodeIds.length - 1,
+      algorithm: 'aStar'
+    });
     expect(detail?.currentPlan).toBeNull();
     expect(detail?.auditSummaries).toEqual([]);
   });
@@ -123,8 +143,9 @@ describe('task.repo · 详情与编码', () => {
       db,
       `INSERT INTO dispatch_plans (id, request_id, task_id, vehicle_id, strategy, status, cost, cost_detail,
                                    occupied_from, occupied_to, created_at)
-       VALUES ('p-1', 'r-1', 'seed-task-demo', 'seed-veh-agv01', 'greedy', 'applied', 9, '{}',
-               '2026-09-26T00:00:00.000Z', '2026-09-27T00:00:00.000Z', '2026-09-26T00:00:00.000Z')`
+       VALUES ('p-1', 'r-1', 'seed-task-demo', ?, 'greedy', 'applied', 9, '{}',
+               '2026-09-26T00:00:00.000Z', '2026-09-27T00:00:00.000Z', '2026-09-26T00:00:00.000Z')`,
+      [SEED_IDS.vehicleAgv]
     );
     expect(getTaskDetail(db, 'seed-task-demo')?.currentPlan).toMatchObject({ id: 'p-1', vehicleCode: 'AGV-01' });
     // superseded 是历史，不该显示成「当前计划」

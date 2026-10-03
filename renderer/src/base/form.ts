@@ -80,8 +80,17 @@ export const FORM_SPECS: Record<BaseDataTabKey, FormSpec> = {
       { name: 'type', label: '类型', kind: 'select', emptyMeans: 'invalid', options: enumOptions(VEHICLE_TYPES, VEHICLE_TYPE_LABEL) },
       { name: 'capacityKg', label: '额定载重 (kg)', kind: 'number', emptyMeans: 'invalid', step: 'any' },
       { name: 'maxSpeedMps', label: '最高速度 (m/s)', kind: 'number', emptyMeans: 'invalid', step: 'any' },
-      { name: 'x', label: '初始 x (m)', kind: 'number', emptyMeans: 'invalid', step: 'any' },
-      { name: 'y', label: '初始 y (m)', kind: 'number', emptyMeans: 'invalid', step: 'any' },
+      {
+        name: 'currentNodeId',
+        label: '所在节点',
+        kind: 'node',
+        emptyMeans: 'null',
+        help: '车从哪个节点出发（调度算空驶段用）。留空则按坐标就近取点 —— 那是兜底，不是意图'
+      },
+      // 坐标可留空**仅当**选了所在节点（服务端会跟着节点坐标走，与站点同一口径）。
+      // 因此这里写 `omit` 而不是 `invalid`：客户端不抢在服务端前面把合法输入判死
+      { name: 'x', label: '初始 x (m)', kind: 'number', emptyMeans: 'omit', step: 'any', help: '选了所在节点可留空（跟随节点坐标）' },
+      { name: 'y', label: '初始 y (m)', kind: 'number', emptyMeans: 'omit', step: 'any' },
       {
         name: 'battery',
         label: '电量 (%)',
@@ -126,6 +135,14 @@ export const FORM_SPECS: Record<BaseDataTabKey, FormSpec> = {
         help: '留空则按两端节点坐标自动计算'
       },
       { name: 'speedLimitMps', label: '限速 (m/s)', kind: 'number', emptyMeans: 'omit', step: 'any', help: '留空表示不限速' },
+      {
+        name: 'weight',
+        label: '通行权重',
+        kind: 'number',
+        emptyMeans: 'omit',
+        step: 'any',
+        help: '≥ 1：1 = 畅通，越大表示这段路越慢（施工 / 限流 / 路面差）。只增加耗时，不改变里程'
+      },
       { name: 'remark', label: '备注', kind: 'text', emptyMeans: 'null', maxLength: FIELD_LIMITS.remark }
     ]
   },
@@ -232,6 +249,25 @@ export function targetTextOf(row: BaseDataRow): { id: string; label: string; mis
     id: record.targetId ?? '',
     label: record.targetCode ?? '目标已不存在',
     missing: !record.targetCode
+  };
+}
+
+/**
+ * 这张表的表单**需要哪些候选清单**（节点 / 边）。
+ *
+ * 为什么要有这个函数、而不是让页面自己数页签：候选清单是按需拉的
+ * （`BaseDataPage` 的 `loadOptions`），而「哪些字段是节点选择器」这件事只有
+ * 字段定义知道。页面里手写一份 `tabKey === 'sites' || ...` 的清单，
+ * 就等于把这件事实抄了第二遍 —— 实测踩到：车辆表单加上「所在节点」之后，
+ * 那份手写清单没跟着改，下拉里永远是空的（选项加载不出来，界面看起来像节点表坏了）。
+ * 改成从字段定义推导，新增页签/字段时不可能漏。
+ */
+export function optionNeedsOf(tabKey: BaseDataTabKey): { nodes: boolean; edges: boolean } {
+  const fields = FORM_SPECS[tabKey].fields;
+  return {
+    nodes: fields.some((field) => field.kind === 'node' || field.kind === 'target'),
+    // 只有多态目标（禁行规则）需要边清单：它是唯一能指向边的字段
+    edges: fields.some((field) => field.kind === 'target')
   };
 }
 

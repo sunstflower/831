@@ -27,34 +27,55 @@ function renderPage() {
   );
 }
 
+/** 站点 / 边的总数：从 Mock 的基础数据推导（`data/campus/` 的行数），不写死字面量。 */
+// 用例是同步的，因此把「取总数」变成同步的：模块加载时先算一次
+const { buildMockBaseData } = await import('../api/mock-data');
+const baseData = buildMockBaseData();
+function siteTotal(): number {
+  return baseData.sites.length;
+}
+function edgeTotal(): number {
+  return baseData.edges.length;
+}
+
 /** 表格里的数据行（不含表头）。 */
 function bodyRows(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll('tbody tr'));
 }
 
+/**
+ * 站点编码取 `data/campus/campus_stations.csv` 里的真实编码：
+ * `DEPOT`（配送中心，`depot` 类型、第一行）与 `ST01`（南苑学生宿舍）。
+ * 之前写的是 `A-01` / `B-01` —— 那是已退役的 4×3 方格网夹具的编码。
+ */
+const SITE_CODE = 'DEPOT';
+const SITE_NAME = '校园配送中心';
+
 describe('BaseDataPage · 渲染', () => {
   it('默认展示站点表，并显示中文类型与状态', async () => {
     const { container } = renderPage();
     await waitFor(() => {
-      expect(screen.getByText('A-01')).toBeInTheDocument();
+      expect(screen.getByText(SITE_CODE)).toBeInTheDocument();
     });
-    expect(screen.getByText('A 仓库')).toBeInTheDocument();
+    expect(screen.getByText(SITE_NAME)).toBeInTheDocument();
     // 枚举不能以机器值示人（`depot` / `enabled`）
     expect(within(bodyRows(container)[0]!).getByText('仓库')).toBeInTheDocument();
     expect(screen.queryByText('depot')).not.toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument(); // 共 3 条
+    // 站点总数来自车站文件，不写死字面量。用 caption 定位（页脚里也有一句「共 N 条」）
+    const caption = container.querySelector('caption')!;
+    expect(caption.textContent).toContain(String(siteTotal()));
   });
 
   it('四个页签都在，且切换页签会换表', async () => {
     const { container } = renderPage();
-    await waitFor(() => expect(screen.getByText('A-01')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(SITE_CODE)).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: '车辆' }));
     await waitFor(() => {
       expect(screen.getByText('AGV-01')).toBeInTheDocument();
     });
     // 站点表的内容应当已经消失，而不是两张表叠在一起
-    expect(screen.queryByText('A-01')).not.toBeInTheDocument();
+    expect(screen.queryByText(SITE_CODE)).not.toBeInTheDocument();
     expect(within(bodyRows(container)[0]!).getByText('执行中')).toBeInTheDocument();
     expect(within(bodyRows(container)[0]!).getByText('AGV')).toBeInTheDocument();
   });
@@ -79,13 +100,14 @@ describe('BaseDataPage · 渲染', () => {
 describe('BaseDataPage · 查询条件', () => {
   it('搜索框按关键词过滤（防抖后请求一次）', async () => {
     const { container } = renderPage();
-    await waitFor(() => expect(screen.getByText('A-01')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(SITE_CODE)).toBeInTheDocument());
 
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'CHG' } });
+    // `ST01` 只命中一条（编码精确命中，名称里不含它）
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'ST01' } });
     await waitFor(() => {
       expect(bodyRows(container)).toHaveLength(1);
     });
-    expect(screen.getByText('CHG-01')).toBeInTheDocument();
+    expect(screen.getByText('ST01')).toBeInTheDocument();
   });
 
   it('状态筛选按枚举过滤，且**不**出现车辆域的 `enabled`（ISS-036）', async () => {
@@ -107,7 +129,7 @@ describe('BaseDataPage · 查询条件', () => {
 
   it('搜索无结果时给出「为什么空」的说明，而不是只显示暂无数据', async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByText('A-01')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(SITE_CODE)).toBeInTheDocument());
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz-nothing' } });
     await waitFor(() => {
       expect(screen.getByText('没有可显示的记录')).toBeInTheDocument();
@@ -126,12 +148,13 @@ describe('BaseDataPage · 分页', () => {
     const next = screen.getByRole('button', { name: '下一页' });
     expect(prev).toBeDisabled();
     expect(next).toBeEnabled();
-    // 用「· 第 n / m 页」定位页脚：`<caption>` 里还有一句「共 N 条，第 n / m 页」（读屏用）
-    expect(screen.getByText(/· 第 1 \/ 2 页/)).toBeInTheDocument();
+    // 用「· 第 n / m 页」定位页脚：`<caption>` 里还有一句「共 N 条，第 n / m 页」（读屏用）。
+    // 总页数由边数推导（90 条 / 每页 20 → 5 页），不写死
+    const pages = Math.ceil(edgeTotal() / 20);
+    expect(screen.getByText(new RegExp(`· 第 1 / ${pages} 页`))).toBeInTheDocument();
 
     fireEvent.click(next);
-    await waitFor(() => expect(bodyRows(container)).toHaveLength(14));
-    expect(screen.getByRole('button', { name: '下一页' })).toBeDisabled();
-    expect(screen.getByText(/· 第 2 \/ 2 页/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(new RegExp(`· 第 2 / ${pages} 页`))).toBeInTheDocument());
+    expect(bodyRows(container)).toHaveLength(Math.min(20, edgeTotal() - 20));
   });
 });

@@ -61,27 +61,79 @@ export const SEED_ACCOUNTS = [
   { id: 'seed-monitor', username: 'monitor', password: 'monitor123', role: 'monitor', displayName: '监控员' }
 ] as const;
 
+/**
+ * 种子数据的**固定 id**。
+ *
+ * 两点约定：
+ *   1. 站点 / 车辆 / 模板 / 演示任务用**本表登记的 id**（下面这些常量）；
+ *   2. 路网（节点 / 边）的 id 由 `data/campus/` 的业务编码派生
+ *      （`seed-n-<code>` / `seed-e-<code>`），**不在这里逐个登记** ——
+ *      30 个节点 + 90 条边抄一遍只会引入笔误，而派生规则是唯一的（见 `seed.ts`）。
+ *      需要真实节点/边长 id 的调用方用 `campusNodeId()` / `campusEdgeId()`。
+ *
+ * `site*` 三项指向 `data/campus/campus_stations.csv` 里真实存在的车站：
+ * **站点数据只有这一个来源**（D-34），这里登记的是「演示用哪几个站」而不是「有哪些站」。
+ */
 export const SEED_IDS = {
-  siteDepotA: 'seed-site-a',
-  siteDepotB: 'seed-site-b',
-  siteCharging: 'seed-site-chg',
+  /** 校园配送中心（`DEPOT`）：所有配送的起点，也是地图上唯一的 `depot` 类型站点。 */
+  siteDepot: 'seed-site-DEPOT',
+  /** 北苑学生宿舍（`ST09`）：演示执行任务的终点。 */
+  siteDorm: 'seed-site-ST09',
+  /** 第一食堂（`ST03`）：演示待派发任务的端点之一。 */
+  siteCanteen: 'seed-site-ST03',
   vehicleAgv: 'seed-veh-agv01',
+  vehicleAgv2: 'seed-veh-agv02',
   vehicleCarrier: 'seed-veh-car01',
+  vehicleCarrier2: 'seed-veh-car02',
   vehicleDrone: 'seed-veh-drn01',
   templateStandard: 'seed-tpl-std',
-  templateCharging: 'seed-tpl-chg',
+  templateReturn: 'seed-tpl-return',
   /**
-   * 演示任务/路线/告警：让「地图路线高亮」「车辆执行中」这两件事在**首次启动**就可见。
-   *
-   * 真实业务里 `tasks`/`routes` 初始为空（由调度流程产生），但那样地图上永远只有路网，
-   * 无法验证路线高亮与车辆动画。这里放入一条状态自洽的最小演示数据
-   * （AGV-01 从 A 仓跑向 B 仓，路线经真实存在着的 5 条边），
-   * 与 Mock 形态的演示数据保持同一语义。
+   * 演示任务 / 路线 / 告警：让「地图路线高亮」「车辆执行中」这两件事在**首次启动**就可见。
+   * 真实业务里 `tasks`/`routes` 初始为空（由调度流程产生），但那样地图上永远只有路网。
    */
   demoTask: 'seed-task-demo',
   demoRoute: 'seed-route-demo',
-  demoAlert: 'seed-alert-demo'
+  demoAlert: 'seed-alert-demo',
+  /**
+   * 演示**待派发**任务（6 条）：调度中心一打开就有活可干。
+   *
+   * 为什么是 6 条（比 5 台车多）：任务数 ≤ 车辆数时，贪心与匈牙利都是「一车一单」，
+   * 两种策略会给出**完全一样**的计划 —— 界面上「哪个策略更优」永远是平局。
+   * 多出来的那一单只能靠**接力**（一辆车跑完一单再接下一单）派出，
+   * 而接力只有贪心会做（匈牙利是整体匹配，一辆车只接一单），对比于是有了真实结论。
+   */
+  pendingTasks: [
+    'seed-task-p01',
+    'seed-task-p02',
+    'seed-task-p03',
+    'seed-task-p04',
+    'seed-task-p05',
+    'seed-task-p06'
+  ]
 } as const;
+
+/** 路网节点 id 的**唯一推导规则**（`seed-n-<code>`）；`seed.ts` 与 Mock 共用。 */
+export function campusNodeId(code: string): string {
+  return `seed-n-${code}`;
+}
+
+/**
+ * 路网边 id 的推导规则（`seed-e-<code>`）。
+ *
+ * `code` 是 `deriveEdgeCode(两端节点 code)` 的结果（`edge-code.ts`），
+ * 它与样本 `campus_edges.csv` 的 `edge_id` **逐字相同** —— 这不是巧合：
+ * 样本的命名规则就是「按字典序的两端 + 反向加 `_R`」，与 D-35 的推导规则一致。
+ * 若哪天两者不一致，`campus-map.test.ts` 会在种子数据上直接发现。
+ */
+export function campusEdgeId(code: string): string {
+  return `seed-e-${code}`;
+}
+
+/** 站点 id 的推导规则（`seed-site-<code>`）。 */
+export function campusSiteId(code: string): string {
+  return `seed-site-${code}`;
+}
 
 export const SETTINGS_SCHEMA: SettingSchemaItem[] = [
   { key: 'dispatch.defaultStrategy', type: 'select', label: '默认调度策略', defaultValue: 'greedy', options: ['greedy', 'hungarian', 'genetic'], remark: '调度中心默认选中的策略' },

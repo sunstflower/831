@@ -979,3 +979,17 @@
 .udm-track__actions {
   margin-top: var(--udm-space-3);
 }
+
+/*
+ * 拥堵/慢速边（`weight > 1`）。
+ *
+ * 为什么必须在画布上看得见：调度会为这些边多花时间，于是规划出的路线常常「看起来
+ * 绕了一大圈」—— 使用者如果看不到「那条近路是慢的」，就会认为算法算错了。
+ * 橙色 + 点线是「这段能走，但要额外花时间」的既定语汇，与禁行的灰色长虚线区分开。
+ */
+.udm-map-canvas .react-flow__edge-path.udm-edge-net.is-slow {
+  stroke: #f59e0b;
+  stroke-opacity: 0.75;
+  stroke-dasharray: 2 4;
+  stroke-width: 2.5;
+}

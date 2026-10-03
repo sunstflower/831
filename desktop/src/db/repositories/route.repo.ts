@@ -139,6 +139,7 @@ interface GraphEdgeRow {
   to_node_id: string;
   length_m: number;
   speed_limit_mps: number | null;
+  weight: number;
   status: RouteEdgeInput['status'];
 }
 
@@ -170,13 +171,15 @@ export function listGraphNodes(db: Db): RouteNodeInput[] {
 export function listGraphEdges(db: Db): RouteEdgeInput[] {
   return all<GraphEdgeRow>(
     db,
-    'SELECT id, from_node_id, to_node_id, length_m, speed_limit_mps, status FROM edges ORDER BY id ASC'
+    'SELECT id, from_node_id, to_node_id, length_m, speed_limit_mps, weight, status FROM edges ORDER BY id ASC'
   ).map((row) => ({
     id: row.id,
     fromNodeId: row.from_node_id,
     toNodeId: row.to_node_id,
     lengthM: row.length_m,
     speedLimitMps: row.speed_limit_mps,
+    // 与 `graph.repo.toEdge` 同一口径的兜底：老库刚迁移完是 1，缺值时也必须按畅通算
+    weight: row.weight ?? 1,
     status: row.status
   }));
 }

@@ -10,10 +10,50 @@
 ## 项目快照
 
 - **项目**：无人物流调度管理软件（`/Users/sunsetflower/myJobs/js/831`）。
-- **阶段**：**P1 地基已通 + M6 地图已实现（含共点图层避让规则 D-42）+ 渲染层设计系统与信息架构到位 + M2 基础数据全量落地（六类主数据：读 + 写 + 启停；禁行规则另有二次确认的物理删除）+ M3 任务管理落地（状态机 11 动作 + 列表 / 新建 / 编辑 / 六类状态操作 / 详情；批量导入未实现）+ M5 路径规划落地（A* 与 Dijkstra 对比 + 途经点 + 禁行规避，三条只读接口）+ **M4 调度全链路落地**（内核 + 服务 + 六条接口 + 调度中心页：贪心 / 匈牙利 / 一次对比两者、预览 → 二次确认 → 应用、手动指派、回收重算、日志筛选分页）（三层链路端到端可跑）**。代码已落地三端：
-  - `shared/`：枚举 · 类型（含 `MapOverview` 系列快照契约、**M5 的 `RoutePlan` / `RouteCompare*` / `RouteDetail`**）· **错误目录 `ERROR_CODES` 126 条**（36 运行时 + 90 导入域；**唯一登记处**，见 D-33；本批新增 `ROUTE.NOT_FOUND`）· 常量（含 `SEED_IDS` 演示任务/路线/告警）· **`base-rules.ts`（M2 六类资源的字段规则唯一作者，D-44）** · **`task-state.ts`（任务状态机唯一作者：11 个动作、`Record` 化迁移表、`checkTaskTransition`、`TASK_EDITABLE_STATUSES`；主进程 / Mock / 任务页三处共用）** · **`task-rules.ts`（任务字段规则唯一作者，创建与编辑共用同一对跨字段纯函数）** · **M5 路径内核（`route-search.ts`：图模型 + `MinHeap` + A*/Dijkstra 共用框架 + via 分段拼接与警告；`route-graph.ts`：`buildRouteGraph` 三层排除 + `ROUTE_DEFAULT_SPEED_MPS`；`route-rules.ts`：`validateRouteInput` + `ROUTE_MAX_VIA_NODES`。**纯函数、无 IO**，是主进程与浏览器 Mock 的**同一份**实现，D-49）· `edge-code.ts`（边编码唯一作者，禁行规则的目标编码也走它）· **M4 调度内核：`dispatch-types.ts`（快照类型与算法常量）· `dispatch-evaluate.ts`（占用区间 + 六步评估 + 代价函数）· `dispatch-strategies.ts`（贪心 + 匈牙利，含 `solveAssignment`）· `dispatch.ts`（分派入口）—— **纯函数、无 IO**，与 M5 内核同一处置（D-49 / D-51）** · **调度三张词表（`DISPATCH_STRATEGY_LABELS` / `REJECT_REASON_LABELS` / `DISPATCH_LOG_ACTION_LABELS`，唯一作者，D-52）**。
-  - `desktop/`：`node:sqlite` 连接（`createRequire` 惰性加载，见下）· 迁移（**0001 + 0003 + 0004**，见 D-46）· seed（含演示执行数据）· **IPC Router（鉴权/权限/`traceId`，支持 `method` 与 `:name` 路径参数，D-43）** · 会话 · 审计 · **事件总线（按会话权限过滤，D-32）** · **46 条路由**：health / auth×3 / settings×2 / users / map.overview / **M2 读列表×6 + 写路径×13** / **M3 任务×6**（列表 · 详情 · 创建 · 编辑 · `POST :id/:action`（六类状态操作共用一段）· `DELETE :id`）· **M5 路径×3**（`POST /api/routes/plan` · `POST /api/routes/compare` · `GET /api/routes/:id`，权限 `route:plan`，**三条都不发事件** —— 规划是只读计算，没有数据变化） · **M4 调度×6**（`GET /api/dispatch/strategies` · `POST /api/dispatch/preview` · `POST /api/dispatch/apply` · `POST /api/dispatch/manual-assign` · `POST /api/dispatch/recompute` · `GET /api/dispatch/logs`；三条写路由**显式 `method: 'POST'`**，见 `ISS-066` 教训。事件只由写路径发：apply / manual-assign 发 `task.changed` + `vehicle.changed` + `map.updated`，recompute 发同三条，**preview / strategies / logs 一律不发** —— 预览只写一条调度日志，世界没有变化）—— 写接口一律经领域服务（事务 + 审计 + 跨表校验），**任务的状态操作暴露面派生自状态机**（`TASK_API_ACTIONS - {delete}`，未登记动作按「没有这条路」处理）；路由清单与条数以 `docs/api.md` §3 为准，此处只记实测条数；`repositories/` 下 `map.repo.ts`（快照读取层）、**`site` / `vehicle` / `graph` / `restriction` / `template`（M2 读 + 写 + 引用计数）**、**`task.repo.ts`（列表 / 详情四块 / 状态写入 / 计划作废 / 物理删除）** 、**`route.repo.ts`（按 id 查路线 / 写路线 / 读全量图 `listGraphNodes` · `listGraphEdges` / 读禁行规则 —— 构图必须读全量，不能走分页列表）** 与 **`dispatch-plan.repo.ts` / `dispatch-log.repo.ts`（M4：计划写入 + 三处乐观锁 `…If` + 占用槽查询 + `hasOtherActivePlanForVehicle`；日志写入 + 存档读取 + 分页筛选）**；`domain/` 下 `base/`（六个服务）、**`task/task.service.ts`**、**`route/route.service.ts`（`planRoute` / `compareRoutes` / `getRoute`，五类失败原因 → 四个错误码）** 与 **`dispatch/`（`snapshot.ts` 组装 `DispatchSnapshot` · `explain.ts` 人读文案 · `dispatch.service.ts` 五个方法 `preview` / `apply` / `manualAssign` / `recompute` / `listDispatchLogs` + `listStrategies`）**。
-  - `renderer/`：**入口与业务代码齐全，并已沉淀两层共用地基（D-36）** —— `src/main.tsx`（HashRouter，Electron `file://` 必需）、三层适配器（mock / ipc / http，**M4 的 Mock 存储 `api/mock-dispatch.ts` 复用 `shared` 同一份内核**，与主进程逐项对齐由 `mock-dispatch.test.ts` 守）、zustand store（session / selection）、路由与页面（**现代化外壳 + 监控工作台 + 登录页 + 基础数据（M2 读写）+ 任务管理（M3）+ 调度中心（M5 路径规划）** + 地图 + 其余 4 个说明页：M1 / M8 / M9 / M10）、**React Flow 地图**（`map/` 下 model / nodes / edges / hooks / stage / panels / style 全套）、**设计系统**（`styles/theme.css` 令牌 + `styles/ui.css` 共用基元）、**信息架构**（`app/modules.ts`）、**跨模块共用层**（`domain/labels.ts`）、**监控工作台**（`dashboard/`）、**基础数据模块**（`base/`）、**任务模块**（`task/`）与**路径规划面板**（`route/`）；
+- **阶段**：**首期十个模块（M1-M10）的业务链路全部落地，三层（`shared` / `desktop` / `renderer`）端到端可跑；
+  本轮（2026-09-28 第二批）在此之上做了四项**让调度真的有事可做**的增强**：
+  ① **车辆接入**（基础数据页可新建车，「所在节点」让车从指定节点出发，新车立即进入调度候选池）；
+  ② **调度对比给出了可核对的数字**（执行里程 / 行驶耗时 / 全部完成 / 用车，外加逐项差异文案
+  「匈牙利少跑 680 m、少行驶 17 分 53 秒、早 12 分 2 秒完成」）与**按车辆分组的接力清单**
+  （同一台车连跑两单：`CAR-01` 先 `T-DEMO-0002` 再 `T-DEMO-0007`，区间不重叠）；
+  ③ **告警中心**加了「停滞」列（按状态换措辞：未认领 / 未开始处理 / 未解决）与**批量认领本页待确认**
+  （逐条打既有接口，不新增批量端点）；
+  ④ **地图数据换成 `data/campus/` 的更复杂校园路网**（30 节点 / 90 条有向边 / 13 站点 / 2 处占道），
+  并引入 `edges.weight`（≥ 1 的**耗时**惩罚系数）+ 一份自编拥堵叠加层，让「近但慢」与「远但快」同时存在 ——
+  这是「哪个策略更快」不再恒等于 0 的前提（D-54 / D-55）。
+  ⑤ **告警中心从「只看过去」扩到「也看未来」**（2026-10-03 本批）：新增 `GET /api/alerts/risks`
+  一次扫描给出**三个视图** —— 风险清单（7 类：抢同一台车 / 车跑不了 / 电量撑不到 / 缺路线 /
+  预计迟到 / 窗口已过 / 还没排上车）、**任务分配派发区块**（按车辆分组，同一台车的第 2 单即「接力」，
+  给出每单的占用区间）、以及还没排上车的缺口。**风险不是告警**：没有 id、不走状态机、不能认领 ——
+  「预计会超时」被认领掉毫无意义（D-57）。判据的唯一作者是 `shared/src/plan-risk.ts`，
+  主进程与浏览器 Mock 调**同一个函数**。调度中心的派发明细表同时加了**「路线（载货段）」列**
+  （`2 段 · 300 m`，无路线时标黄），应用派发后的提示条给出**「在地图上查看这 N 台车」**
+  —— 派发结果因此能一键落到地图上（选中车辆 → 地图自动聚焦并高亮其路线）。
+  此前的 M2（六类主数据读写）· M3（任务状态机 11 动作）· M4（调度全链路）· M5（A* / Dijkstra + 途经点 + 禁行）·
+  M6（React Flow 地图，含共点图层避让 D-42）· M1（用户维护）· M7（监控读模型 + 模拟执行器）·
+  M8（告警五态闭环）· M9（审计查询与 CSV 导出）· M10（schema 驱动设置页）保持可用。
+  未做（明确属二期或已登记）：四类数据文件的**导入管线**、M3 批量导入、M2 详情接口、订单端点图层。代码已落地三端：
+  - `shared/`：**本轮新增 `campus-map.ts`（`data/campus/` 原生 5 文件 → 内部节点的唯一翻译层：列名 / 单位 / 派生字段，
+    纯函数无 IO；含拥堵叠加层与「障碍物 → 封路 or 权重×2」的车道数判据）· `seed-data.ts`（`buildSeedDataset()`：
+    路网 / 站点 / 车辆 / 模板 / 演示任务与路线的**唯一**推导处，seed 与浏览器 Mock 共用，D-55）** ·
+    枚举 · 类型（含 `MapOverview` 系列快照契约、**M5 的 `RoutePlan` / `RouteCompare*` / `RouteDetail`**、**`edge.weight` 与可空的车辆 `x`/`y` + `currentNodeId`**）· **错误目录 `ERROR_CODES` 126 条**（36 运行时 + 90 导入域；**唯一登记处**，见 D-33；本批新增 `ROUTE.NOT_FOUND`）· 常量（含 `SEED_IDS` 演示任务/路线/告警）· **`base-rules.ts`（M2 六类资源的字段规则唯一作者，D-44）** · **`task-state.ts`（任务状态机唯一作者：11 个动作、`Record` 化迁移表、`checkTaskTransition`、`TASK_EDITABLE_STATUSES`；主进程 / Mock / 任务页三处共用）** · **`task-rules.ts`（任务字段规则唯一作者，创建与编辑共用同一对跨字段纯函数）** · **M5 路径内核（`route-search.ts`：图模型 + `MinHeap` + A*/Dijkstra 共用框架 + via 分段拼接与警告；`route-graph.ts`：`buildRouteGraph` 三层排除 + `ROUTE_DEFAULT_SPEED_MPS`；`route-rules.ts`：`validateRouteInput` + `ROUTE_MAX_VIA_NODES`。**纯函数、无 IO**，是主进程与浏览器 Mock 的**同一份**实现，D-49）· `edge-code.ts`（边编码唯一作者，禁行规则的目标编码也走它）· **M4 调度内核：`dispatch-types.ts`（快照类型与算法常量）· `dispatch-evaluate.ts`（占用区间 + 六步评估 + 代价函数）· `dispatch-strategies.ts`（贪心 + 匈牙利，含 `solveAssignment`）· `dispatch.ts`（分派入口）—— **纯函数、无 IO**，与 M5 内核同一处置（D-49 / D-51）** · **调度三张词表（`DISPATCH_STRATEGY_LABELS` / `REJECT_REASON_LABELS` / `DISPATCH_LOG_ACTION_LABELS`，唯一作者，D-52）**。
+  - `desktop/`：`node:sqlite` 连接（`createRequire` 惰性加载，见下）· 迁移（**0001 + 0003 + 0004 + 0005**，
+    见 D-46 / D-54；`0005_edge_weight.sql` 给 `edges` 加 `weight REAL NOT NULL DEFAULT 1 CHECK (weight >= 1)`）·
+    seed（**改为「取数（读 `data/campus/`）→ 推导（`buildSeedDataset()`）→ 落库」三步，本文件里没有业务数字**；
+    含演示执行数据与 6 条演示待派发任务，后者的时间窗跟着当前时刻刷新）· `db/campus-map-source.ts`（Node 侧取数）· **IPC Router（鉴权/权限/`traceId`，支持 `method` 与 `:name` 路径参数，D-43）** · 会话 · 审计 · **事件总线（按会话权限过滤，D-32）** · **65 条路由**：health / auth×3 / settings×2 / users / map.overview / **M7 轨迹 `GET /api/map/tracks/:vehicleId`** / **M2 读列表×6 + 写路径×13** / **M3 任务×6**（列表 · 详情 · 创建 · 编辑 · `POST :id/:action`（六类状态操作共用一段）· `DELETE :id`）· **M5 路径×3**（`POST /api/routes/plan` · `POST /api/routes/compare` · `GET /api/routes/:id`，权限 `route:plan`，**三条都不发事件** —— 规划是只读计算，没有数据变化） · **M4 调度×6**（`GET /api/dispatch/strategies` · `POST /api/dispatch/preview` · `POST /api/dispatch/apply` · `POST /api/dispatch/manual-assign` · `POST /api/dispatch/recompute` · `GET /api/dispatch/logs`；三条写路由**显式 `method: 'POST'`**，见 `ISS-066` 教训。事件只由写路径发：apply / manual-assign 发 `task.changed` + `vehicle.changed` + `map.updated`，recompute 发同三条，**preview / strategies / logs 一律不发** —— 预览只写一条调度日志，世界没有变化）—— 写接口一律经领域服务（事务 + 审计 + 跨表校验），**任务的状态操作暴露面派生自状态机**（`TASK_API_ACTIONS - {delete}`，未登记动作按「没有这条路」处理） · **M1 用户维护×4**（列表 / 新增 / 更新 / 重置密码；两条护栏「不能停用最后一个启用的管理员」「不能停用当前账号」在服务端，
+    字段归属随调用点走，故前端能把红框标在正确的控件上）· **M7 监控×3**（`monitor/overview` / `tasks` / `vehicles`；
+    两条列表复用 `listTasks` / `listVehicles` 后补字段，不复制 SQL）· **M7 执行×2**（`execution/tasks/:id/start` / `takeover`；
+    状态迁移复用 `operateTask`，遥测与轨迹写在**另一个**事务里 —— `tx()` 不支持嵌套）· **M8 告警×5**（列表 / 详情 / 认领 / 解决 / 归档；
+    迁移表与「某状态可有哪些操作」都取自 `shared/src/alert-state.ts`）· **M9 审计×2**（查询 / 导出；导出把
+    「文件名 + 正文」放进 `data` —— 本地 IPC 形态没有响应头可放 `Content-Disposition`）· **M10 设置写×1**（PATCH 只改提到的键、整批校验后才写）；
+    `repositories/` 另有 **`monitor.repo.ts` / `execution.repo.ts`（轨迹采样与遥测）**、
+    `domain/` 另有 **`user/`（`user.service.ts`）· `alert/`· `audit/`· `monitor/`· `settings/`（`settings.service.ts`）·
+    `execution/executor.ts`（M7 本地模拟执行器，D-10：`tick()` 是纯推进、`startTimer()` 只管调度，因此可被逐帧断言；
+    `adoptRunningTasks()` 把上次进程退出时仍在跑的任务接回内存续跑）**；
+    路由清单与条数以 `docs/api.md` §3 为准，此处只记实测条数；`repositories/` 下 `map.repo.ts`（快照读取层）、**`site` / `vehicle` / `graph` / `restriction` / `template`（M2 读 + 写 + 引用计数）**、**`task.repo.ts`（列表 / 详情四块 / 状态写入 / 计划作废 / 物理删除）** 、**`route.repo.ts`（按 id 查路线 / 写路线 / 读全量图 `listGraphNodes` · `listGraphEdges` / 读禁行规则 —— 构图必须读全量，不能走分页列表）** 与 **`dispatch-plan.repo.ts` / `dispatch-log.repo.ts`（M4：计划写入 + 三处乐观锁 `…If` + 占用槽查询 + `hasOtherActivePlanForVehicle`；日志写入 + 存档读取 + 分页筛选）**；`domain/` 下 `base/`（六个服务）、**`task/task.service.ts`**、**`route/route.service.ts`（`planRoute` / `compareRoutes` / `getRoute`，五类失败原因 → 四个错误码）** 与 **`dispatch/`（`snapshot.ts` 组装 `DispatchSnapshot` · `explain.ts` 人读文案 · `dispatch.service.ts` 五个方法 `preview` / `apply` / `manualAssign` / `recompute` / `listDispatchLogs` + `listStrategies`）**。
+  - `renderer/`：**入口与业务代码齐全，并已沉淀两层共用地基（D-36）** —— `src/main.tsx`（HashRouter，Electron `file://` 必需）、三层适配器（mock / ipc / http，**M4 的 Mock 存储 `api/mock-dispatch.ts` 复用 `shared` 同一份内核**，与主进程逐项对齐由 `mock-dispatch.test.ts` 守）、zustand store（session / selection）、路由与页面（**现代化外壳 + 监控工作台 + 登录页 + 基础数据（M2 读写）+ 任务管理（M3）+ 调度中心（M4 调度台 + M5 路径规划）+ 告警中心（M8）+ 审计日志（M9）+ 系统设置（M10）+ 用户管理（M1）** + 地图；`PlaceholderPage` 与 `app/modules.ts` 的 `PLANNED_MODULES` 保留给下一个模块，**当前没有任何路由指向占位页**）、**React Flow 地图**（`map/` 下 model / nodes / edges / hooks / stage / panels / style 全套；**本轮新增轨迹回放面板**，实时位置与历史折线分开显示）·
+    **本轮的展示层增强**：`dispatch/`（对比表加「执行里程 / 行驶耗时 / 全部完成 / 用车」四列 + 差异文案 + **按车辆分组的接力清单**）、
+    `ops/model.ts`（告警「停滞」话术与批量认领的纯函数）、`map/edges/NetEdge.tsx`（从 `data` 派生视觉标志类）、**设计系统**（`styles/theme.css` 令牌 + `styles/ui.css` 共用基元）、**信息架构**（`app/modules.ts`）、**跨模块共用层**（`domain/labels.ts`）、**监控工作台**（`dashboard/`）、**基础数据模块**（`base/`）、**任务模块**（`task/`）与**路径规划面板**（`route/`）；
     另有 **首屏声明**（`index.html` 内联图标 + 深色 meta，D-37）与**弹层键盘语义**（D-38）；
     **基础数据页自本批起为六个页签**（站点 / 车辆 / 路网节点 / 有向边 / 禁行规则 / 任务模板），
     禁行规则与任务模板各自的「契约不对称」都体现在界面上（前者无启停、有二次确认删除；后者只有编辑）。
@@ -58,274 +98,123 @@
   - `npm run build` 与 `npm test` 均已通过（详见「验证基线」）。
 - **形态**：本地优先桌面应用 —— Electron 主进程（SQLite + 领域服务 + 算法）+ React 渲染层 + 三层服务适配器（IPC / 本地 HTTP / Mock）。
 - **技术栈（`node_modules` 实测版本）**：Electron 44.3.0 · React / React-DOM 18.3.1 · **`@xyflow/react` 12.11.6（仅 renderer；见 D-21）** · react-router-dom 6.30.6 · **Vite 6.4.3（renderer 独立安装）+ Vite 5.4.21（根，Vitest 侧）** · TypeScript 5.9.3 · **Node 内置 `node:sqlite`（见 D-14，非 better-sqlite3）** · zustand 5.0.15（`@xyflow/react` 另带嵌套 zustand 4.5.7，两者并存、互不影响）· Vitest 2.1.9 · bcryptjs 2.4.3 · @testing-library/react 16.3.3 · **@testing-library/jest-dom 6.10.0** · jsdom 25.0.1 · concurrently 9.2.4 · wait-on 8.0.5；运行时 Node v25.8.2 / npm 11.11.1。
-- **仓库状态**：已完成 `git init`。提交序列 `29143cc` → `7dcc211` → `66fa7d2` → `3e33de7` → `121af4d` → `ab9a762` → `076714e` → `84fa028` → `e9a6100` → **`64d9eea`（`地图 build`，68 文件）**。
-  - `64d9eea` 由**使用者本人**于 2026-09-26 提交，内容 = 此前积压的**两批**：
-    **(1)** 2026-09-25 的地图现代化改动（`renderer/src/map/` 全套 panels/model/hooks）；
-    **(2)** 「设计系统 + 信息架构 + 现代化外壳/工作台/登录页」（含 `app/modules.ts`、`styles/ui.css`、
-    `domain/labels.ts`、`dashboard/`，以及回写 `AGENTS.md` / `docs/issues.md` / `docs/api.md` /
-    `docs/module-M6-map.md` / `README.md` / `docs/requirement-raw.md` 边界行的改动）。
-    这两批的日志已分别记在「工作日志」里（满足「先记录、后提交」）。
-    **两处与纪律的偏差，如实记录**：① commit message 未按第 6 条的 `类型(模块): 摘要` 格式；
-    ② 两批不同的改动被合成一笔，事后无法用 `git log` 分辨「地图」与「设计系统」两次变更。
-  - ⚠️ **尚未提交**：2026-09-26 的一批 —— 首屏声明、弹层键盘语义、类名护栏（D-37 / D-38 / D-39）
-    与**传输层工具抽取 + 文档护栏**（D-40）合并未提交。
-    - 涉及文件：`renderer/index.html`、`components/UserMenu.tsx`、`components/AppLayout.tsx`、
-      `styles/layout.css`、`styles/ui.css`、`styles/theme.css`、`map/nodes/*.tsx`、
-      `desktop/src/ipc/api.ts`、`desktop/src/db/repositories/settings.repo.ts`、`vitest.config.ts`、
-      `docs/*` / `AGENTS.md` / `README.md` 的回写。
-    - 新增文件：`desktop/src/ipc/paging.ts` · `validators.ts` · `db/repositories/settings.repo.ts` 与方法同名的测试、
-      `renderer/src/app/index-html.test.ts` · `components/AppLayout.test.tsx` · `components/UserMenu.test.tsx` ·
-      `styles/classnames.test.ts` · `tests/docs.test.ts`。
-    - 日志与 `docs/issues.md` 均已同步（含 `ISS-015` 关闭与 `D-40` 登记）。
-  - ⚠️ **仍未提交**：**M2 读取路径**（D-41；`shared/src/edge-code.ts`、`desktop/src/db/repositories/{site,vehicle,graph}.repo.ts`、
-    `desktop/src/ipc/api.ts` 的四个路由、`renderer/src/base/` 与 `renderer/src/pages/BaseDataPage.tsx`、
-    `tests/docs.test.ts` 新增的路由↔契约断言，以及 `docs` 的回写）。
-    日志与 `docs/issues.md` 均已同步（含 `ISS-050`～`ISS-052`、`D-41`），**现在可提交**。
-    拟提交信息：`feat(base-data): 落地 M2 读取路径与基础数据页`。
-  - ⚠️ **仍未提交**：**地图共点图层避让**（D-42，`ISS-053` 已关闭；`renderer/src/map/model/toFlow.ts`、
-    新增 `renderer/src/map/model/layout.test.ts`、随缺陷更新的 `toFlow.test.ts` / `visualization.test.ts`
-    两条旧断言，以及 `docs/issues.md` 的回写）。
-    日志与 `docs/issues.md` 均已同步，**现在可提交**。
-    拟提交信息：`fix(map): 共点图层互不遮挡`。
-  - ⚠️ **仍未提交**：**M2 写路径 + 路由方法与路径参数**（D-43 / D-44；`desktop/src/ipc/router.ts` 重写与新增
-    `router.dispatch.test.ts`、`shared/src/base-rules.ts` 与其测试、`desktop/src/domain/base/` 四个服务文件 +
-    `base.service.test.ts`、三个仓库文件的写方法、`desktop/src/ipc/api.ts` 的 12 条写路由与
-    `api.write.test.ts`、`renderer/src/api/mock-base-write.ts` 与 `mock*` 的写路径、`renderer/src/base/` 的
-    `form.ts`（写表单模型）/ `EntityFormDialog.tsx` / `useBaseDataWrite.ts` 与 `BaseDataPage.tsx` 的写 UI，
-    以及 `docs` 的回写）。
-    日志与 `docs/issues.md` 均已同步（含 `ISS-054`～`ISS-057` 与本批的 D-43 / D-44），**现在可提交**。
-    拟提交信息：`feat(base-data): 落地 M2 写路径与路由方法/路径参数`。
-  - ⚠️ **仍未提交**：**M2 剩余两类主数据（禁行规则 + 任务模板）与 `OBJECT_TYPES` 扩项**（D-45 / D-46；
-    `shared/src/enums.ts` 的 `OBJECT_TYPES` + `RESTRICTION_STATUSES`、新增 `desktop/migrations/0003_object_types.sql`、
-    `shared/src/types.ts` 的 `RestrictionListItem` / `TaskTemplateListItem`、`shared/src/base-rules.ts` 的两组校验、
-    `desktop/src/db/repositories/{restriction,template}.repo.ts`、`desktop/src/domain/base/{restriction,template}.service.ts`、
-    `desktop/src/ipc/api.ts` 的 7 条路由、`renderer/src/api/mock.ts` / `mock-base-write.ts` / `mock-data.ts`、
-    `renderer/src/base/{model,form,EntityFormDialog}.tsx` 与 `pages/BaseDataPage.tsx`、
-    `renderer/src/domain/labels.ts` 与 `labels.test.ts`，以及 `docs` / 本文件 / `README.md` 的回写）。
-    日志与 `docs/issues.md` 均已同步（含 `ISS-039` 关闭与新增 `ISS-058` / `ISS-059`），**现在可提交**。
-    拟提交信息：`feat(base-data): 落地禁行规则与任务模板，并把 OBJECT_TYPES 扩项做成断言`。
-  - ⚠️ **仍未提交**：**M3 任务管理**（D-47 / D-48；`shared/src/task-state.ts` · `task-rules.ts` 与各自测试、
-    `desktop/migrations/0004_task_pause_reason.sql`、`desktop/src/db/repositories/task.repo.ts`（+ 测试）、
-    `desktop/src/domain/task/task.service.ts`（+ 测试）、`desktop/src/ipc/api.ts` 的 6 条任务路由与
-    `api.task.test.ts`、`renderer/src/task/` 全套（model / form / actions / 两个弹层 / style / 三个测试）、
-    `renderer/src/pages/TasksPage.tsx`（+ 读 / 写两个测试）、`renderer/src/api/mock-tasks.ts` 与 `mock-parity.test.ts`、
-    **公共机制上移**（`renderer/src/domain/{form,table,format,paging,tone}.ts`、`renderer/src/api/usePagedList.ts` ·
-    `useApiWrite.ts`、`base/*` 的相应搬迁与 `base/style/base.css` 删除、`styles/ui.css` 的类名前缀上收）、
-    `renderer/src/app/App.tsx` 与 `app/modules.ts`，以及 `docs/module-M3-task.md`（新增）与其他 `docs` / 本文件 / `README.md` 的回写）。
-    日志与 `docs/issues.md` 均已同步（新增并关闭 `ISS-060`～`ISS-062`、新增 `D-47` / `D-48`），**现在可提交**。
-    拟提交信息：`feat(task): 落地 M3 任务状态机与任务管理页`。
-  - ⚠️ **仍未提交**：**M5 路径规划**（D-49 / D-50；`shared/src/route-search.ts` · `route-graph.ts` ·
-    `route-rules.ts` 与各自测试、`shared/src/errors.ts` 的 `ROUTE.NOT_FOUND`、`shared/src/types.ts` 的
-    `RoutePlan*` / `RouteDetail`、**`desktop/src/db/repositories/route.repo.ts`**、
-    **`desktop/src/domain/route/route.service.ts`**（+ 测试）、`desktop/src/ipc/api.ts` 的 3 条路由与
-    `api.route.test.ts`、**`desktop/src/ipc/api.auth.test.ts` 与 `api.ts` 两处认证路由补 `method: 'POST'`（ISS-066 修复）**、
-    **`renderer/src/route/`**（model / RoutePlanner / style / model.test）与 `pages/DispatchPage.tsx`（+ 读 / 错误两个测试）、
-    `renderer/src/api/mock-route.ts` 与 `mock.ts` / `mock-data.ts` / `mock-parity.test.ts` 的 M5 分支、
-    `app/App.tsx` / `app/modules.ts` / `pages/index.ts` / `domain/labels.ts`，以及新增
-    **`docs/module-M5-route.md`** 与其它 `docs` / 本文件 / `README.md` 的回写）。
-    日志与 `docs/issues.md` 均已同步（新增并关闭 `ISS-063`～`ISS-066`、新增 `D-49` / `D-50`），**现在可提交**。
-    拟提交信息：`feat(route): 落地 M5 路径规划，并修复认证接口的方法契约偏差（ISS-066）`。
-  - ⚠️ **仍未提交**：**M4 调度内核**（D-51；`shared/src/dispatch-types.ts` · `dispatch-evaluate.ts` ·
-    `dispatch-strategies.ts` · `dispatch.ts` 与 5 个测试文件（49 例）、`shared/src/index.ts` 的再导出，
-    以及与内核同批的 `docs/module-M4-dispatch.md` 回写、`docs/issues.md`（新增 ISS-067 已解决 / ISS-068 待办）、
-    本文件与 `README.md` / `docs/architecture.md` 的回写）。**无接口、无页面、无迁移** —— 本批只到 DoD 的 Step 2。
-    日志与 `docs/issues.md` 均已同步，**现在可提交**。
-    拟提交信息：`feat(dispatch): 落地 M4 调度内核（贪心 + 匈牙利 + 六步评估）`。
-  - ⚠️ **仍未提交**：**M4 调度服务 + 六条接口 + 调度中心页**（D-52 / D-53；
-    `desktop/src/domain/dispatch/` 三个文件与 `dispatch.service.test.ts`、
-    `desktop/src/db/repositories/dispatch-plan.repo.ts` · `dispatch-log.repo.ts`、
-    `desktop/src/ipc/api.ts` 六条路由与 `api.dispatch.test.ts`、`desktop/src/db/db.test.ts` 的 CHECK 探针、
-    `renderer/src/dispatch/`（model / DispatchConsole / ConfirmDispatchDialog / DispatchLogPanel / style / 测试）、
-    `renderer/src/api/mock-dispatch.ts` 与测试、`renderer/src/domain/labels.ts` 的再导出、`shared/src/constants.ts` 的三张词表、
-    `pages/DispatchPage.tsx` 的两区块改版，以及 `docs/api.md` §3.4 · `docs/module-M4-dispatch.md` §14/§15 ·
-    `docs/issues.md`（ISS-069…ISS-072）· 本文件与 `README.md` / `docs/architecture.md` 的回写）。
-    **本批含两处实测缺陷修复**（`ISS-069` / `ISS-070`，见「困难与问题记录」），日志已同步，**现在可提交**。
-    拟提交信息：`feat(dispatch): 落地 M4 调度服务、六条接口与调度中心页`。
-  - 工作区此刻共 **9 批**改动（D-40 → D-53），`git status --porcelain` 的条数以实测为准（**不复述具体数字**，D-34）。
-  - `package-lock.json` 已纳入版本控制；开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除。
-- **验证基线（2026-09-27 最新；「M4 调度服务 + 六条接口 + 调度中心页」批次实测）**：
-  - ✅ `npm test`：**77 套件 / 860 用例全通过**（本批 +4 套件 / +55 例：`dispatch.service.test.ts` 26 ·
-    `api.dispatch.test.ts` 9 · `renderer/src/dispatch/model.test.ts` 13 · `mock-dispatch.test.ts` 6 ·
-    `db.test.ts` 的 `dispatch_logs` CHECK 探针 1，另含既有套件的增量）。
+- **仓库状态**：已完成 `git init`。提交序列 `e9a6100` → **`64d9eea`（`地图 build`，68 文件）** → **`a22ae16`（`all build`，207 文件）**。
+  - `64d9eea` 与 `a22ae16` 由**使用者本人**提交（2026-09-26 / 2026-09-28），各把此前积压的一批改动合成一笔。
+    **如实记录两处与纪律的偏差**：① commit message 均未按第 6 条的 `类型(模块): 摘要` 格式；
+    ② 多批不同的改动（M2 / M3 / M4 / M5 / M6 / 设计系统 / 文档回写）被合成一笔，事后无法用 `git log` 分辨。
+  - ⚠️ **工作区仍有未提交改动（两批叠加）**：
+    ① **2026-09-28 第二批**：车辆接入 / 调度对比与接力 / 告警停滞与批量认领 / 复杂地图与边权，
+    以及为它们补的测试、文档与 `data/campus/`（新增目录）—— 见 `ISS-076`…`ISS-082`；
+    ② **2026-10-03 第三批（本批）**：任务风险预检（`GET /api/alerts/risks`）与告警中心的两个新区块、
+    调度派发明细的路线列与「在地图上查看这 N 台车」—— 见 `ISS-083`…`ISS-086`。
+    涉及 `shared/` · `desktop/` · `renderer/` · `data/` · `docs/*` · `README.md`；
+    **`AGENTS.md`（本文件）的日志与 `docs/issues.md` 已同步**，见「工作日志」末条。
+  - `package-lock.json` 已纳入版本控制；开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除
+    （`data/campus/` 例外 —— 它是**源数据**而不是运行产物，因此必须在版本控制里）。
+
+- **验证基线（2026-10-03 实测：任务风险预检 / 派发区块 / 路线列 / 派发后上地图）**：
+  - ✅ `npm test`：**92 个套件 / 1041 个用例全通过**（本批新增 `shared/src/plan-risk.test.ts` 19 条、
+    `desktop/src/domain/alert/risk.service.test.ts` 8 条、`renderer/src/pages/AlertsRisk.test.tsx` 3 条、
+    `renderer/src/dispatch/DispatchConsole.test.tsx` 4 条；`renderer/src/ops/model.test.ts` 扩到 18 条
+    —— 含本轮新加的「预检表长文本列必须能换行」CSS 护栏）。
   - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace 全部 exit 0。
-  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 1.94 kB + **CSS 66.14 kB（gzip 11.13 kB）** +
-    **JS 595.78 kB（gzip 187.57 kB）**（调度台在渲染层，故包体较上一轮的 550.58 kB 有增长）。
-  - ✅ **IPC 路由 46 条**（本批 +6，全部为 `/api/dispatch/*`）；`tests/docs.test.ts` 的
-    「代码里的每个路由都能在 `docs/api.md` 查到」保持通过（六条路由的文档小节本就存在）。
-  - ✅ **Electron 端到端（真实 `ipc` 适配器 + 真实 SQLite，2026-09-27 实测）**：走登录表单（`admin/admin123`）
-    → 造 3 条 `pending` 任务 → 调度中心全选 → 「全部（对比）」→ 预览（贪心 / 匈牙利两行对比 + 推荐语）
-    → 逐策略查看明细 → **应用派发二次确认** → 确认 → 「已派发 1 单（匈牙利）」。
-    落库核对：任务 `assigned`、车辆 `CAR-01` 由 `idle` → `reserved`、`dispatch_logs` 2 条（preview + apply）、
-    审计 1 条；同一 `requestId` 再应用得 `DISPATCH.ALREADY_APPLIED`，伪造 id 得 `DISPATCH.REQUEST_NOT_FOUND`；
-    手动指派超载被拒（「任务载重 200kg 超过 DRN-01 剩余载重 50kg」）、轻货成功留痕；
-    重算三步可见（回收 → 任务回 `pending` → 新预览待确认）；日志面板筛选 `action=apply` 命中 1 行、
-    取消筛选 5 行。**控制台 / 页面错误 0 条**。
-  - ✅ **浏览器 Mock 形态**：同一套走查（造数据走真实 UI：新建任务 → 提交）逐项结论相同 ——
-    两单同车串行**一次派成 2 条**（本批 `ISS-069` 的修复点，修复前此处报「车辆状态不允许该操作」）、
-    日志 5 条、车辆 `CAR-01` 仍 `reserved`（`ISS-070` 的修复点）。**控制台错误 0 条**。
-  - ✅ **反向验证（护栏有效性）**：把 `reservedInBatch` 的短路改回旧行为后，`ISS-069`/`ISS-070` 的
-    四条新用例（主进程 2 + Mock 1 + 服务层 1）立刻转红；恢复后全绿 —— 说明它们真的锁住了那两处缺陷。
-  - ✅ `docs/issues.md` 索引/明细/锚点 **72 / 72 / 72**，悬空 0 · 未用 0
-    （严重度合计 5+42+25=72 · 状态合计 51+9+6+1+3+2=72，由 `tests/docs.test.ts` 的三处计数护栏守住）。
-  - ✅ **文档自检**（`/tmp/doccheck.py`）：16 份 Markdown 边界行齐全 · 307 表格块 · 116 围栏配平 · 64 条相对链接 0 悬空。
-  - ⚠️ 本批**未跑** `db:*` 与迁移相关复测：无新迁移、无 DDL 变化（`0001`/`0003`/`0004` 未动），
-    故「全新库引导」结论沿用上一轮；`db:reset` 在本轮走查前执行过（seed 幂等、`dispatch_plans` / `dispatch_logs` 归零）。
-  - ℹ️ 走查脚本踩到的两个**工具用法**坑（非产品缺陷）已登记 `ISS-072`：Mock 是内存库、`page.goto` 会连登录态一起重置；
-    在 `page.evaluate` 里 `import` 应用模块会拿到**第二个**模块实例（写进另一份内存库）。
-    两条纪律已写进脚本头部注释，本轮走查据此重写。
+  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 1.94 kB + CSS 74.85 kB（gzip 12.34 kB）+
+    JS 691.22 kB（gzip 215.31 kB）。**JS 体积较上批显著变大，是 `data/campus/` 路网与 M5/M4 内核进入
+    单一 chunk 的结果**（Vite 已提示 > 500 kB）；二期若要做代码分割再处理，不属于本批范围。
+  - ✅ `npm run db:reset`：迁移 `1, 3, 4, 5`；seed 落 `nodes:30 · edges:90 · sites:13 · restrictions:2 ·
+    vehicles:5 · templates:2 · users:3 · settings:9 · tasks:7 · routes:1 · alerts:1`；复跑幂等。
+  - ✅ **Electron 端到端走查（真实 `ipc` + 真实 SQLite，CDP 连渲染进程；窗口 1440×900）**：
+    - 告警中心首屏实测风险清单 **6 条「未派发」**（T-DEMO-0002…0007）+ 派发区块 **1 台车 · 1 单已生效**
+      （AGV-01 / T-DEMO-0001 / `执行中`，走的是「按 `routes.task_id` 回退」的第二级查法）。
+    - 调度中心 `全部（对比）` 实测：**贪心 5/6 · 拒绝 1 · 2030 m · 28 分 32 秒 · 4 台（含接力 1 单）**
+      与 **匈牙利 4/6 · 拒绝 2 · 1580 m · 20 分 5 秒 · 4 台**；差异行原文
+      「匈牙利更优的地方：少跑 450 m、少行驶 8 分 27 秒、早 2 分 20 秒完成」；被拒的是
+      `T-DEMO-0004`「AGV-01 当前状态 busy」（该车是 seed 演示执行任务占用着 —— 与实际一致）。
+    - 派发明细表每一行都带**路线（载货段）**（如 `2 段 · 300 m` / `5 段 · 680 m`），无一行是空。
+    - 应用派发（5 单）后提示条变为 **「已派发 5 单（贪心）」+「在地图上查看这 4 台车」**；
+      点它跳 `#/map`，实测**图层面板「配送路线 6」**、选中 `CAR-01`（`车辆 · 已预留`，执行任务 T-DEMO-0007）
+      —— 即「派发后在地图上可见」这条链路真的通了。
+    - 告警中心刷新后实测风险清单变为 **2 条「必须处理」**：`已超时`（T-DEMO-0004 时间窗已过 7215 秒，
+      任务仍是 `pending`）与 `未派发`（同一任务，升为 critical）—— **这正是 `ISS-084` 修掉的那一类**，
+      修前它在 `pending` 上永不触发。派发区块同时显示 **4 台车 · 5 单已生效**，`CAR-01` 标 **`接力 2 单`**
+      并列出「第 1 单 T-DEMO-0002 / 第 2 单 T-DEMO-0007」两条不重叠区间。
+    - 控制台错误 0 条。
+  - ✅ **走查中又修掉一处真实缺陷**：预检表沿用列表页的 `white-space: nowrap`，长文本「建议动作」被顶出
+    卡片右缘，在 macOS（横向滚动条默认不可见）上表现为**文字被裁半句**；实测溢出量
+    `scrollWidth 1183 > clientWidth 1146`，修后两者相等（`ISS-086`）。
+  - > 本轮未重跑 `db:migrate` 的冷启动引导（迁移集未变）与 `npm run dev`（Vite 侧无改动），故不声称结果。
 
-- **验证基线（2026-09-26 上一轮；「M4 调度内核」批次实测，保留供对照）**：
-  - > 本轮复跑：`npm test` **73 套件 / 805 用例全通过**（本批 +5 套件 / +49 例）；`typecheck` 三 workspace exit 0；
-  - > `build` 三端通过（renderer 体积未变：`index.html` 1.94 kB、**CSS 63.30 kB / gzip 10.71 kB**、**JS 550.58 kB / gzip 174.92 kB** —— 内核在主进程侧、不进渲染层包）；
-  - > **IPC 路由 40 条**（未变，本批无接口）；
-  - > `docs/issues.md` 索引/明细/锚点 **68 / 68 / 68**、悬空 0 · 未用 0（严重度合计 5+40+23=68 · 状态合计 48+9+6+1+3+1=68）；
-  - > **文档自检**（`/tmp/doccheck.py`）：16 份 Markdown 边界行齐全 · **305** 表格块 · **116** 围栏配平 · 64 条相对链接 0 悬空；
-  - > **内核单测（49 例）**：占用区间 7 · 六步评估 18 · 贪心 9 · 匈牙利 11 · 分派入口 4；
-  - > 覆盖 `VEHICLE_NOT_AVAILABLE` / `LOAD_EXCEEDED` / `RESTRICTION_VIOLATED`（禁行封节点）/ `UNREACHABLE`（无路）/
-  - > `TIMEWINDOW_CONFLICT`（既有占用与窗口晚点两种）/ `BATTERY_INSUFFICIENT` 六类拒绝；早到等待计代价、
-  - > 同一辆车连排两单（首尾相接不算冲突、重叠算冲突）、`n > m` 预拒绝、匈牙利整体代价不劣于贪心、
-  - > `∞` 用有限大数不破坏求解、两个策略的确定性（同快照两次逐字段相同）；
-  - > ⚠️ **一次假红**：本批曾出现一次 `npm test` 报 `3 failed | 70 passed`（环境耗时约平时的 40 倍，机器被占满），
-  - > 前后复跑均 **73 套件 / 805 用例**全绿。**未定位**，已登记 `ISS-068`（待办）。
-  - > ✅ `docs/architecture.md` 全部 **23 张 Mermaid 渲染通过**（`npx -y @mermaid-js/mermaid-cli`，exit 0、0 报错 ——
-  - > 本批改动了其中 3 张：§7.4 的算法边界图、§8.1 的模块状态、§9 的路线图）；
-  - > ⚠️ 本轮**未跑** Electron 走查与 `db:*`：本批无接口、无页面、无迁移，端到端行为不变（M5 / M3 / M2 的结论继续有效）。
-- **验证基线（2026-09-26 上一轮；「M5 路径规划」批次实测，保留供对照）**：
-  - > 本轮复跑：`npm test` **68 套件 / 756 用例全通过**；`typecheck` 三 workspace exit 0；
-  - > `build` 三端通过（renderer `index.html` 1.94 kB / gzip 1.20 kB、**CSS 63.30 kB / gzip 10.71 kB**、**JS 550.58 kB / gzip 174.92 kB**）；
-  - > **IPC 路由 40 条**（`grep -c "path: '/api" desktop/src/ipc/api.ts` 实测；本批 +3 路径接口）；
-  - > **`ERROR_CODES` 126 条唯一**（脚本核 126 == 36 运行时 + 90 导入域；本批 +1 = `ROUTE.NOT_FOUND`），
-  - > `docs/api.md` §2.1 = 36 行 / §2.2 = 90 行，**0 处未登记**（`errors.catalog.test.ts` 断言）；
-  - > **文档自检**（`/tmp/doccheck.py`）：**16** 份 Markdown 边界行齐全 · **303** 表格块 · 115 围栏配平 · 64 条相对链接 0 悬空；
-  - > `docs/issues.md` 索引/明细/锚点 **66 / 66 / 66**、悬空 0 · 未用 0（严重度合计 5+40+21=66 · 状态合计 47+8+6+1+3+1=66）；
-  - > **M5 在真实 Electron 形态下实测**（CDP + 真实 IPC + SQLite；截图 `/Users/sunsetflower/.codex/visualizations/2026/09/26/m5-route/`）：
-  - > `plan` `n01 → n12` = 100 m / 66.667 s / 6 节点 / 5 边 / 算法 `aStar`，回执 `costDetail.travelS` 有值；
-  - > 车种换成无人机 → 20 s（速度取自车种默认值）；`via` 加 `N05` → 节点链 `[n01,n05,n06,n07,n11,n12]`（途经点语义正确）；
-  - > `compare` 两算法 `consistent=true` —— **节点序列不同但里程与耗时相同**（`ISS-064`：一致性判据不是序列相等）；
-  - > `GET seed-route-demo` = 100 m / `costDetail {}`（seed 路线正是空对象，故 `travelS` 必须可选）；
-  - > 失败面：按 id 查不到 → `ROUTE.NOT_FOUND`；节点不存在 → `NODE.NOT_FOUND`；缺 `vehicleType` → `VALIDATION.FAILED{fields:{vehicleType}}`；
-  - > 封 `n02` → `GRAPH.BLOCKED`（detail 含 `reason` / `message` / `reachedNodeId`）；绕行 `n01 → n03` = 80 m + 绕行警告，删规则后恢复 40 m；
-  - > `GET /api/auth/login` → `API.ROUTE_NOT_FOUND`（契约是 `POST`，`ISS-066` 已修）；界面 `monitor` 侧栏**无调度中心入口**、权限提示 + 按钮 disabled、直连报 `AUTH.FORBIDDEN`；
-  - > 控制台错误 **0** 条；界面摘要五项 + 节点链（显示编码）+「无需提醒」；坏途经点报「认不出这些节点：N99」；
-  - > **浏览器 Mock 形态**（Playwright `channel: 'chrome'` 打开 5173）：同一批输入逐字段相同（**含 `detail`**），
-  - > 控制台 0 错误（三层一致性由 `mock-parity.test.ts` 的 7 例 M5 用例持续断言 —— 包含「禁行规则经两边写接口分别建立」）；
-  - > ⚠️ 其余结论（M2 / M3 的 Electron 走查、权限过滤、dev 脚本、数据库引导）本轮未重跑、继续有效。
-- **验证基线（2026-09-26 上一轮；「M3 任务管理」批次实测，保留供对照）**：
-  - > 本轮复跑：`npm test` **59 套件 / 645 用例全通过**；`typecheck` 三 workspace exit 0；
-  - > `build` 三端通过（renderer `index.html` 1.94 kB / gzip 1.20 kB、**CSS 61.36 kB / gzip 10.41 kB**、**JS 531.30 kB / gzip 169.21 kB**）；
-  - > **IPC 路由 37 条**（`grep -c "path: '/api" desktop/src/ipc/api.ts` 实测）；
-  - > **迁移 `0004_task_pause_reason.sql`**：`db:reset` 时应用（`migrations applied: 1, 3, 4`），复跑 `none`；
-  - > `docs/issues.md` 索引/明细/锚点 **62 / 62 / 62**、悬空 0 · 未用 0（严重度合计 5+39+18=62 · 状态合计 43+8+6+1+3+1=62）；
-  - > **文档自检**（`/tmp/doccheck.py`）：**15** 份 Markdown 边界行齐全 · **289** 表格块 · 112 围栏配平 · 63 条相对链接 0 悬空；
-  - > **M3 在真实 Electron 形态下实测**（CDP + 真实 IPC + SQLite，`admin` / `dispatcher` / `monitor`；
-  - > 截图 `/Users/sunsetflower/.codex/visualizations/2026/09/26/m3-task/`）：
-  - > 新建（`T20260926-0001`，草稿）→ 提交 → 提示「（草稿 → 待派）」；取消 → 确认层逐字说明副作用，
-  - > 原因**必填**（未填时提交按钮 disabled 实测 `true`，填入后 `false`）→ 状态「已取消」，详情显示取消原因；
-  - > 暂停 → 原因入库（详情可见）→ 恢复后**原因清空**、状态回「执行中」；
-  - > 取消已派发任务 → `AGV-01` 由 `busy` **回 `idle`**（查库确认）、任务行「执行车辆」变 `—`、`assigned_vehicle_id` 置空（Req-M3-6）；
-  - > 草稿删除 → 二次确认 → 行消失，`audit_logs` 一条 `action='delete'`（`before` 全量快照、`after` 为空）；
-  - > `audit_logs`（`module='task'`）逐条对上每个成功写：`create` / `submit` / `cancel` / `delete` / `pause` / `resume`，
-  - > **失败请求 0 条**（审计记行为不记噪声）；`monitor` 下新建按钮 0 个、行内操作按钮 0 个、表头无「操作」列，详情仍可读；
-  - > **控制台错误 0 条**，且九个页面逐个导航后错误累计仍为 0、无白屏；
-  - > ⚠️ **验证纪律（沿用 `ISS-055`）**：改完主进程 / preload 后**必须重启 Electron 进程**再验证 ——
-  - > 本轮先 `build:shared` + `build:desktop` + `build`（renderer）再重启，避免用旧构建下结论；
-  - > ⚠️ 会话**只存在内存**（zustand store）：CDP 脚本里 `window.dispatchApi.invoke` 直连**不带 token** 会被拒
-  - > （`AUTH.REQUIRED`）—— 那是脚本的错，不是产品缺陷（见本轮工作日志的「困难与问题记录」末行）；
-  - > **浏览器 Mock 形态**（Playwright `channel: 'chrome'` 打开 5173）：适配器判定 `mock`，同一套操作**提示逐字相同**、
-  - > 取消后车辆同样回收（列显示 `—`），控制台 0 错误（三层一致性由 `mock-parity.test.ts` 持续断言）；
-  - > 走查后 `npm run db:reset`（迁移 `0001` + `0003` + `0004` + seed 成功）并重启 Electron，避免演示残留被当成 seed 的一部分。
-- **验证基线（2026-09-26 上一轮；「M2 收口：禁行规则 + 任务模板 + `OBJECT_TYPES` 扩项」批次，保留供对照）**：
-  - > 本轮复跑：`npm test` **46 套件 / 501 用例**通过（本批 +56 例）；`typecheck` 三 workspace exit 0；
-  - > `build` 三端通过（renderer `index.html` 1.94 kB / gzip 1.20 kB、JS 495.64 kB / gzip 158.15 kB、CSS 59.45 kB / gzip 10.21 kB）；
-  - > **IPC 路由 31 条**（`grep -c "path: '/api" desktop/src/ipc/api.ts` 实测），
-  - > `docs/issues.md` 索引/明细/锚点 **59 / 59 / 59**、悬空 0 · 未用 0（严重度合计 5+36+18=59 · 状态合计 40+8+6+1+3+1=59）；
-  - > **文档自检**（`/tmp/doccheck.py`）：14 份 Markdown 边界行齐全 · 273 表格块 · 112 围栏配平 · 62 条相对链接 0 悬空；
-  - > **迁移 `0003_object_types.sql` 的应用与幂等**：`db:migrate` 在既有库上应用一次、复跑 `none`；
-  - > 枚举 ↔ DDL 漂移护栏**已验证会红**（临时移走 `0003` 后 `db.test.ts` 报错，放回即绿）——
-  - > ⚠️ 该护栏的报红是**延迟**的：同一 vitest 进程内 `@udm/shared` 命中旧 `dist`，须先 `npm run build:shared`；
-  - > **禁行规则 / 任务模板在真实 Electron 形态下实测**（CDP + 真实 IPC + SQLite，`admin` / `monitor`；
-  - > 2026-09-26 以一次性脚本 `batchE-e2e.mjs` **35 项断言全绿 · 控制台 0 错误**复跑，逐条兑现下列结论）：
-  - > 建边规则（`E_N01_N05`）→ 列表显示**派生**目标编码；把 `endAt` 改到 `startAt` 之前 → 字段级报错（弹层不关）；
-  - > 删除 → 二次确认 → 行消失，`audit_logs` 落一条 `action='delete'`（`before` 含完整快照，含派生的 `targetCode`；`after` 为空）；
-  - > `event_log` 4 条 `map.updated` = 2 次 `login` + `restriction.created` + `restriction.deleted`，**模板增改各 0 条**；
-  - > 模板新增 → 优先级默认「普通」、起终点类型默认「不限」→ 改名 → 回读一致；`monitor` 下两页无任何写入口；
-  - > 走查后 `npm run db:reset` 复位开发库（迁移 0001 + 0003 + seed 成功）；
-  - > **Mock ↔ 主进程一致性**（`mock-parity.test.ts`）：14 组列表参数 + 40 组写请求两边返回同一个 code
-  - > 与同一批 `detail.fields` 键集合；新增「规则创建 → 改状态 → 物理删除」与「模板创建 → 更新」两条成套用例。
-- **验证基线（2026-09-26 上一轮；「运行项目 → 外壳收尾 → 传输层工具与文档护栏 → M2 读取路径 → 地图共点图层避让 → M2 写路径」同一会话，保留供对照）**：
-  - > 2026-09-26 末次复跑：`npm test` **46 套件 / 445 用例**通过；`typecheck` 三 workspace exit 0；
-  - > `build` 三端通过（renderer `index.html` 1.94 kB / gzip 1.20 kB、JS 482.29 kB / gzip 154.29 kB、CSS 59.00 kB / gzip 10.13 kB）；
-  - > **M2 写路径在真实 Electron 形态下实测**（CDP + 真实 IPC + SQLite，`admin` 与 `monitor` 两个角色）：
-  - > 新增站点（绑定 N04、坐标留空）→ 落库 `x=60, y=0`（**由服务端跟随绑定节点派生**）、自动出现的 `id` 与审计的 `traceId` 一一对应；
-  - > 编辑只改名称 → `update` 审计一条；停用 → `disable` 审计一条、列表状态列变为「已停用」；再启用 → `enable` 审计一条（三条审计的 `trace_id` 互不相同，可与三次请求对上）；
-  - > 地图同步刷新出新站点（画布站点节点 3 → 4）且控制台错误 0 条；截图 `/Users/sunsetflower/.codex/visualizations/2026/09/26/base-write/`；
-  - > 占用中（`busy`）的 AGV-01「停用」按钮为 disabled 且 `title` 说明原因；`monitor` 角色下「新增 / 编辑 / 停用」**一个都不渲染**，页面提示改为「当前角色只能查询」；
-  - > ⚠️ **验证纪律（本会话事故换来的）**：改完主进程 / preload 后**必须重启 Electron 进程**再验证 —— 旧进程仍在跑时，写请求会因 preload 未转发 `method` 而落到读接口上并**回报成功**（见 `ISS-055`）。
-  - > `docs/issues.md` 索引/明细/锚点 **57 / 57 / 57**，悬空 0 · 未用 0（严重度合计 5+34+18=57 · 状态合计 37+8+7+1+3+1=57），
-  - > 且这三处计数已由 `tests/docs.test.ts` 的新用例**逐条对齐**（改错一个数字即红，已用负向改动验证过）；
-  - > **项目以真实形态运行**：Vite 5173 + `electron dist/main.js`；主进程 `migrations applied: none`、seed 各表新增 0（幂等）；
-  - > **真实 Electron 形态**（CDP）：菜单 `ArrowDown` 焦点落菜单项、`Esc` 焦点回触发按钮、`Tab` 交接给菜单后相邻元素（未掉到 `body`）；
-  - > 首屏 `color-scheme=dark` / `theme-color=#0f172a` / 图标已渲染；三角色导航 7 / 5 / 9 项、权限点 16 / 6 / 20；控制台错误 0 条；
-  - > `docs/issues.md` 索引/明细/锚点 **49 / 49 / 49**，悬空 0 · 未用 0（严重度合计 5+30+14=49 · 状态合计 29+8+7+1+3+1=49）；
-  - > **仓库级文档不变量已变成断言**（`tests/docs.test.ts`，5 例全绿）：14 份 Markdown 边界行齐全、
-  - > 文档里 62 条相对链接 0 悬空、`issues.md` 索引/锚点/明细一一对应、`api.md` §0 含关键事实行；
-  - > 本轮新增单测：`ipc/paging`（9）、`ipc/validators`（4）、`db/repositories/settings.repo`（6）、
-  - > `styles/classnames`（4）、`tests/docs`（5）—— 其中 `tests/` 目录与 `vitest.config.ts` 的 `include` 为本轮新增；
-  - > **共点图层避让在真实 Electron 形态下实测**（CDP 取值，zoom 160%）：站点 A-01 底边 667 /
-  - > 车辆 AGV-01 顶边 691 → **24px 可见间隙**；起点标记右边缘 340 / 车辆左边缘 355 → 15px 间隙；
-  - > 控制台错误 0 条；截图 `/Users/sunsetflower/.codex/visualizations/2026/09/26/map-layers/`；
-  - ⚠️ 该段的**测试套件数 / 用例数**（46/445）与路由数（24）已被 2026-09-26 最新基线（46/501 · 31 条）取代；
-  - ⚠️ favicon 404 一项未再变化（`index.html` 的图标与声明未改）；
-  - > （该轮此前记录的「53 条 · 严重度合计 5+32+15」是**错的**：三个严重度加起来比总条数少 1，
-  - > 已由本轮修正为 57 条并加断言，见 `ISS-057`）
-  - > **M2 读取路径在真实 Electron 形态下实测**（CDP + 真实 IPC + SQLite，`admin` / `monitor` 两个角色）：
-  - > 站点 3 / 车辆 3（AGV-01 = 执行中 · 载重 100 · 在线）/ 节点 12 / 边 34（20 + 14 两页）；控制台错误 0 条；
-  - > 按 `code` 精确查找定向正确（`E_N01_N05` 与 `E_N01_N05_R` 各命中 1 条且方向相反，`E_N05_N01_R` 命中 0 条）；
-  - > 「已停用」筛选返回空表并给出解释文案；车辆搜索 `agv-01`（小写）命中 AGV-01（与 SQLite `LIKE` 同口径）。
-  - ⚠️ renderer 产物随基础数据页与地图改动变大（JS 459.64 kB / gzip 147.99 kB、CSS 56.21 kB / gzip 9.67 kB）；
-  - ⚠️ 其余结论（错误码闭环、权限过滤、dev 脚本、数据库引导）本轮未复跑、继续有效。
-
-- **验证基线（2026-09-25；「设计系统 + 信息架构 + 现代化外壳/工作台/登录页」会话）** —— 保留供对照：
-  - > 2026-09-25 复跑：`npm test` **27 套件 / 223 用例**通过；`typecheck` 三 workspace exit 0；
-  - > `build` 三端通过（renderer JS 446.48 kB / gzip 144.10 kB、CSS 53.23 kB / gzip 9.21 kB）；
-  - > 文档自检：14 份 Markdown 边界行齐全 · 围栏 112 对配平 · 255 表格块 · 62 条相对链接 0 悬空；
-  - > `docs/issues.md` 索引/明细/锚点 44 / 44 / 44，悬空 0 · 未用 0（严重度合计 5+29+10=44）；
-  - > **浏览器 Mock 形态**（Playwright + 系统 Chrome）：登录 → 工作台 → 地图 → 说明页逐页截图核对，
-  - > 窄屏 1280 / 1024 复核通过；控制台错误仅 1 条 favicon 404（**该条已于 2026-09-26 修复，见 ISS-041**）。
-  - > **真实 Electron 形态**（CDP 连渲染进程，真实 IPC + SQLite）：适配器自动判定 `ipc`；
-  - > 三角色实测（2026-09-26 复测）：dispatcher 权限点 16 / 导航 7 项、monitor 6 / 5 项、admin 20 / 9 项；
-  - > 地图页 `{总 20, 路网 12, 站点 3, 车辆 3, 任务端点 2}` + 缩略图 20 方块，与 seed 一致；控制台错误 0 条。
-  - > 下列逐项为 2026-09-21～09-22 的实测明细，本轮未改动主进程与数据库，故未重跑 `db:*`。
-  - ⚠️ 上一版基线的**测试套件数 / 用例数 / renderer 产物体积**三项已被本轮取代（见上），
-  - ⚠️ 其余结论（错误码闭环、权限过滤、dev 脚本、数据库引导）本轮未复跑、继续有效。
-
-- **验证基线（2026-09-22；「M2 模块文档 + 契约缺陷修复」会话复跑，三端结论未变）** —— 保留供对照：
-  - > 2026-09-22 复跑：`npm test` 18 套件 / 110 用例通过；`typecheck` 三 workspace exit 0；
-  - > `build` 三端通过（renderer JS 394.36 kB / gzip 128.82 kB、CSS 24.45 kB / gzip 4.51 kB）；
-  - > `ERROR_CODES` 125 条唯一（35 运行时 + 90 导入域）；文档结构自检 14 份 Markdown / 248 表格块 / 224 围栏全通过。
-  - > 下列逐项为 2026-09-21 的实测明细，本轮未改动代码，故未重跑 `db:*` 与 Electron 端到端。
-  - > ⚠️ 该段的套件/用例数与 renderer 产物体积已被 2026-09-25 基线取代（保留供对照）。
-  - ✅ `npm test`：**18 个套件 / 110 个用例全通过**（本轮新增 `errors.catalog.test.ts` 5 条、`event-bus.test.ts` 8 条、`mock-parity.test.ts` 3 条）。
+- **验证基线（2026-09-28 实测，第二批：车辆 / 调度对比 / 告警 / 复杂地图）**：
+  - 命令：`npm run db:reset`（清新库）→ `npm run build` → 起 Electron（`--remote-debugging-port`，
+    CDP 连渲染进程走真实 `ipc` + 真实 SQLite）。
+  - ✅ `npm test`：**88 个套件 / 991 个用例全通过**（本轮新增 `renderer/src/map/edges/NetEdge.test.tsx` 5 条、
+    `renderer/src/api/mock-parity.test.ts` 的调度对比 3 条、`renderer/src/ops/model.test.ts` 6 条、
+    `renderer/src/pages/AlertsBatch.test.tsx` 2 条等）。
   - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace 全部 exit 0。
-  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 0.42 kB + CSS 24.45 kB（gzip 4.51 kB）+ JS 394.36 kB（gzip 128.82 kB）。
-  - ✅ 错误码闭环：`ERROR_CODES` **125 条唯一**；`docs/api.md` 与 `docs/data-interfaces.md` 中出现的 code **0 处未登记**（由 `errors.catalog.test.ts` 持续断言）。
-  - ✅ 权限过滤行为（单测覆盖）：未登录窗口收到 0 条登记过权限的事件；monitor 只收到 `alert.created`；dispatcher 收到 task/vehicle/alert；`map.updated` 仍放行；`event_log` 照写不误。
-  - ✅ **`npm run dev` / `npm run dev:electron` 干净检出可启动**（2026-09-21 修 ISS-034）：两个脚本已前置
-    `build:shared`（`dev:electron` 另加 `build:desktop`），不再要求 `dist/` 预先存在。实测：删掉 `shared/dist`
-    与 `desktop/dist` 后 `npm run dev` 的 `AppLayout.tsx` 返回 200 且含 `hasPermission`、预转换错误 0 条；
-    `dev:electron` 无障碍树实测窗口标题/URL/`12 节点 / 34 边 / 3 站点 / 3 车辆`/图层面板 7 项，非白屏。
-  - ✅ 全新数据库引导：删除 `desktop/.data/` 后 `db:migrate` 应用 `0001` 并 seed 成功，`db:seed` 复跑幂等。
+  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 1.94 kB + CSS 72.75 kB（gzip 12.08 kB）+
+    JS 675.37 kB（gzip 210.29 kB）。
+  - ✅ `npm run db:reset`：应用 `1, 3, 4, 5` 号迁移；seed 写入
+    `nodes:30 edges:90 sites:13 restrictions:2 vehicles:5 templates:2 users:3 settings:9 tasks:7 routes:1 alerts:1`；
+    随后 Electron 启动时报 `migrations applied: none` / `seed changes:` 全 0（幂等）、
+    `executor resumed 1 running task(s)`（把 seed 的演示执行任务接回内存续跑）。
+  - ✅ **边权进入耗时**：库中 90 条边有 **7 条 `weight > 1`**（1.4–2.2），规划耗时按
+    `长度 × 权重 ÷ 有效限速` 计算（`shared/src/route-search.ts`）；画布上这 7 条也确实是橙色点线。
+  - ✅ **Electron 端到端（真实 ipc + 真实 SQLite）**：
+    - **地图**：图层面板读数 `路网边 90 · 路网节点 30 · 配送路线 1 · 任务起终点 7 · 订单起终点 0 · 车辆 5 · 站点 13`；
+      状态条 `1 未处理告警 · 1/7 执行中任务 · 0 低电车辆`；DOM 里 `path…udm-edge-net.is-slow` 命中 **7 条**、
+      `is-muted` 命中当前可见全部路网边。**控制台错误 0 条。**
+    - **调度中心**（勾选全部 6 条待派 → 策略「全部（对比）」→ 预览）——这一屏就是用户要的「哪个更快、快多少」：
+      | 策略 | 指派/任务 | 拒绝 | 执行里程 | 行驶耗时 | 全部完成 | 用车 | 总代价 |
+      | --- | --- | --- | --- | --- | --- | --- | --- |
+      | 贪心 | 5 / 6 | 1 | 2030 m | 28 分 32 秒 | 12:26:32 | 4 台（含接力 1 单） | 1712.4 |
+      | 匈牙利 | 4 / 6 | 2 | 1580 m | 20 分 5 秒 | 12:24:12 | 4 台 | 1205.2 |
+      推荐语「推荐『贪心』：指派 5/6，总代价 1712.4，比『匈牙利』多派 1 单」；
+      差异行「『匈牙利』更优的地方：少跑 450 m、少行驶 8 分 27 秒、早 2 分 20 秒完成」；
+      **按车辆分组出现 4 组**，其中 `CAR-01` 是**接力 2 单**（`T-DEMO-0002 12:17:32→12:18:22`
+      紧接着 `T-DEMO-0007 12:18:22→12:20:02`，首尾相接、不重叠），其余三台各一单。
+      > 表中数字随**库的当前状态**变化（被派发过的车会退出候选池、手工建的车会进入候选池）；
+      > 上表是清新库下的实测值，**不是断言**。跨端可复现的是「两边逐字段相同」，由 `mock-parity.test.ts` 锁定。
+    - **告警中心**：表头 `级别 / 类型 / 消息 / 状态 / 停滞 / 时间`；1 行
+      `警告 · 车辆离线 · DRN-01 心跳超时，疑似离线 · 待确认 · 已 不到 1 分钟未认领`；
+      > 这一行的「停滞」读数**随时间变化**：`createdAt` 由 D-56 相对 seed 时刻派生，
+      > 所以「刚 seed 完就读」是「不到 1 分钟」，放几分钟会变成「已 N 分钟未认领」。
+      > 可复现的是**措辞规则**（未认领 / 未开始处理 / 未解决 / 已终结显示 `—`），不是那个数字。
+      「批量认领本页待确认（1）」可用且 `title` 说明「逐条调用认领接口，共 1 条」（无待确认时禁用并说明原因）。
+    - **基础数据 → 车辆 → 新增**：表单 10 个字段（含**所在节点**下拉，31 项 = 30 节点 + 「不绑定」）；
+      真建一台车 → 列表 6→7 行，**刷新后仍在**（走 ipc 真落库，不是内存假象），
+      且该车**立即进入调度候选池**（下一次预览里出现）。
+  - ✅ **浏览器 Mock 与主进程的一致性**：`mock-parity.test.ts` 新增 3 条 —— 同一批请求打两边，逐字段比对
+    「两条策略的计划 / 拒绝 / 小结」（剥掉墙钟量：`summary.elapsedMs`、`explain` 文案里的「耗时 Nms」、
+    占用区间的**毫秒位**），并断言**接力在两侧都出现**、贪心里同车两条计划的占用区间**不重叠**；
+    另加一条护栏断言渲染层**不消费 `explain`**（「Mock 恒为空数组」这一有意差异的前提）。
+  - ✅ `docs/issues.md` 三处计数对齐 `82 / 82 / 82`（写入 `ISS-082` 后复跑；`tests/docs.test.ts` 8 例通过）。
+  - ⚠️ **未复跑**：`docs/architecture.md` 的 Mermaid 渲染（本轮未改图）、`npm run dev`（浏览器形态由上面的
+    Mock 一致性用例与 Electron 走查共同覆盖）。
+  - ✅ **回写后全量复跑（2026-09-28，本轮文档写回之后）**：`npm test` **88 套件 / 991 用例**全通过、
+    `typecheck` 三端 exit 0、`build` 三端通过。
+    复跑**当场抓到一处 D-33 违规**：`docs/api.md` §3.2.2 把「车辆 `currentNodeId` 指向不存在节点」的报错
+    写成 `BASE.NODE_NOT_FOUND`，而唯一登记处里只有 `NODE.NOT_FOUND`（站点 / 边 / 路径用的是同一个 code）。
+    **修法是改文档而不是加码** —— 在 `ERROR_CODES` 里补一条 `BASE.*` 等于给同一概念开第二个 code（D-33 禁止）。
+    这正是 `errors.catalog.test.ts` 的意义：文档与登记处不一致时**测试先红**，而不是使用者先撞上。
 
-- **历史基线（2026-09-20 实测，渲染层与 M6 落地会话）** —— 保留供对照，勿当作最新结果：
-  - ✅ `npm test`（当时）：15 个套件 / 94 个用例全通过。
-  - ✅ `npm run db:migrate` / `db:seed`：迁移幂等；seed 写入 nodes 12 · edges 34 · sites 3 · vehicles 3 · templates 2 · users 3 · settings 9 · tasks 1 · routes 1 · alerts 1（演示执行数据）。
-  - ✅ `npm run dev:electron`：Electron 主进程成功启动、打开 `desktop/.data/app.db`、迁移 `none`、seed 幂等（各表新增 0）。
-  - ✅ **Electron 端到端（真实 `ipc` 适配器 + 真实 SQLite）**：登录 → 地图页渲染出 **20 节点 / 39 边（34 路网 + 5 路线高亮）/ 3 站点 / 3 车辆 / 2 任务端点 / 5 条路线标签 / 20 个迷你图方块**，与 seed 完全一致；无控制台错误。
-  - ✅ **生产形态 `file://`**：无 `.env` 时**自动选中 `ipc` 适配器**（靠 preload 桥判定，D-22），渲染结果与 dev 一致。
-  - ✅ **浏览器 Mock 形态**：渲染结果与 ipc 形态**逐项相同**（20/39/5/20），证明三层适配器行为一致。
-  - ✅ **交互实测**：点选车辆 → 选中态与图例正确；点空白清空；图层开关关掉「路网节点」→ 节点 20→8、边 39→0，恢复后回到 20/39 且**选中态不丢**。
-  - ✅ **CSS 修复前后对比（真实 Electron 取值）**：路线高亮边 `stroke` 由 `rgb(177,177,183)`/`1px` 修正为 `rgb(56,189,248)`/`4px`；路网边修正为 `rgb(71,85,105)`/`1.5px`；节点选中 `box-shadow` 由 `none` 修正为 `rgba(56,189,248,0.55) 0 0 0 3px`；迷你图背景由默认浅色修正为 `rgb(30,41,59)`。
-  - ✅ `docs/architecture.md` 23 张 Mermaid 全部渲染成功（`npx -y @mermaid-js/mermaid-cli`，exit 0）。
+- **历史基线（2026-09-27 实测，M4 调度服务与调度中心会话）** —— 保留供对照，勿当作最新结果：
+  - ✅ `npm test`（当时）：77 套件 / 860 用例全通过；`typecheck` 三端 exit 0；
+    renderer 产物 CSS 66.14 kB / gzip 11.13 kB、JS 595.78 kB / gzip 187.57 kB。
+  - ✅ Electron 端到端：造 3 条 `pending` → 全选 → 对比预览 → 应用二次确认 → 落库核对
+    （任务 `assigned` / 车辆 `reserved` / 日志 2 条 / 审计 1 条）；同 `requestId` 再应用得
+    `DISPATCH.ALREADY_APPLIED`、伪造 id 得 `DISPATCH.REQUEST_NOT_FOUND`；控制台错误 0 条。
+  - ⚠️ 该段的套件/用例数与产物体积已被本轮取代。
+
+- **历史基线（2026-09-25 / 09-22 / 09-21 / 09-20 实测）** —— 保留供对照，勿当作最新结果：
+  - 2026-09-25：`npm test` 27 套件 / 223 用例；renderer JS 446.48 kB / gzip 144.10 kB、CSS 53.23 kB / gzip 9.21 kB；
+    浏览器 Mock 与真实 Electron 逐页截图核对，三角色导航项数（dispatcher 7 / monitor 5 / admin 9）。
+  - 2026-09-22：`npm test` 18 套件 / 110 用例；`ERROR_CODES` 125 条唯一；文档自检 14 份 Markdown。
+  - 2026-09-21：`npm test` 18 套件 / 110 用例；`npm run dev` / `dev:electron` 干净检出可启动（ISS-034）。
+  - 2026-09-20：`npm test` 15 套件 / 94 用例；seed `nodes 12 · edges 34 · sites 3 · vehicles 3`（**旧网格，已作废**）；
+    Electron 端到端 20 节点 / 39 边；`docs/architecture.md` 23 张 Mermaid 全部渲染成功。
+    以下两条至今仍是对应主题的最近一次实测：**权限过滤行为**（未登录窗口 0 条、monitor 只收 `alert.created`、
+    dispatcher 收 task/vehicle/alert、`map.updated` 放行、`event_log` 照写）与
+    **CSS 修复前后取值**（路线高亮 `rgb(56,189,248)`/`4px`、路网 `rgb(71,85,105)`/`1.5px`）。
 
 - **文档**：清单见 [`README.md`](./README.md) 的「文档入口」表 —— 该表是**文档索引的唯一权威来源**（本文件与 `design.md` §10.2 不再维护副本，副本正是历史漂移成因，见 `docs/issues.md` ISS-032）。
   - 与开发最相关的三份：[`design.md`](./design.md)（需求条目 `Req-*` / 状态机 / 数据模型字段语义）、[`docs/api.md`](./docs/api.md)（接口契约 / 错误码 / 事件，其 **§0** 是「每个事实由哪份文档负责」的总表）、[`docs/issues.md`](./docs/issues.md)（问题清单，**每次提交前必须同步**）。
@@ -335,9 +224,9 @@
 
 | 位置 | 已有内容 | 缺口 |
 | --- | --- | --- |
-| `shared/src/` | `enums.ts`（角色/状态/优先级/错误原因/20 个权限点 + `ROLE_PERMISSIONS`）、`types.ts`（信封、分页、DTO（含**M2 的六个列表项**与四类地图图层契约）、调度预览类型、**`MapOverview` 快照契约 8 个接口**、**M5 的 `RoutePlan` / `RouteCompare*` / `RouteDetail`（`costDetail.travelS` 可选）**）、**`edge-code.ts`（边的业务编码唯一作者，D-35/ISS-051）**、**`route-search.ts` / `route-graph.ts` / `route-rules.ts`（M5 路径内核：图模型 + `MinHeap` + A*/Dijkstra 共用框架、`buildRouteGraph` 三层排除、`validateRouteInput` 与途经点规则；**纯函数、无 IO**，是主进程与浏览器 Mock 的同一份实现，D-49）**、**`dispatch-types.ts`（M4 快照与视图类型 + 算法常量）/ `dispatch-evaluate.ts`（占用区间 + 单车×单任务六步评估 + 代价函数）/ `dispatch-strategies.ts`（贪心 + 匈牙利，含 `solveAssignment`）/ `dispatch.ts`（`runDispatch` 分派与再导出），D-51**、`errors.ts`（**126 条**：36 运行时 + 90 导入域；**唯一登记处**，D-33。含 `DomainError`/`ok`/`fail`/`fromError`）、`errors.catalog.test.ts`（命名/severity/文档闭环断言）、`constants.ts`（`APP_NAME`、分页默认、`DISPATCH_COST_WEIGHTS`、`MIN_BATTERY_PERCENT`、`SEED_ACCOUNTS`/`SEED_IDS`（含演示任务/路线/告警 id）、`SETTINGS_SCHEMA` 9 项）、**`base-rules.ts`（M2 写路径的字段长度 / 数值域 / 枚举 / 自环 / 「`code` 创建后不可改」+ `SiteCreate`…`EdgePatch` 等写 DTO；主进程与 Mock 的共同作者，D-44）** | 业务实体完整模型（**M2 之外的** CRUD DTO）、`DispatchSnapshot` 等算法类型、M2 之后模块的 DTO |
-| `desktop/src/db/` | `index.ts`（`DatabaseSync` 连接、WAL/外键/busy_timeout、`run`/`get`/`all`/`tx`、`defaultDbPath`）、**`sqlite.ts`（`createRequire` 惰性加载 `node:sqlite`，规避 vite-node 解析缺陷）**、`migrate.ts`（按序单事务 + `schema_version` 幂等；**已应用 `0001` / `0003` / `0004`**，编号规则见 D-46）、`seed.ts`（4×3 路网 12 节点/34 边、3 站点、3 车辆、2 模板、3 账号、9 设置、**1 演示任务 + 1 路线 + 1 告警，并把 AGV-01 置忙**）、`repositories/`（users / settings / audit / map；**M2 的 site / vehicle / graph / restriction / template 五件套**：读列表 + 单条读写 + 状态写入 + 跨表引用计数 + 多态目标翻译；**`task.repo.ts`（M3：列表含筛选与派生列 / 详情含计划·路线·告警·审计四块 / 状态写入 / 计划作废 / 物理删除）**、**`route.repo.ts`（M5：按 id 查路线 / 写路线 / `listGraphNodes` · `listGraphEdges` 读**全量**图 / `listRestrictionRules`；构图必须读全量，走分页列表会把路线静默规划在残缺路网上）**、**`dispatch-plan.repo.ts`（M4：`insertPlan` · 三处乐观锁 `assignTaskIfPending` / `reserveVehicleIfIdle` / `releaseVehicleIfBusy` · `listAppliedPlans` · `listActiveOccupiedSlots` · `latestOccupiedTo` · `setPlansStatus` · **`hasOtherActivePlanForVehicle`（回收前必须问这一句，见 D-53 / ISS-070）**）** 与 **`dispatch-log.repo.ts`（M4：`insertLog` · `hasApplied` · `findPreviewOutput`（排序键 `created_at DESC, rowid DESC` —— 只按 `created_at` 会在同毫秒的回收日志与新预览之间取到未定义的那一行）· `listLogs`）**；**settings 的读 / 写 / 反序列化同文件**，D-40） | M7/M8 各模块 Repository；seed 的 `restrictions`/`vehicle_tracks` 仍为空（规则由使用者建立，不预置） |
-| `desktop/src/ipc/` | `router.ts`（**注册键 = 方法 + 路径模板；支持 `:name` 路径参数（`ctx.params`）；形状相同的两条模板在注册时直接报错**，D-43；另有鉴权/权限前置 + `traceId` + 统一信封兜底）、`api.ts`（**46 条路由**：health · auth×3 · settings×2 · users · map.overview · **M2 读×6 · M2 写×13**（6 类资源：4 类有启停、规则多一条 `DELETE`、模板只有 POST/PUT）· **M3 任务×6**（列表 / 详情 / 创建 / 编辑 / 状态操作 / 删除 —— 状态操作是**一段 `:action`** 而不是六个同构路由，允许的动作名由状态机导出，**不另写允许清单**）· **M5 路径×3**（`POST /api/routes/plan` · `POST /api/routes/compare` · `GET /api/routes/:id`，权限 `route:plan` —— **三条都不发事件**，规划是只读计算）· **M4 调度×6**（`strategies` · `preview` · `apply` · `manual-assign` · `recompute` · `logs`；三条写路由**显式 `method: 'POST'`**（`ISS-066` 的教训：不传 method 一律按 `GET` 索引，界面按契约发 `POST` 会得到「接口不存在」）；事件只由写路径发，装配在 `emitDispatchEffects`）；写路由只做「路径 → 权限 → 领域服务 → 事务提交后 emit 事件」装配）、`paging.ts`（分页解析，宽进，D-40）、`validators.ts`（`requireString` / `requireEnum` / `optionalEnumFilter` / `optionalString`，严出，D-40），三者均为纯函数、各有单测 | 其余 M7-M10 接口（告警 / 监控 / 执行 / 导入）；**任务批量导入 `POST /api/tasks/batch-import` 未实现**（`Req-M3-2`，页面已如实标注）；**详情接口 `GET /api/{资源}/{id}` 未实现**（M2，界面不用它）；坐标/布尔类校验原语等有调用点再补 |
+| `shared/src/` | `enums.ts`（角色/状态/优先级/错误原因/20 个权限点 + `ROLE_PERMISSIONS`）、`types.ts`（信封、分页、DTO（含**M2 的六个列表项**与四类地图图层契约）、调度预览类型、**`MapOverview` 快照契约 8 个接口**、**M5 的 `RoutePlan` / `RouteCompare*` / `RouteDetail`（`costDetail.travelS` 可选）**）、**`edge-code.ts`（边的业务编码唯一作者，D-35/ISS-051）**、**`route-search.ts` / `route-graph.ts` / `route-rules.ts`（M5 路径内核：图模型 + `MinHeap` + A*/Dijkstra 共用框架、`buildRouteGraph` 三层排除、`validateRouteInput` 与途经点规则；**纯函数、无 IO**，是主进程与浏览器 Mock 的同一份实现，D-49）**、**`dispatch-types.ts`（M4 快照与视图类型 + 算法常量）/ `dispatch-evaluate.ts`（占用区间 + 单车×单任务六步评估 + 代价函数）/ `dispatch-strategies.ts`（贪心 + 匈牙利，含 `solveAssignment`）/ `dispatch.ts`（`runDispatch` 分派与再导出），D-51**、`errors.ts`（**126 条**：36 运行时 + 90 导入域；**唯一登记处**，D-33。含 `DomainError`/`ok`/`fail`/`fromError`）、`errors.catalog.test.ts`（命名/severity/文档闭环断言）、`constants.ts`（`APP_NAME`、分页默认、`DISPATCH_COST_WEIGHTS`、`MIN_BATTERY_PERCENT`、`SEED_ACCOUNTS`/`SEED_IDS`（含演示任务/路线/告警 id 与**6 条演示待派发任务**）、`SETTINGS_SCHEMA`）、**`campus-map.ts`（`data/campus/` 原生 5 文件 → 内部的唯一翻译层：列名 / 单位 / 派生字段 + 拥堵叠加层 + 「障碍物 → 封路 or 权重×2」的车道数判据；纯函数无 IO，D-28）**、**`seed-data.ts`（`buildSeedDataset()`：路网 / 站点 / 车辆 / 演示任务与路线的唯一推导处，seed 与浏览器 Mock 共用同一个函数，D-55）**、**`alert-state.ts`（M8 告警状态机唯一作者：迁移表 + `alertActionsOf` + `ALERT_NEXT_STEPS`）**、**`settings-rules.ts`（`validateSettingValue`，主进程与 Mock 共用）**、**`base-rules.ts`（M2 写路径的字段长度 / 数值域 / 枚举 / 自环 / 「`code` 创建后不可改」+ `SiteCreate`…`EdgePatch` 等写 DTO；主进程与 Mock 的共同作者，D-44）** | 四类数据文件的**导入管线**（订单 CSV / 车辆参数 / 算法配置的解析器；地图解析器已落地）。M2 之外的实体仍有少数派生 DTO 未收口 |
+| `desktop/src/db/` | `index.ts`（`DatabaseSync` 连接、WAL/外键/busy_timeout、`run`/`get`/`all`/`tx`、`defaultDbPath`）、**`sqlite.ts`（`createRequire` 惰性加载 `node:sqlite`，规避 vite-node 解析缺陷）**、`migrate.ts`（按序单事务 + `schema_version` 幂等；**已应用 `0001` / `0003` / `0004` / `0005`**，编号规则见 D-46 / D-54）、`seed.ts`（**只做「取数（`campus-map-source.ts` 读 `data/campus/`）→ 推导（`buildSeedDataset()`）→ 落库」三步，文件里没有业务数字**；规模见 `docs/database.md` §4）+ `campus-map-source.ts`（Node 侧取数）、`repositories/`（users / settings / audit / map；**M2 的 site / vehicle / graph / restriction / template 五件套**：读列表 + 单条读写 + 状态写入 + 跨表引用计数 + 多态目标翻译；**`task.repo.ts`（M3：列表含筛选与派生列 / 详情含计划·路线·告警·审计四块 / 状态写入 / 计划作废 / 物理删除）**、**`route.repo.ts`（M5：按 id 查路线 / 写路线 / `listGraphNodes` · `listGraphEdges` 读**全量**图 / `listRestrictionRules`；构图必须读全量，走分页列表会把路线静默规划在残缺路网上）**、**`dispatch-plan.repo.ts`（M4：`insertPlan` · 三处乐观锁 `assignTaskIfPending` / `reserveVehicleIfIdle` / `releaseVehicleIfBusy` · `listAppliedPlans` · `listActiveOccupiedSlots` · `latestOccupiedTo` · `setPlansStatus` · **`hasOtherActivePlanForVehicle`（回收前必须问这一句，见 D-53 / ISS-070）**）** 与 **`dispatch-log.repo.ts`（M4：`insertLog` · `hasApplied` · `findPreviewOutput`（排序键 `created_at DESC, rowid DESC` —— 只按 `created_at` 会在同毫秒的回收日志与新预览之间取到未定义的那一行）· `listLogs`）**；**settings 的读 / 写 / 反序列化同文件**，D-40） | seed 的 `vehicle_tracks` 初始为空（由执行器采样写入）· 导入管线的 Repository 未开工 |
+| `desktop/src/ipc/` | `router.ts`（**注册键 = 方法 + 路径模板；支持 `:name` 路径参数（`ctx.params`）；形状相同的两条模板在注册时直接报错**，D-43；另有鉴权/权限前置 + `traceId` + 统一信封兜底）、`api.ts`（**65 条路由**：health · auth×3 · settings×2 · users · map.overview · **M7 轨迹 `GET /api/map/tracks/:vehicleId`** · **M2 读×6 · M2 写×13**（6 类资源：4 类有启停、规则多一条 `DELETE`、模板只有 POST/PUT）· **M3 任务×6**（列表 / 详情 / 创建 / 编辑 / 状态操作 / 删除 —— 状态操作是**一段 `:action`** 而不是六个同构路由，允许的动作名由状态机导出，**不另写允许清单**）· **M5 路径×3**（`POST /api/routes/plan` · `POST /api/routes/compare` · `GET /api/routes/:id`，权限 `route:plan` —— **三条都不发事件**，规划是只读计算）· **M4 调度×6**（`strategies` · `preview` · `apply` · `manual-assign` · `recompute` · `logs`；三条写路由**显式 `method: 'POST'`**（`ISS-066` 的教训：不传 method 一律按 `GET` 索引，界面按契约发 `POST` 会得到「接口不存在」）；事件只由写路径发，装配在 `emitDispatchEffects`）· **M1 用户×4**（列表 / 新增 / 更新 / 重置密码）· **M7 监控×3 + 执行×2** · **M8 告警×5**（认领 / 解决 / 归档的暴露面派生自 `alert-state.ts`）· **M9 审计×2**（查询 / 导出）· **M10 设置写×1**；写路由只做「路径 → 权限 → 领域服务 → 事务提交后 emit 事件」装配）、`paging.ts`（分页解析，宽进，D-40）、`validators.ts`（`requireString` / `requireEnum` / `optionalEnumFilter` / `optionalString`，严出，D-40），三者均为纯函数、各有单测 | **四类数据文件的导入接口整体未开工**（`Req-M3-2` 的批量导入与它同批）；**M2 的详情接口 `GET /api/{资源}/{id}` 未实现**（界面不用它）；坐标/布尔类校验原语等有调用点再补 |
 | `desktop/src/services/` | `auth.ts`（登录/锁定策略）、`password.ts`（bcryptjs）、`session.ts`（内存会话）、`audit.ts`（审计写入）、`event-bus.ts`（**按会话权限过滤后**推送领域事件，D-32；含 `EVENT_PERMISSIONS`）、`event-bus.test.ts` | 告警 / 监控 / 执行的领域服务未开工（**路径 M5 在 `domain/route/`、调度 M4 在 `domain/dispatch/`**，不在本目录）；**无持续产生 `vehicle.changed` 的执行器**（故车辆静止，M7） |
 | `desktop/src/domain/base/` | **M2 领域服务**：`context.ts`（`CrudContext` + `toAuditActor` + 动作命名）、`validate.ts`（跨表校验：编码唯一 / 节点存在 / 端点存在 / 方向对唯一 / 启停取值）、`site.service.ts`、`vehicle.service.ts`（`MANAGED_STATUSES = ['idle','disabled']`，占用中停用 → `VEHICLE.STATE_CONFLICT`）、`graph.service.ts`（边长欧氏推导、换端点重算、自环与方向对校验、自定义 code 与推导值不符则拒）、`restriction.service.ts`（多态目标校验两次 + 时间窗跨字段配对 + **物理删除**）、`template.service.ts`（无删除、无状态）、`base.service.test.ts` | **详情接口**（`GET /api/{资源}/{id}`）与批量导入（`restriction.service.ts` / `template.service.ts`）；与导入管线（F2 地图导入）的衔接 |
 | `desktop/src/domain/task/` | **M3 领域服务**：`task.service.ts` —— `createTask`（套模板：补齐默认值 + 校验起终点类型）/ `updateTask`（可编辑状态 + **新旧配对**的时间窗，避免撞 DDL 的 CHECK 报成 `SYS.INTERNAL`）/ `operateTask`（状态机执行器：车辆回收 + 计划作废 + 原因落列，**接受任意已登记动作**，对外暴露面由路由控制）/ `deleteDraftTask`（只有草稿）；每个写方法 = 一个 `tx()` + 一条审计，`EventBus.emit` 在事务提交之后；`task.service.test.ts` | 任务的批量导入（`Req-M3-2`）；与 M4/M7 的调用点（`assign` / `start` / `complete` / `fail` 已实现但暂无调用方） |
@@ -345,40 +234,31 @@
 | `desktop/src/domain/dispatch/` | **M4 领域服务**：`snapshot.ts`（`loadTaskViews` / `loadVehicleViews` / `loadGraphInputs` / `loadRestrictionInputs` / `buildSnapshot` / `snapshotFingerprint`；站点→节点解析失败抛 `SnapshotProblem` 而不是让内核拿到 `undefined`）、`explain.ts`（人读文案的**唯一作者**，词表按 D-52 从 `shared` 再导出）、`dispatch.service.ts`（`listStrategies` / `preview` / `apply` / `manualAssign` / `recompute` / `listDispatchLogs`）。**apply 不重跑算法** —— 落的是预览当场存下的 `dispatch_logs.output_snapshot`，只有路线会重推（重跑会让「我确认的方案」与「实际落库的方案」不是同一个）；并发安全靠条件 UPDATE，不靠「快照没变」这种无法证伪的判据；同一辆车在一批里只预留**一次**（D-53）；`dispatch.service.test.ts`（26 例） | 跨批次的串行排程（同车在后续批次继续接单）与遗传策略（`genetic` 按设计 `enabled: false`）；执行器属 M7 |
 | `desktop/src/cli/db.ts` | `migrate` / `seed` / `reset`（reset 删 `-wal`/`-shm` 后重建） | — |
 | `desktop/preload.cjs` | `window.dispatchApi.invoke/on`（`udm:invoke` / `udm:event`，contextIsolation 开启）；**`invoke` 透传 `method`**（漏了它会让写请求退化成读请求并回报成功，见 `ISS-055`） | — |
-| `renderer/src/` | **全套已落地**：`main.tsx`（HashRouter，Electron `file://` 必需）、`api/`（client 契约 + `ipc`/`http`/`mock` 三层适配器 + `types.ts` 再导出 shared + `mock-data.ts` 与 seed 同源 + **`mock-base-write.ts`（写路径：规则共享、存储各自）+ `mock-parity.test.ts` 用同一批请求把 Mock 与真实主进程逐字段比对**）、`store/`（session / selection）、`app/`（路由 + `RequireSession` + **`modules.ts` 信息架构**）、`styles/`（**`theme.css` 令牌 + `ui.css` 共用基元** + `layout.css` 外壳）、`components/`（AppLayout / **BrandMark** / **UserMenu** / `icons.tsx` 内联图标集）、`pages/`（登录 / 工作台 / 未实现模块说明页）、**`domain/`（跨模块共用层：`labels.ts` 枚举→中文 · `table.ts` 列定义 · `form.ts` 表单机制与载荷口径 · `paging.ts` 页码收敛 · `tone.ts` 色调类名 · `format.ts` 数字/时间格式化）**、**`api/usePagedList.ts`（列表取数、竞态丢弃与页码收敛）· `api/useApiWrite.ts`（写请求与字段级错误映射）**、`dashboard/`（**工作台 model + 6 个面板 + style**）、**`base/`（M2 基础数据：`model`（列与页签）+ `form`（M2 的表单规则）+ `EntityFormDialog`（新增 / 编辑弹层，**已归公共机制之上**），页面为 `pages/BaseDataPage.tsx`）**、**`task/`（M3 任务管理：`model` 列与筛选 · `form` 表单与时间转换 · `actions` 状态操作展示（`Record<TaskAction, …>` 保证不漏）· `TaskActionDialog` 确认层 · `TaskDetailDialog` 详情 · style）**、**`route/`（M5 路径规划：`model`（途经点解析与展示口径 —— 展示值全部由函数产出，D-48）· `RoutePlanner` 面板 · style）**、**`dispatch/`（M4 调度台：`model.ts`（策略选项 / 推荐结论 / 派发明细行 / 拒绝原因行 / 确认清单 / 日志行 / 四个请求体构造函数；**纯函数，展示文案全在这里产出**，D-48）· `DispatchConsole`（两栏）· `ConfirmDispatchDialog`（二次确认）· `DispatchLogPanel`（服务端筛选 + 分页）· style；挂载页 `pages/DispatchPage.tsx`）**、`map/`（model **12** + nodes 5 + edges 2 + hooks 6 + stage + panels + style；**`model/toFlow.ts` 是图层偏移与声明尺寸的唯一作者，`model/layout.test.ts` 守住共点不遮挡**，D-42）、`test/dom-stubs.ts` | 调度中心页自本批起**两块都已实现**（上 M4 调度台、下 M5 路径规划），页面常驻标注「规划只预览、不落库」；告警 / 审计 / 设置 / 用户 **4 页**仍为占位（但已有「计划能力 + 依赖契约」说明）；**M2 的批量导入与详情接口未开放**、**M3 的批量导入未开放**，页面内均已如实标注；地图缺轨迹回放（Req-M6-6）与订单端点图层；**车辆不会自动动起来**（执行器 M7 未落地，故 `reserved → busy` 与位置事件都还没有产生者）；`NODE_SIZE` 与 `style/map.css` 的实际尺寸**没有断言**（改字体/内边距后需重量一次，见 D-42）；**工作台数据源仍复用 `map/overview`**，待 `/api/monitor/overview` 落地后切换；无跨包 E2E 测试 |
+| `renderer/src/` | **全套已落地**：`main.tsx`（HashRouter，Electron `file://` 必需）、`api/`（client 契约 + `ipc`/`http`/`mock` 三层适配器 + `types.ts` 再导出 shared + `mock-data.ts` 与 seed 同源 + **`mock-base-write.ts`（写路径：规则共享、存储各自）+ `mock-parity.test.ts` 用同一批请求把 Mock 与真实主进程逐字段比对**）、`store/`（session / selection）、`app/`（路由 + `RequireSession` + **`modules.ts` 信息架构**）、`styles/`（**`theme.css` 令牌 + `ui.css` 共用基元** + `layout.css` 外壳）、`components/`（AppLayout / **BrandMark** / **UserMenu** / `icons.tsx` 内联图标集）、`pages/`（登录 / 工作台 / 未实现模块说明页）、**`domain/`（跨模块共用层：`labels.ts` 枚举→中文 · `table.ts` 列定义 · `form.ts` 表单机制与载荷口径 · `paging.ts` 页码收敛 · `tone.ts` 色调类名 · `format.ts` 数字/时间格式化）**、**`api/usePagedList.ts`（列表取数、竞态丢弃与页码收敛）· `api/useApiWrite.ts`（写请求与字段级错误映射）**、`dashboard/`（**工作台 model + 6 个面板 + style**）、**`base/`（M2 基础数据：`model`（列与页签）+ `form`（M2 的表单规则）+ `EntityFormDialog`（新增 / 编辑弹层，**已归公共机制之上**），页面为 `pages/BaseDataPage.tsx`）**、**`task/`（M3 任务管理：`model` 列与筛选 · `form` 表单与时间转换 · `actions` 状态操作展示（`Record<TaskAction, …>` 保证不漏）· `TaskActionDialog` 确认层 · `TaskDetailDialog` 详情 · style）**、**`route/`（M5 路径规划：`model`（途经点解析与展示口径 —— 展示值全部由函数产出，D-48）· `RoutePlanner` 面板 · style）**、**`dispatch/`（M4 调度台：`model.ts`（策略选项 / 推荐结论 / 派发明细行 / 拒绝原因行 / 确认清单 / 日志行 / 四个请求体构造函数；**纯函数，展示文案全在这里产出**，D-48）· `DispatchConsole`（两栏）· `ConfirmDispatchDialog`（二次确认）· `DispatchLogPanel`（服务端筛选 + 分页）· style；挂载页 `pages/DispatchPage.tsx`）**、`map/`（model **12** + nodes 5 + edges 2 + hooks 6 + stage + panels + style；**`model/toFlow.ts` 是图层偏移与声明尺寸的唯一作者，`model/layout.test.ts` 守住共点不遮挡**，D-42）、`test/dom-stubs.ts` | 九个模块的页面全部落地，**当前没有任何路由指向占位页**；遗留缺口：**M2 的批量导入与详情接口未开放**、**M3 的批量导入未开放**（页面内均如实标注）· 地图缺**订单端点图层**（`ISS-011`；轨迹回放已补）· `NODE_SIZE` 与 `style/map.css` 的实际尺寸**没有断言**（改字体/内边距后需重量一次，见 D-42）· **工作台数据源仍复用 `map/overview`**（刻意保持单快照，理由见 `DashboardPage.tsx` 文件头）· 无跨包 E2E 测试 |
 | `renderer/index.html` | 首屏声明：内联 `data:` SVG 图标、`color-scheme: dark`、`theme-color`（D-37）；由 `renderer/src/app/index-html.test.ts` 断言「图标色值都已登记在 `theme.css`」 | 无（该文件只需保持自包含） |
 | `tests/` | `setup.ts`（全局 setup：`@testing-library/jest-dom/vitest` + 每个用例后卸载 React 树 —— **本项目未开 `globals`，自动 cleanup 不生效**，必须显式注册）、**`docs.test.ts`（仓库级文档不变量，8 例：边界行齐全 / 文档里的源码路径必须存在 / `issues.md` 索引-锚点-明细一一对应 / **`issues.md` 的 §0 分布 · 索引表 · 明细段三处计数互相对齐**（`ISS-057` 的护栏）/ `api.md` §0 含关键事实行 / 代码里的每个路由都能在 `api.md` 查到（**单向**）/ 路由字面量必须写在 `path:` 里（元护栏）；`vitest.config.ts` 的 `include` 已纳入 `tests/**`）** | 文档护栏只覆盖「结构不变量」，**不校验正文与代码的语义一致**（那需要重新发明 D-34 的指派表）；jsdom 所需的 `ResizeObserver`/`matchMedia` stub 放在 `renderer/src/test/dom-stubs.ts` 里按需引入，**不进全局 setup**（否则 node 环境的 desktop 用例会被污染） |
 
-> 测试现状：**73 个测试文件 / 805 用例全通过** ——
-> `shared/`（enums、errors、errors.catalog、edge-code、base-rules、task-state、task-rules、
-> route-search、route-graph、route-rules、**dispatch-occupancy**、**dispatch-evaluate**、
-> **dispatch-greedy**、**dispatch-hungarian**、**dispatch**）+
-> `desktop/`（db、auth、router、ipc/router.dispatch、map.repo、ipc/paging、ipc/validators、
-> db/repositories/settings.repo、db/repositories/base-data.repo、db/repositories/task.repo、
-> ipc/api.write、ipc/api.task、**ipc/api.auth**、**ipc/api.route**、domain/base/base.service、
-> domain/task/task.service、**domain/route/route.service**、
-> services/event-bus）+
-> `renderer/`（api/index、api/mock-data、api/mock-parity、**domain/format**、**domain/paging**、
-> domain/labels、**domain/tone**、base/model、base/form、**task/model**、**task/form**、**task/actions**、
-> **pages/TasksPage**、**pages/TasksPage.write**、**pages/DispatchPage**、**pages/DispatchPage.error**、
-> **route/model**、pages/BaseDataPage、pages/BaseDataPage.write、
-> app/index-html、components/AppLayout、components/UserMenu、styles/classnames、
-> dashboard/model/summary、dashboard/panels/dashboard、
-> map/model 的 ids/projection/structural/motion/toFlow/layout/focus/metrics/detail/palette/visualization、
-> map/MapView.tsx、map/panels、map/hooks/useVehicleMotion）+
-> **`tests/`（仓库级：docs 不变量 —— 边界行 / 路径存在 / 索引一致）**。
+> 测试现状：**88 个测试文件 / 991 用例全通过**。分布（按目录，文件名即套件名）：
 >
-> 上一批（M5 路径规划）新开 **9 个测试文件**并扩大多个既有套件：`shared/src/route-search` · `route-graph` ·
-> `route-rules`、`desktop/src/domain/route/route.service`、`desktop/src/ipc/api.route`、`desktop/src/ipc/api.auth`
-> （`ISS-066` 的方法契约护栏）、`renderer/src/route/model`、`renderer/src/pages/DispatchPage` ·
-> `DispatchPage.error`；既有套件扩写：`renderer/src/api/mock-parity`（**新增 7 例 M5 一致性** ——
-> 同一批 `plan` / `compare` / 失败输入的 `code` + `message` + `detail` 逐字段比对，且**禁行规则经两边写接口分别建立**，
-> 证明「同一条规则解析成同一张图」）、`renderer/src/api/mock-data`（`MockRouteStore`）、
-> `shared/src/errors.catalog`（`ROUTE.NOT_FOUND`）、`tests/docs.test.ts`（路由 ↔ 契约）。
->
-> 本批（M4 调度内核）新开 **5 个测试文件 / 49 例**，全部在 `shared/`（内核所在层）：
-> `dispatch-occupancy`（7）· `dispatch-evaluate`（18）· `dispatch-greedy`（9）·
-> `dispatch-hungarian`（11）· `dispatch`（4，分派入口与「未实现策略显式报错」）。
+> - `shared/src/`（17）：`enums` · `errors` · `errors.catalog` · `edge-code` · `base-rules` · `task-state` ·
+>   `task-rules` · `route-search` · `route-graph` · `route-rules` · `dispatch-occupancy` · `dispatch-evaluate` ·
+>   `dispatch-greedy` · `dispatch-hungarian` · `dispatch`。
+> - `desktop/src/`（25）：`db/db` · `db/repositories/{base-data.repo, map.repo, settings.repo, task.repo}` ·
+>   `services/{auth, event-bus}` · `ipc/{router, router.dispatch, paging, validators, api.auth, api.route,
+>   api.task, api.write, api.dispatch, api.ops}` · `domain/{base/base.service, task/task.service,
+>   route/route.service, dispatch/dispatch.service, user/user.service, alert/alert.service,
+>   settings/settings.service, execution/executor}`。
+> - `renderer/src/`（45）：`api/{index, mock-data, mock-parity, mock-dispatch}` ·
+>   `app/index-html` · `components/{AppLayout, UserMenu}` · `styles/classnames` ·
+>   `domain/{format, paging, labels, tone}` · `base/{model, form}` · `task/{model, form, actions, execution}` ·
+>   `route/model` · `dispatch/model` · **`ops/model`** · `dashboard/{model/summary, panels/dashboard}` ·
+>   **`map/edges/NetEdge`**（本批新增）· `map/MapView` · `map/panels/panels` · `map/hooks/useVehicleMotion` ·
+>   `map/model/{ids, projection, structural, motion, toFlow, layout, focus, metrics, detail, palette,
+>   visualization, track}` · `pages/{TasksPage, TasksPage.write, DispatchPage, DispatchPage.error,
+>   BaseDataPage, BaseDataPage.write, OpsPages, AlertsBatch}`。
+> - `tests/docs.test.ts`（仓库级文档不变量）：边界行齐全 · 文档里的源码路径必须存在 · `issues.md` 索引-锚点-明细
+>   一一对应 · **§0 分布 · 索引表 · 明细段三处计数互相对齐**（`ISS-057` 的护栏）· `api.md` §0 含关键事实行 ·
+>   代码里的每个路由都能在 `api.md` 查到（单向）· 路由字面量必须写在 `path:` 里（元护栏）。
 
 ## 角色与权限摘要（实现必须遵守）
 
@@ -497,6 +377,19 @@
 | D-52 | **调度的三张词表（策略名 / 拒绝原因 / 日志动作）唯一作者放 `shared/src/constants.ts`**（`DISPATCH_STRATEGY_LABELS` / `REJECT_REASON_LABELS` / `DISPATCH_LOG_ACTION_LABELS`）；主进程 `domain/dispatch/explain.ts` 只做再导出（`STRATEGY_LABEL` / `REJECT_REASON_LABEL` 保持旧名给既有调用点），渲染层的 `domain/labels.ts` 也再导出，**不在任何一端重写中文** | 这三张表有**三个**使用方且跨进程：主进程（`explain.ts` 出人读文案、`api.ts` 的日志回执）、浏览器 Mock（`mock-dispatch.ts` 要给出与主进程相同的回执）、渲染层（调度台表格的策略列 / 拒绝原因列 / 日志动作列）。任一处各写一份中文，**分叉只在切换形态或换个角色看同一个对象时显形** —— 与 D-49 / D-51 是同一个判断（「这段代码有没有 IO」之外再加一句：**有没有多个使用方**），也是 `ISS-061`（两形态文案不同）与 `D-27`（mock 与 seed 形状相同、内容不同）的同类防线。**与 D-33 的分工**：错误码的 `message` 由 `shared/src/errors.ts` 独占（那是「这个 code 是什么」），这里的词表负责**枚举取值到中文**的映射（那是「这个值怎么称呼」），两者不重叠 —— `REJECT_REASON_LABELS` 里没有 code，只有 `RejectReason` 的取值 | 已定 |
 | D-53 | **「预留」不是可重入动作、「回收」只释放这一单的占用**：`apply` 内同一辆车只走**一次** `idle → reserved`（用 `reservedInBatch` 区分「本批次已由我们预留」与「被别的批次抢走」），同一辆车在一批里出现多条计划是**合法形态**（内核按半开占用区间排，见 `docs/module-M4-dispatch.md` §6）；回收（重算 / 取消）前先问 `hasOtherActivePlanForVehicle`，该车仍被其它生效计划占用时**不置 `idle`**。**跨批次仍保守拒接**：车辆处于 `reserved` 就不进下一次预览的候选（更细的跨批次串行排程留给二期） | 起因是实测的两个连通缺陷（`ISS-069` / `ISS-070`）：把「一车一批一单」当成不变量写进了落库层，而内核从来不保证这件事 —— 内核保证的是**区间不重叠**。两处的后果正好相反却同源：前者**能派却拒绝**（还报一句与事实无关的「车辆状态不允许该操作」），后者**不能派却放行**（车辆显示空闲、身上挂着未完成计划，下一次调度把车派出去，两条计划真重叠而查不出是哪一步错了）。**为什么不去掉跨批次的保守边界**：那需要把「谁先占用、谁等谁」变成可解释的排程语义（涉及优先级、时间窗与执行器反馈），属于二期；此刻宁可少派一单并如实说明原因，也不要派出一单后面谁也说不清的计划。**为什么加「同车占用重叠 → `DISPATCH.PLAN_EXPIRED`」这道守卫**：`apply` 读的是预览存档，存档是过去某一刻算出来的，内核保证当时不重叠，但存档可能被改动或来自旧版实现 —— 与其把两条互相矛盾的占用写进库，不如拒绝并要求重新预览 | 已定 |
 
+| D-54 | `edges` 新增 **`weight REAL NOT NULL DEFAULT 1 CHECK (weight >= 1)`**（`desktop/migrations/0005_edge_weight.sql`）：语义是**耗时惩罚系数**而不是长度 —— 通行耗时 = `length_m × weight ÷ 有效限速`；`>= 1` 是**硬约束**（不是随手写的下限），因为 A* 的启发式是「欧氏直线距离 ÷ 全网最高速度」，只有边代价 ≥ 未加权代价时才不高估剩余代价，允许 `weight < 1` 会让 A* **静默返回非最优路线**（不报错，只是偶尔绕远） | 起因是「让调度更复杂」这个诉求在**数据上无处表达**：样本的静态路网里长度只有 80/150/160 m 三档、限速只有 10/15/20 km/h 三档，于是任意两点间往往只有一条时间最优路 —— 贪心与匈牙利给出**完全一样**的计划，界面上的「哪个策略更快、快多少」恒等于 0。**为什么不能借用现有两列**：`length_m` 是物理事实，用它表达拥堵等于谎报距离（对比表里「少跑 450 m」会变成一句假话）；`speed_limit_mps` 是交规事实，为了表达拥堵而改写它，会让「这条路限速多少」这个可查证的问题变得不可信。现实里「同一段长度可能更贵」（施工占道 / 限流 / 路面差 / 高峰）必须有第三列。**为什么是 ≥ 1 而不是 > 0**：见左栏 —— 这是算法正确性约束，不是取值风格；写入小于 1 的值报 `VALIDATION.FAILED`。见 `docs/api.md` §3.2.4（契约）、迁移文件头（完整理由）、`renderer/src/map/edges/NetEdge.tsx`（画布上的橙色点线） | 已定 |
+| D-55 | seed 与浏览器 Mock 的演示数据**改为同一个函数推导**（`shared/src/seed-data.ts` 的 `buildSeedDataset()`），`desktop/src/db/seed.ts` 只做「取数（读 `data/campus/`）→ 推导 → 落库」，`renderer/src/api/mock-data.ts` 调的是**同一个函数** | 这是 D-27 的升级，不是重复：D-27 说「mock 用 `SEED_IDS` 与 seed 同规则派生」，落地后仍是**两份代码各推一遍**，比对靠测试。换成一份推导之后，**比对不可能失败，因为它不再有两份** —— 而「不可能失败」比「失败得很快」更根本。同时把业务数字从代码里赶了出去：`seed.ts` 与 `docs/database.md` §4 里都不再写「12 节点 / 34 边 / 间距 20 m」这类会漂移的数值，它们住在 `data/campus/` 的 CSV 与推导函数里（D-34 的同一原则：每个事实只有一个作者）。代价是 seed 依赖 `data/campus/` 存在 —— 因此那四个文件**必须纳入版本控制**（`.gitignore` 的 `.db` 规则不覆盖它们） | 已定 |
+| D-56 | **演示数据的时间戳必须相对「现在」派生，不得写成常量**（`renderer/src/api/mock-data.ts` 的 `MOCK_AT` 改为模块加载时刻；演示待派任务的时间窗在 seed 复跑时刷新，且**只在任务仍为 `pending` 时**刷新） | 起因是本轮实测的两个连通缺陷（`ISS-077` / `ISS-078`）：`MOCK_AT` 被写成 `'2026-01-01T00:00:00.000Z'`，而调度用的 `now` 是真实时刻 —— 于是**浏览器形态下 6 条演示任务 100% 报「时间窗冲突」**，看起来像算法或校验坏了；同一个常量还让演示告警的「停滞时长」显示成「已 9 个月未认领」。两个后果形态不同、根因相同：**把「一个具体日期」当成了「相对当前时刻的关系」**（与 `ISS-073` 是同一族）。**为什么只在 `pending` 时刷新**：任务一旦被派发/执行，时间窗就是业务数据，seed 无权改写 —— 幂等不等于「每次启动都重置」 | 已定 |
+| D-57 | **任务风险预检不是告警**：`GET /api/alerts/risks` 不读不写 `alerts` 表、不进状态机、没有 `id`、不能认领；判据（7 类风险）的唯一作者是 `shared/src/plan-risk.ts` 的 `scanPlanRisks`，主进程与浏览器 Mock 调**同一个函数**；报告一次给出「风险清单 / 已生效派发 / 未派发缺口」三个视图，`assignments` 的排序由服务端定死 | 起因是「告警中心要能把任务冲突与超时都列出来」这个诉求 —— 但**把它们做成告警是错的**：告警是「已经发生」的事（车辆离线了），有状态机、要人认领、要留处置结论；「**预计**会超时」被认领掉没有任何意义，它要么被处理掉（改派 / 调窗口），要么等它真的超时、由执行器落一条真告警。把两者混在一张表里会立刻产生两个恶果：① 预检每次刷新都新增一批「告警」（去重窗口也救不了，因为数字每次都在变）；② 使用者去点「认领」而不知道该做什么。**为什么判据放 `shared` 而不是渲染层**：`renderer/src/ops/model.ts` 只做展示，「这条计划会不会超时」是业务判断 —— 放渲染层会立刻产生第二个裁判（界面说超时 5 分钟、内核按同一份数据放行），使用者只能猜哪个对。**为什么三个视图合在一个回执里**：它们是同一次读取的三个切面，分成三次请求就会出现「风险说某车撞单，而派发区块里那两单已经不在」。见 `docs/api.md` §3.8.3 | 已定 |
+
+| 2026-09-28 | 站点锚定路网节点一律取边的 `fromCode`，演示路线里程虚增近一倍 | 「边的第一个端点」是**文件里的书写方向**，被当成了「站点实际在哪一端」 | 改为按几何最近端点判定（`nearestEndpointOf`，端点缺失即抛错） | `shared/src/seed-data.ts`（ISS-076） |
+| 2026-09-28 | 浏览器 Mock 形态下 6 条演示待派任务**全部**被拒（`TIMEWINDOW_CONFLICT`），Electron 形态正常 | 演示数据的时间基准写成常量 `2026-01-01`，而调度用的 `now` 是真实时刻 —— 任务窗在 1 月、车的可用区间在 9 月 | 改为模块加载时刻派生（D-56）；写明「演示数据的时间戳不能冻结」 | `renderer/src/api/mock-data.ts`（ISS-077） |
+| 2026-09-28 | 告警中心的「停滞」列显示「已 9 个月未认领」 | 与上一条是**同一个常量**的第二次发作：演示告警手写了冻结的 `createdAt` | 演示告警改为从与 seed 同源的 `mockSeedDataset().demoAlert` 取 | `renderer/src/api/mock-ops.ts`（ISS-078） |
+| 2026-09-28 | 车辆表单新增「所在节点」后该下拉**永远为空**，而站点页签的同名字段正常 | 「谁需要候选清单」是页面里手写的页签判断，与字段定义各有各的作者；漏改不报错（空下拉只是一个空框） | 候选需求改由字段定义推导（`optionNeedsOf(tabKey)`），页面只调用 | `renderer/src/base/form.ts`（ISS-079） |
+| 2026-09-28 | 新增的「慢边橙色点线」不生效，顺带发现 `is-muted` / `is-disabled` 两条**旧规则也从未生效** | 标志类被 React Flow 拼到外层 `<g>`，而 CSS 选择的是 `BaseEdge` 渲染的 `<path>` —— 不是同一个元素 | 类名改由边组件从 `data` 派生；新增**反向**护栏：从 `map.css` 提取 `path` 选择器，断言都能被组件产出 | `renderer/src/map/edges/NetEdge.tsx` · `NetEdge.test.tsx`（ISS-080） |
+| 2026-09-28 | seed 换地图后 14 个套件、142 条用例失败，失败信息看起来像跨端分叉 | 夹具里写死了上一版 seed 的形状（网格节点 id、坐标、边编码）；引用不存在的行会得到一句「合理但与夹具有关」的业务错误 | 夹具改用由数据推导的 id（`campusNodeId('N00')` 这类）；断言绑定性质而非具体数字 | `renderer/src/api/mock-parity.test.ts` 等（ISS-081） |
+| 2026-09-28 | 文档写回后复跑 `npm test`，`errors.catalog.test.ts` 变红：`docs/api.md` 里写着 `BASE.NODE_NOT_FOUND`，登记处没有这个 code | 写 §3.2.2 时按「域 = 业务模块」的直觉起了个 `BASE.*` 名，而代码里这一概念叫 `NODE.NOT_FOUND`（站点 / 边 / 路径共用一个）。**直觉命名与登记处不一致，且没有任何人比对过** | **修文档而非加码**：把 §3.2.2 改成 `NODE.NOT_FOUND`（加一条 `BASE.*` 等于给同一概念开第二个 code，D-33 禁止）。交给 `errors.catalog.test.ts` 兜底 —— 文档与登记处不一致时测试先红 | `docs/api.md` §3.2.2 |
+
 ## 困难与问题记录
 
 | 日期 | 问题现象 | 原因分析 | 解决/状态 |
@@ -592,6 +485,9 @@
 | 2026-09-26 | `compare` 的一致性用例断言「A* 与 Dijkstra 的节点序列逐项相等」而失败：两个算法各选了一条**里程与耗时完全相同**的不同路线 | 把「最短路」当成「唯一的那条路」。契约里的 `consistent` 是**里程 / 耗时一致**，不是节点序列一致；用例却把任意的 tie-break 结果写成了契约 | **已解决**：改为断言性质（里程 / 耗时 / 边数 / `consistent`），并在用例里写明**为什么不能断言序列** · 出处：`desktop/src/domain/route/route.service.test.ts`（ISS-064） |
 | 2026-09-26 | 用来覆盖 `ROUTE.NOT_FOUND_PATH`（两点不通）的用例，把 `n6` 当成「孤岛」删掉 —— 但 `n6` 是 3×3 网格的**中心节点**，图仍然连通，该断言实际测的是另一条路 | 手工挑了一个「看起来边缘」的节点，没回头核对生成函数；构造输入与断言写在同一个文件里，**没人保证「图真的长成我以为的样子」** | **已解决**：改用网格外的 `n9`，并补一条前置断言「图里确实没有这个节点」 · 出处：`shared/src/route-search.test.ts`（ISS-065） |
 | 2026-09-26 | 照 `docs/api.md` §3.1.1 用 `POST /api/auth/login` 登录 → `API.ROUTE_NOT_FOUND`；改 `GET` 才通，而**界面登录一直正常**、全部用例全绿 | `Route.method` 可省略，省略按 `GET` 注册（为兼容早期读接口的有意设计）；而所有调用点也都不传方法 —— 两边**互相吻合**，只有**照文档调用**才暴露；路由 ↔ 契约的断言只比对路径，方法从未进入比对范围 | **已解决**：两条认证路由显式 `method: 'POST'`，Mock 删掉 `GET` 分支；新增 `api.auth.test.ts`（含「不得同时存在 `GET` 形态」的反向断言）· 出处：`desktop/src/ipc/api.ts` · `desktop/src/ipc/api.auth.test.ts`（ISS-066） |
+| 2026-10-03 | 告警中心给 seed 的演示任务报「缺路线」假红 —— 而车正按那条路线在跑 | 取数只查 `dispatch_plans`，没实现执行器那套「计划优先、按 `routes.task_id` 回退」的两级查法；这条规则此前在三个地方各写一遍 | **已解决**：抽成 `shared/src/plan-risk.ts` 的 `planInputsOf`（唯一作者），主进程与 Mock 共用；回退区间 = 起始时刻 + 路线时长，与执行器推进任务的时间轴同口径（ISS-085） |
+| 2026-10-03 | 风险预检的「已超时」对 `pending` 任务**永不触发** —— 最容易超时的一类恰好被过滤掉了 | 超时循环与「占用着车辆」循环共用了 `ACTIVE_TASK_STATUSES`，把「占用车辆」当成了「还没结束」 | **已解决**：拆出 `UNFINISHED_TASK_STATUSES`（比占用集合多一个 `pending`）专供超时判断；先确认回归用例在改动前会转红（ISS-084） |
+| 2026-10-03 | 预检表的「建议动作」在真实 Electron 里被裁半句，而 DOM / 单测 / 控制台**全绿** | 沿用了列表页的 `white-space: nowrap`；溢出的 37px 交给 `.udm-table__wrap` 的 `overflow-x: auto`，而 macOS 默认不显示滚动条 | **已解决**：该两列显式 `white-space: normal` + 建议列 `max-width`；护栏改成读 `ops.css` 断言（jsdom 量不出布局）。教训：**布局缺陷不在 DOM 里，只在真实渲染尺寸下**（ISS-086） |
 
 ## 工作日志
 
@@ -2182,3 +2078,188 @@
      与轨迹落库的唯一来源；M4 的接口契约不需要改（`apply` 只到 `reserved` 就是为此留的边界）。
   3. 之后：M8 告警闭环 · M9 审计页 · M10 设置写接口 · M3 批量导入与四类文件导入管线 · 打包（无打包脚本）。
   4. 唯一「等人」项仍是 `ISS-017` / `ISS-018`；**M4 已不受其阻塞**。
+
+### 2026-09-28 — M1 / M7 / M8 / M9 / M10 落地批次：用户维护、监控与模拟执行器、告警闭环、审计、设置（⏳ 追记）
+
+> **这是补记**。这批改动（以及 2026-09-25/26 的地图与设计系统批次）由**使用者本人**于 2026-09-28
+> 以 `a22ae16`（`all build`，207 文件）合成一笔提交，**当时没有按纪律先写本日志**。
+> 现按代码与测试的现状补记，并如实记录这处偏差（见「仓库状态」的同一说明）。
+> 之所以不省略它：**下一次改动要能查到「这五个模块是什么时候、以什么口径落地的」**，
+> 缺了这条记录，`git log` 里那笔「all build」就等于没有说明。
+
+- **范围与目标**：把首期剩下五个模块的契约变成可用功能 —— **M1** 用户维护、**M7** 监控读模型 + 本地模拟执行器、
+  **M8** 告警五态闭环、**M9** 审计查询与 CSV 导出、**M10** 设置写接口与 schema 驱动表单。
+  完成后首期十个模块（M1-M10）的页面与接口全部落地。
+- **变更清单**（按模块）：
+  - **M1 用户**：`desktop/src/domain/user/user.service.ts`（+ 113 行用例）——
+    四条路由（列表 / 新增 / 更新 / 重置密码）；**两条「别把自己锁在门外」的护栏在服务端**：
+    不能停用/降级**最后一个启用的管理员**、不能停用**当前登录的账号**。
+    字段归属随调用点走（禁用时报在 `status`、改角色时报在 `role`），前端因此能把红框标在正确的控件上。
+    页面 `renderer/src/pages/UsersPage.tsx`。
+  - **M7 监控与执行**：`desktop/src/domain/monitor/monitor.service.ts`（三条读路由；
+    两条列表**复用** `listTasks` / `listVehicles` 后补字段，不复制 SQL）、
+    `desktop/src/domain/execution/executor.ts`（**本地模拟执行器**，D-10）+ `execution.repo.ts` /
+    `monitor.repo.ts`（轨迹采样与遥测）、`GET /api/map/tracks/:vehicleId`（轨迹回放）与
+    `renderer/src/map/panels/TrackPanel.tsx`。执行器的对外入口刻意只有
+    `startTask` / `takeover` / `tick` 三个：**`tick()` 是纯推进、不自己读时间**（于是可被逐帧断言），
+    `startTimer()` 只负责调度；`adoptRunningTasks()` 把上次进程退出时仍在跑的任务接回内存续跑 ——
+    少了它，界面上一条「执行中」的任务会永远停在原地。
+    **事务边界**：状态迁移复用 `operateTask`（自带事务与审计），遥测与轨迹写在**另一个**事务里
+    —— `tx()` 不支持嵌套 `BEGIN`，合并会直接抛错。
+  - **M8 告警**：`shared/src/alert-state.ts`（**状态机唯一作者**：迁移表 + `alertActionsOf` + `ALERT_NEXT_STEPS`）、
+    `desktop/src/domain/alert/alert.service.ts`、页面 `renderer/src/pages/AlertsPage.tsx`。
+    服务端据此校验、前端据此渲染按钮 —— **界面上能点的，服务端一定放行**。
+    `resolve` 的字段名是 `resolution` 且必填（处置结论是这条告警唯一有价值的知识）。
+  - **M9 审计**：`desktop/src/domain/audit/audit.service.ts`、`renderer/src/pages/AuditPage.tsx`。
+    导出把「文件名 + 正文」放进 `data` —— **本地 IPC 形态没有响应头**可放 `Content-Disposition`，
+    而两种适配器必须共用同一个信封；`content` 带 UTF-8 BOM、正文按 RFC 4180 转义。
+  - **M10 设置**：`shared/src/settings-rules.ts`（`validateSettingValue`，主进程与 Mock 共用）、
+    `desktop/src/domain/settings/settings.service.ts`、`renderer/src/pages/SettingsPage.tsx`。
+    PATCH **只改 `updates` 里提到的键**、**整批校验后才写**；前端只提交与已保存值不同的键。
+  - **渲染层共用地基**：`renderer/src/ops/model.ts` + `ops/style/ops.css`（四页共用的纯函数与样式）、
+    `app/App.tsx` 九条路由全部指向真实页面（`PlaceholderPage` 与 `PLANNED_MODULES` 保留但**当前无路由使用**）。
+  - **文档**：`docs/api.md` §3.1 / §3.6.2 / §3.7 / §3.8 / §3.9 / §3.10 补「已实现范围」与实现要点；
+    `README.md` 状态与下一步改写；`docs/issues.md` 关闭 `ISS-010` / `ISS-012` / `ISS-021`。
+- **关键设计决策**：**本批未新增 D 编号** —— 五个模块都是在既有决策（D-08 权限双轨、D-10 执行器、
+  D-32 事件过滤、D-33 错误码唯一处、D-34 事实单一来源、D-48 展示口径）的框架内落地，
+  没有出现需要新决策的分叉。唯一值得记的是 M7 的两条**实现口径**（`tick()` 不读时间、
+  遥测不与状态迁移共事务），已写在 `executor.ts` 文件头与 `docs/api.md` §3.7.3。
+- **验证与测试结果（补记时为 2026-09-28 复跑）**：见「验证基线（2026-09-28 实测，第二批）」。
+  这批自己的实测记录（2026-09-28 提交时）已丢失，**不做臆造**；能确认的是：
+  全量 `npm test` 覆盖这五个模块（`user.service.test.ts` / `executor.test.ts` / `alert.service.test.ts` /
+  `settings.service.test.ts` / `api.ops.test.ts` / `mock-parity.test.ts` 的 M1/M7/M8/M9/M10 段）。
+- **遇到的困难与解决方案**：无新增（补记）。
+- **遗留问题与下一步**：四类数据文件的导入管线（M3 批量导入与其同批）· M2 详情接口 ·
+  地图的订单端点图层（`ISS-011`）· 工作台是否改用 `/api/monitor/overview`（当前刻意保持单快照）。
+
+### 2026-09-28 — 车辆接入 / 调度对比与接力 / 告警停滞与批量认领 / 复杂校园地图与边权（D-54 / D-55 / D-56，ISS-076…ISS-082）⏳（未提交）
+
+- **范围与目标**：使用者的五条指令，逐条落地 ——
+  ① **添加车辆接口，可以加入新的车辆**；② **调度中心对不同的任务做算法对比，并给出数据（哪条路更快、快多少）**；
+  ③ **任务对不同车辆派发的最好结果，含接力**（A 给 1 车、B 给 2 车、2 车跑完马上接 D）；
+  ④ **告警中心给出更好的告警与异常处理**；⑤ **地图从 `data` 读更复杂的数据，并改变每条边的长度权重使调度更复杂**。
+  与 `design.md` 的对应：Req-M2-2/3（车辆维护）· Req-M4-1/2/3（派发与策略对比）· Req-M8-1/2/3（告警处置）· Req-M6-1/2（地图数据）。
+- **变更清单**（按用户指令分组）：
+  - **① 车辆接入**：`shared/src/base-rules.ts` 的 `VehicleCreate` 新增 `currentNodeId: string | null`，
+    `x`/`y` 改为 `number | null`（`null` = 跟随所在节点，与站点同口径）；`desktop/src/db/repositories/vehicle.repo.ts`
+    写入 `current_node_id`；`desktop/src/domain/base/vehicle.service.ts` 新增 `resolveVehicleXY()`
+    （**坐标优先 → 节点 → (0,0)**，创建时两者至少要有一个，缺则 `x`/`y` 一起报必填）；
+    `renderer/src/base/form.ts` 车辆表单新增「所在节点」（`kind: 'node'`）。**新车立即进入调度候选池**（用例覆盖）。
+  - **② 算法对比给出数字**：`renderer/src/dispatch/model.ts` 新增
+    `durationText` / `outcomeMetricsOf` / `differenceLinesOf` / `vehiclePlanGroupsOf`（全部纯函数，D-48）；
+    `OutcomeRow` 扩为四列（执行里程 / 行驶耗时 / 全部完成 / 用车）；`DispatchConsole.tsx` 加列、加差异行与口径说明。
+    **口径**：里程**只累加执行段**（空驶段没有路线摘要，混进去会让「谁少跑路」变成另一回事）；
+    行驶耗时 = 空驶 + 执行；完成时刻取 `max(occupiedTo)`。见 `docs/api.md` §3.4.2。
+  - **③ 接力**：同一屏新增**按车辆分组**的清单（组内按开始时刻、组间按第一单时刻），
+    `CAR-01 接力 2 单` 后紧接着列出两单的时刻、里程与代价 —— 平铺的「任务 → 车辆」表读不出接力。
+    `mock-parity.test.ts` 断言「贪心里至少一台车带两条计划，且两条占用区间**不重叠**」。
+  - **④ 告警**：`renderer/src/ops/model.ts` 新增 `alertAgeOf`（**停滞时长随状态换措辞**：未认领 / 未开始处理 / 未解决，
+    已终结显示 `—`；`nowMs` 由调用方注入以便测试）与 `ackTargetsOf` / `batchAckNotice`；
+    页面加「停滞」列（严重且未终结的行加强调色）与**批量认领本页待确认**——
+    **不新增接口**，逐条打既有 `POST /api/alerts/{id}/acknowledge`（状态机、权限与审计因此完全复用），
+    成功与失败条数分开报；详情里的关联对象改为可跳转链接。
+  - **⑤ 复杂地图与边权**：新增 `data/campus/`（4 个样本文件 + 自写的 `campus_congestion.csv` + `README.md`）、
+    `shared/src/campus-map.ts`（原生 5 文件 → 内部的**唯一**翻译层，纯函数无 IO）、
+    `shared/src/seed-data.ts`（`buildSeedDataset()`：路网 / 站点 / 车辆 / 演示数据的**唯一**推导处）、
+    `desktop/src/db/campus-map-source.ts`（Node 侧取数）、`desktop/migrations/0005_edge_weight.sql`（`edges.weight`）、
+    `desktop/src/db/seed.ts` 改为「取数 → 推导 → 落库」（**文件里没有业务数字**）；
+    `shared/src/route-search.ts` 的耗时改为 `长度 × 权重 ÷ 有效限速`；
+    画布上 `weight > 1` 的边画成橙色点线（`is-slow`）并在详情里写「拥堵（通行变慢）」。
+  - **走查中发现并修掉的真实缺陷**：`ISS-076`（站点锚点取错端点）· `ISS-077` / `ISS-078`（演示数据时间戳冻结）·
+    `ISS-079`（车辆表单候选下拉为空）· `ISS-080`（**边的视觉标志类从未落到 `<path>`**）· `ISS-081`（用例夹具绑定旧 seed 形状）。
+  - **测试**：新增 `renderer/src/map/edges/NetEdge.test.tsx`（5 条，含从 CSS 反向提取 `path` 选择器的护栏）·
+    `renderer/src/ops/model.test.ts`（6 条）· `renderer/src/pages/AlertsBatch.test.tsx`（2 条）·
+    `renderer/src/task/execution.test.ts` · `mock-parity.test.ts` 的调度对比 3 条 +
+    「渲染层不消费 `explain`」1 条；并把 `BaseDataPage` / `TasksPage` / `DispatchPage` / `dashboard`
+    等 14 个套件的夹具迁到新地图数据。
+  - **文档**：`docs/api.md` §3.2.2（车辆的三种「停在哪」与优先级）· §3.2.4（`weight` 的完整口径表）·
+    §3.4.2（对比怎么读）· §3.8.1（停滞与批量认领都不是新接口）· §3.9（导出信封）；
+    `docs/database.md` §2.2（`weight` 的最终形态）+ §6（迁移登记 `0005`）+ §4（seed 规则整段重写）；
+    `docs/data-interfaces.md` §4.1.0（仓库内副本 `data/campus/` 与自编拥堵层）；
+    `docs/issues.md`（新增并关闭 `ISS-076`…`ISS-082`，§0 计数与索引同步）；`README.md`；本文件。
+  - **写回后复跑修掉的一处文档缺陷**：`docs/api.md` §3.2.2 原写 `BASE.NODE_NOT_FOUND`，与唯一登记处
+    （`NODE.NOT_FOUND`）不符 —— `errors.catalog.test.ts` 复跑时当场变红。**改文档、不加码**（D-33），
+    并记入「困难与问题记录」。这是本批唯一在**写回之后**才发现的问题。
+- **关键设计决策**：新增 **D-54**（`edges.weight` 是**耗时**系数，`>= 1` 是 A* 可采纳性约束而非取值风格）·
+  **D-55**（seed 与 Mock 共用一份推导，D-27 的升级）· **D-56**（演示数据的时间戳必须相对「现在」派生）。
+- **验证与测试结果（2026-09-28 实测）**：详见「验证基线（2026-09-28 实测，第二批）」。
+  要点：`npm test` **88 套件 / 991 用例**全通过；`typecheck` 三端 exit 0；`build` 三端通过；
+  `db:reset` 落 `30/90/13/2/5/2/3/9/7/1/1` 且复跑幂等；Electron 走查（清新库）实测
+  **对比表两行带数字 + 差异行「少跑 450 m / 少行驶 8 分 27 秒 / 早 2 分 20 秒」+ `CAR-01` 接力 2 单**、
+  告警停滞列与批量认领可用、新建车辆真落库且立即进入候选池、地图 7 条慢边为橙色点线，**控制台错误 0 条**。
+  **这次「走查 → 写文档 → 再复跑」的顺序本身也修掉了一个缺陷**：`errors.catalog.test.ts` 在写回之后
+  变红（`docs/api.md` 写了 `BASE.NODE_NOT_FOUND`，登记处叫 `NODE.NOT_FOUND`，见 `ISS-082`）。
+  教训：**文档也是被测代码** —— 复跑要放在写回之后，而不是之前。
+- **遇到的困难与解决方案**：见「困难与问题记录」本轮 6 行。其中两条最值得记：
+  **(a)** 「边的视觉标志类」——`toFlow.ts` 的类名落在 `<g>` 而 CSS 选择的是 `<path>`，
+  于是**三条规则从未生效过**，而页面、控制台与单测全绿（单测断的是模型里的 `className`）；
+  修法不只是改类名，而是把「类名落在哪个元素」判据收进边组件，并加一条**从 CSS 反向提取**的护栏。
+  **(b)** 「演示数据的时间戳」——一个常量让浏览器形态 100% 报业务拒绝（`ISS-077`），
+  而它**只在跨月时显形**；同一个常量还让告警的停滞时长显示成 9 个月（`ISS-078`）。
+  两条的共同教训：**静默失效的东西不会自己暴露，只有端到端读真实 DOM / 逐字段比两边的输出才能抓到。**
+- **遗留问题与下一步**：
+  1. **本批未提交**（用户未授权 `git commit`）。日志与 `docs/issues.md` 已同步，**随时可提交**。
+     拟提交信息：`feat(map): 接入车辆节点、算法对比与接力视图、告警停滞列，并换用带权重的校园路网`。
+  2. **`data/campus/` 必须纳入版本控制**（它是源数据，`.gitignore` 的 `*.db` 规则不覆盖它）——
+     否则干净检出上 `db:seed` 会失败或落不出路网（D-55 的代价）。
+  3. 四类数据文件的导入管线仍未开工：目前 `data/campus/` 是**构建期源数据**，
+     与 `docs/data-interfaces.md` 规划的**用户上传导入**是两件事（后者待评审，见 `ISS-013` / `ISS-014`）。
+  4. 地图仍缺**订单端点图层**（`ISS-011`，`map/overview?include=orders`）。
+  5. 告警可再加「按停滞时长排序」；调度对比表可加「按车辆分组」的第二种视图（当前是两块并列）。
+
+### 2026-10-03 — 告警中心「看未来」：任务冲突 / 超时预检 + 任务分配派发区块；调度加路线列与派发后上地图（D-57，ISS-083…ISS-086）⏳（未提交）
+
+- **范围与目标**：使用者提出四项诉求 —— ① 调度中心要对**已有车辆**的任务分配与路线分配做算法比较；
+  ② 告警中心要**列举出所有可能的任务冲突与任务超时**；③ 给出**任务分配派发的区块**；
+  ④ 任务派发后**实时在地图上显示**。对照 `design.md` 的 M4（调度）与 M8（告警）两条需求线。
+- **变更清单（新增 / 修改）**：
+  - **`shared/src/plan-risk.ts`（新文件，本批的核心）**：`scanPlanRisks(tasks, plans, vehicles, {nowMs, toleranceS?, minBatteryPercent?})`
+    → `PlanRiskItem[]`（7 类：`VEHICLE_OVERLAP` / `VEHICLE_UNAVAILABLE` / `BATTERY_RISK` /
+    `PLAN_WITHOUT_ROUTE` / `LATE_FINISH` / `WINDOW_EXPIRED` / `UNASSIGNED_TASK`）·
+    `planInputsOf(sources)`（**唯一业务规则**：`dispatch_plans` 优先，否则按 `routes.task_id` 回退）·
+    `buildPlanRiskReport(items, scannedAt, {tasks, plans})`（三个视图 + `counts`）· `PLAN_RISK_LABELS`（中文名唯一来源）。
+    **纯函数、无 IO、不读时钟**（`nowMs` 由调用方注入）。
+  - `shared/src/types.ts`：`PLAN_RISK_KINDS` / `PlanRiskKind` / `PlanRiskItem` / `PlanAssignment` / `PlanRiskReport`。
+  - `desktop/src/domain/alert/risk.service.ts`（新）：`alertRisks(db, now = nowIso())` —— 一条 LEFT JOIN
+    查询取齐（`prv` = 计划路线、`fr` = 回退路线），**只取数、不判断**。
+  - `desktop/src/ipc/api.ts`：注册 `GET /api/alerts/risks`（`alert:read`），**放在 `/api/alerts/:id` 之前**。
+  - `renderer/src/api/mock-ops.ts` + `mock.ts`：Mock 同口径实现（`MonitoringDeps` 新增 `plans` / `routeStore`）。
+  - `renderer/src/ops/RiskPanels.tsx`（新）：两个区块「任务冲突与超时预检」「任务分配派发」；
+    `ops/model.ts` 新增 `riskRowOf` / `RISK_LEVEL_TONE`（存**色调名**而非类名）/ `riskSummaryOf` /
+    `assignmentGroupsOf`（**只分组不排序**，顺序由服务端定死）；`ops/style/ops.css` 追加 `.udm-risk*`。
+  - `renderer/src/pages/AlertsPage.tsx`：`/api/alerts/risks` 独立取数（`riskRevision` 计数器），
+    刷新按钮同时刷新列表与预检；两个区块插在「告警列表 + 详情」**之前**（首屏先看「要处理什么」）。
+  - **调度**：`dispatch/model.ts` 的 `PlanRow` 新增 `route` / `routeSegments` / `routeDistanceM`
+    （`routeTextOf` → `2 段 · 300 m` / `无路线`）；`DispatchConsole.tsx` 派发明细表新增**路线（载货段）**列，
+    应用成功后的提示条给出**「在地图上查看这 N 台车」**（写全局 selection + `navigate('/map')`）。
+  - **测试**：`shared/src/plan-risk.test.ts`（19）· `desktop/src/domain/alert/risk.service.test.ts`（8）·
+    `renderer/src/pages/AlertsRisk.test.tsx`（3）· `renderer/src/dispatch/DispatchConsole.test.tsx`（4）·
+    `renderer/src/dispatch/model.test.ts`（+2 路线列）· `renderer/src/api/mock-parity.test.ts`（+2 风险预检逐字段比对）·
+    `renderer/src/ops/model.test.ts`（+2 CSS 护栏）。
+  - **文档**：`docs/api.md` 新增 §3.8.3（契约、7 类判据表、三个视图、两级查法），原 §3.8.3 状态操作顺延为 §3.8.4；
+    `docs/issues.md` 新增 `ISS-083`（待办）与 `ISS-084` / `ISS-085` / `ISS-086`（已解决），§0 计数与索引同步；
+    本文件（快照 / 验证基线 / D-57 / 困难与问题记录 / 本条日志）。
+- **关键设计决策**：新增 **D-57**（风险 ≠ 告警；判据唯一作者在 `shared`；三个视图同一次读取）。
+- **验证与测试结果（2026-10-03 实测）**：详见「验证基线（2026-10-03 实测）」。要点：
+  `npm test` **92 套件 / 1041 用例**全通过；`typecheck` 三端 exit 0；`build` 三端通过；
+  `db:reset` 幂等；Electron 真实 `ipc` 走查 —— 对比表两行带数字 + 差异行「少跑 450 m / 少行驶 8 分 27 秒 /
+  早 2 分 20 秒」、派发明细每行带路线、应用后「在地图上查看这 4 台车」跳转后地图显示 6 条配送路线且
+  选中 `CAR-01`、告警中心刷新后出现 2 条「必须处理」的 `已超时` / `未派发`（`ISS-084` 的那一类）、
+  派发区块显示「4 台车 · 5 单已生效」且 `CAR-01` 标「接力 2 单」，控制台错误 0 条。
+- **遇到的困难与解决方案**：见「困难与问题记录」本轮 3 行。最值得记的是**两条只有在真实渲染下才暴露**的问题：
+  (a) `ISS-084` 是**写用例时抓到**的 —— `pending` 任务过期不报，因为超时循环复用了「占用车辆」的状态集；
+  (b) `ISS-086` 是**走查时抓到**的 —— 建议动作列被 `nowrap` 顶出卡片，`scrollWidth 1183 > clientWidth 1146`，
+  而 DOM、单测、控制台全绿（jsdom 不做布局，量不出宽度）。
+  两条的共同教训与上一批一致：**静默失效的东西不会自己暴露**。
+  另有一条**环境坑**值得记：CDP 连上的那个 `9223` 端口上是**几天前启动的旧 Electron 进程**，
+  它跑的是旧 `dist/main.js`（没有 `alerts/risks` 这条路由），于是 `/api/alerts/risks` 被
+  `/api/alerts/:id` 命中并返回「告警不存在」—— 看起来像新接口写错了。**重启进程后一切正常**；
+  这正是既有纪律「改完主进程 / preload 必须重启 Electron 再验证」的又一次印证。
+- **遗留问题与下一步**：
+  1. **本批未提交**（用户未授权 `git commit`）。日志与 `docs/issues.md` 已同步，**随时可提交**。
+     拟提交信息：`feat(alert): 新增任务风险预检与派发区块，调度补路线列与派发后地图跳转`。
+  2. **`ISS-083`（Mock 读接口不校验会话）未修**：浏览器形态下读接口匿名可读，与主进程口径相反；
+     修它要给 Mock 补一张「已知路径 → 是否 public」表，属独立一批（本批只在 `mock-parity` 里
+     把断言范围限定为「有会话时一致」，并把原因写在用例注释里）。
+  3. 地图仍缺**订单端点图层**（`ISS-011`）与**轨迹回放**的界面入口（接口已有，ISS-012 已关闭）。
+  4. 风险清单的排序目前固定为「级别 → 类型 → 任务编码」；「按停滞时长排序」与「按车辆聚合视图」可作后续增强。

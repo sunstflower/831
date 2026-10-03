@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuditContext, DomainError } from '@udm/shared';
+import { SEED_IDS } from '@udm/shared';
 import { all, openDatabase, run, type Db } from '../../db/index.js';
 import { applyMigrations } from '../../db/migrate.js';
 import { seedDatabase } from '../../db/seed.js';
+import { gridEdgeId, gridNodeId, installGridFixture, seedFixture } from '../../db/seed-fixture.js';
 import type { CrudContext } from '../base/context.js';
 import { compareRoutes, getRoute, planRoute } from './route.service.js';
 
@@ -19,8 +21,18 @@ import { compareRoutes, getRoute, planRoute } from './route.service.js';
  *   3. **运行期配置只在这里读**：请求不给 `algorithm` 时取 `settings.route.defaultAlgorithm`；
  *   4. **口径来自库里的真实数据**：禁用边、禁行规则、车种速度都真的改变了结果。
  *
- * 测试用的是 seed 的 4×3 网格（`seed-n01`..`seed-n12`，每段 20 m），
- * 因为「用真实 seed 数据」才能让这里的期望值与界面/手工验证对得上（D-26 的口径）。
+ * ## 为什么自带一张 4×3 方格网（而不是直接用 `data/campus/` 的路网）
+ *
+ * 本文件断言的是**服务层的行为**：错误码怎么翻译、配置从哪读、途经点怎么拼。
+ * 这些结论与「哪张图」无关，而与「图上每段多长」有关 —— 方格网每段恰好 20 m，
+ * 于是「n01 → n12 是 5 段 100 m」这类期望值可以直接读出来。
+ * 换成校园路网后，第一个用例就要写「980 m / 653.3 s」，而那个数字由
+ * 拥堵权重、占道封路、站点锚点共同决定 —— 它一变，这里的 20 个用例一起变红，
+ * 而**服务层一行都没错**（本轮换数据时实测发生过）。
+ *
+ * 所以：几何形状由本文件自己插入（`installGridFixture`），校园路网是否变化与本文件无关；
+ * 真正「在真实数据上端到端跑一遍」的职责属于 `seed.ts` 的演示路线、
+ * `mock-data.test.ts` 的同源比对与 Electron 端到端走查。
  */
 const ACTOR: AuditContext = { actorId: 'seed-admin', actorName: 'admin', role: 'admin', traceId: 'trace-m5' };
 
@@ -28,6 +40,7 @@ function setup(): { db: Db; ctx: CrudContext } {
   const db = openDatabase(':memory:');
   applyMigrations(db);
   seedDatabase(db);
+  installGridFixture(db);
   return { db, ctx: { db, actor: ACTOR } };
 }
 
@@ -42,9 +55,8 @@ function expectDomainError(fn: () => unknown, code: string): DomainError {
   throw new Error(`期望抛出 ${code}，但没有抛`);
 }
 
-const n = (index: number) => `seed-n${String(index).padStart(2, '0')}`;
-const edge = (a: number, b: number) =>
-  `seed-e-N${String(a).padStart(2, '0')}-N${String(b).padStart(2, '0')}`;
+const n = gridNodeId;
+const edge = gridEdgeId;
 
 function plan(raw: Record<string, unknown>) {
   return planRoute({ db, actor: ACTOR }, raw);
@@ -309,13 +321,18 @@ describe('route.service · 已存路线（detail）', () => {
   });
 
   it('读到 seed 的演示路线：全字段（含 edgeIds 与 warnings）', () => {
-    const route = getRoute({ db, actor: ACTOR }, 'seed-route-demo');
-    expect(route.id).toBe('seed-route-demo');
-    expect(route.taskId).toBe('seed-task-demo');
-    expect(route.nodeIds).toEqual([n(1), n(5), n(9), n(10), n(11), n(12)]);
-    expect(route.edgeIds).toHaveLength(5);
-    expect(route.distanceM).toBe(100);
-    expect(route.durationS).toBeCloseTo(100 / 1.5, 3);
+    const route = getRoute({ db, actor: ACTOR }, SEED_IDS.demoRoute);
+    const demo = seedFixture().demoRoute;
+    expect(route.id).toBe(SEED_IDS.demoRoute);
+    expect(route.taskId).toBe(SEED_IDS.demoTask);
+    // 路线是**由内核在真实路网上算出来的**（见 seed-data.ts 的 planDemoRoute），
+    // 因此这里逐字段与同一份推导比对，而不是抄一份节点清单到这里 ——
+    // 抄一份等于给「演示路线长什么样」立第二个作者
+    expect(route.nodeIds).toEqual(demo.nodeIds);
+    expect(route.edgeIds).toEqual(demo.edgeIds);
+    expect(route.edgeIds).toHaveLength(demo.nodeIds.length - 1);
+    expect(route.distanceM).toBe(demo.distanceM);
+    expect(route.durationS).toBeCloseTo(demo.durationS, 3);
     expect(route.algorithm).toBe('aStar');
     expect(route.warnings).toEqual([]);
     expect(route.costDetail).toEqual({});

@@ -24,7 +24,7 @@ export function TaskProgress({ rows, hidden }: TaskProgressProps) {
       <div className="udm-empty">
         <p className="udm-empty__title">暂无任务</p>
         <p className="udm-empty__hint">
-          任务由「任务管理」创建或导入后产生；M3 尚未实现，当前演示数据来自 seed。
+          任务在「任务管理」里创建，或由调度派发后产生；当前库里还没有任何任务。
         </p>
       </div>
     );

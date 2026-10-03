@@ -273,3 +273,175 @@
   font-size: var(--udm-font-xs);
   font-style: normal;
 }
+
+/*
+ * 告警列表的「停滞」列。
+ *
+ * 用色阶而不是图标表达紧迫度：一屏十几行时，颜色是唯一能瞬间扫出来的通道，
+ * 图标要逐个看形状才能读懂（那是十几次眼动）。
+ */
+.udm-ops__age {
+  font-size: var(--udm-font-xs);
+  color: var(--udm-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-ops__age--stale {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+/* 严重且仍在流程里的告警：整行左侧加一条红边，扫视时先看到它 */
+.udm-ops__row--attention td:first-child {
+  box-shadow: inset 3px 0 0 0 #ef4444;
+}
+
+/* ==================== 风险预检与派发区块（§3.8.3） ==================== */
+
+/*
+ * 两个区块占满整行、放在「告警列表 + 详情」之上。
+ *
+ * 为什么不是并排两栏：预检表有 6 列，在窄栏里会被压成两行一个单元格
+ * （表格在窄容器里不会横向滚动，只会把文字挤成竖条）。整行是它唯一读得顺的宽度。
+ */
+.udm-risk {
+  margin-bottom: var(--udm-space-4);
+}
+
+.udm-risk__lead {
+  margin: 0 0 var(--udm-space-3);
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+  line-height: 1.7;
+}
+
+/*
+ * 「具体情况」与「建议动作」是两张长文本列，必须允许换行。
+ *
+ * `.udm-table th, .udm-table td` 在 `ui.css` 里是 `white-space: nowrap`（列表页用得对：
+ * 一行一条记录，换行反而更难扫）。但预检表这两列的一句话可能有三四十个字，
+ * 整表 nowrap 会把它们顶出卡片右缘 —— **实走查看到「建议动作」被裁成半句**
+ * （`.udm-table__wrap` 的 `overflow-x: auto` 只在悬停出滚动条时才能救回来，
+ * macOS 上滚动条默认不可见，看起来就是文字缺失）。
+ *
+ * 其余四列（级别 / 类型 / 任务 / 车辆）都是短值，保持 nowrap。
+ */
+.udm-risk__table td.udm-risk__message,
+.udm-risk__table td.udm-risk__suggestion {
+  white-space: normal;
+}
+
+.udm-risk__table td.udm-risk__message {
+  min-width: 220px;
+}
+
+.udm-risk__table td.udm-risk__suggestion {
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+  min-width: 220px;
+  max-width: 340px;
+}
+
+.udm-risk__foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: var(--udm-space-3) 0 0;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+}
+
+.udm-risk__foot strong {
+  color: var(--udm-text);
+}
+
+.udm-risk__foot a {
+  color: var(--udm-accent);
+}
+
+/* ---- 任务分配派发：按车辆分组 ---- */
+
+.udm-risk__fleet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--udm-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.udm-risk__fleet-group {
+  border: 1px solid var(--udm-border);
+  border-radius: var(--udm-radius-md);
+  background: var(--udm-surface-2);
+  padding: var(--udm-space-3);
+}
+
+.udm-risk__fleet-head {
+  display: flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  margin: 0 0 var(--udm-space-2);
+}
+
+/* 车辆编码做成按钮（点了在地图上选中它），但看起来仍是一个名字 */
+.udm-risk__vehicle {
+  font-size: var(--udm-font-md);
+  font-weight: 600;
+}
+
+.udm-risk__fleet-map {
+  margin-left: auto;
+  font-size: var(--udm-font-xs);
+  color: var(--udm-accent);
+}
+
+.udm-risk__fleet-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.udm-risk__fleet-steps li {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 4px 8px;
+  align-items: baseline;
+  font-size: var(--udm-font-sm);
+}
+
+.udm-risk__step-seq {
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+  white-space: nowrap;
+}
+
+.udm-risk__step-task {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-risk__step-time {
+  color: var(--udm-text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--udm-font-xs);
+  /* 时刻是这一行里最长的内容，允许它折到下一行而不是把卡片撑宽 */
+  grid-column: 1 / -1;
+  padding-left: 2px;
+}
+
+.udm-risk__step-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-xs);
+}
+
+/* 「缺路线」是这一单要人处理的原因，与右侧状态徽标并列显示 */
+.udm-risk__step-noroute {
+  color: #f59e0b;
+}

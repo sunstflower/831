@@ -23,7 +23,7 @@ import { all, get, run, type Db, type SqlParam } from '../index.js';
  *
  * 不写子查询：子查询每行都要再查一次，且没法把两端 code 拿到 JS 侧推导。
  */
-const EDGE_SELECT = `SELECT e.id, e.from_node_id, e.to_node_id, e.length_m, e.speed_limit_mps,
+const EDGE_SELECT = `SELECT e.id, e.from_node_id, e.to_node_id, e.length_m, e.speed_limit_mps, e.weight,
        e.status, e.remark, f.code AS from_node_code, t.code AS to_node_code
   FROM edges e
   JOIN nodes f ON f.id = e.from_node_id
@@ -46,6 +46,7 @@ interface EdgeRow {
   to_node_code: string;
   length_m: number;
   speed_limit_mps: number | null;
+  weight: number;
   status: EdgeStatus;
   remark: string | null;
 }
@@ -60,6 +61,9 @@ function toEdge(row: EdgeRow): EdgeListItem {
     toNodeCode: row.to_node_code,
     lengthM: row.length_m,
     speedLimitMps: row.speed_limit_mps,
+    // 兜底 1 而不是透传 null：权重是「代价倍数」，缺省必须等于畅通，
+    // 而 0/undefined 会让这条边在规划里变成免费（比权重 1 更糟，且不会报错）
+    weight: row.weight ?? 1,
     status: row.status,
     remark: row.remark
   };
@@ -270,21 +274,29 @@ export interface EdgeWriteRow {
   toNodeId: string;
   lengthM: number;
   speedLimitMps: number | null;
+  weight: number;
   remark: string | null;
 }
 
 export function insertEdge(db: Db, row: EdgeWriteRow): void {
   run(
     db,
-    "INSERT INTO edges (id, from_node_id, to_node_id, length_m, speed_limit_mps, status, remark) VALUES (?, ?, ?, ?, ?, 'enabled', ?)",
-    [row.id, row.fromNodeId, row.toNodeId, row.lengthM, row.speedLimitMps, row.remark]
+    "INSERT INTO edges (id, from_node_id, to_node_id, length_m, speed_limit_mps, weight, status, remark) VALUES (?, ?, ?, ?, ?, ?, 'enabled', ?)",
+    [row.id, row.fromNodeId, row.toNodeId, row.lengthM, row.speedLimitMps, row.weight, row.remark]
   );
 }
 
 export function updateEdgeRow(
   db: Db,
   id: string,
-  patch: { fromNodeId?: string; toNodeId?: string; lengthM?: number | null; speedLimitMps?: number | null; remark?: string | null }
+  patch: {
+    fromNodeId?: string;
+    toNodeId?: string;
+    lengthM?: number | null;
+    speedLimitMps?: number | null;
+    weight?: number;
+    remark?: string | null;
+  }
 ): void {
   const assignments: string[] = [];
   const params: SqlParam[] = [];
@@ -303,6 +315,10 @@ export function updateEdgeRow(
   if (patch.speedLimitMps !== undefined) {
     assignments.push('speed_limit_mps = ?');
     params.push(patch.speedLimitMps);
+  }
+  if (patch.weight !== undefined) {
+    assignments.push('weight = ?');
+    params.push(patch.weight);
   }
   if (patch.remark !== undefined) {
     assignments.push('remark = ?');

@@ -79,8 +79,8 @@ flowchart TB
   UI["<b>展示层 · 渲染进程 renderer（设计中）</b><br/>React 页面 / 组件 · 地图画布 React Flow · 表格 / 表单 / 弹窗"]
   ST["<b>状态层（设计中）</b><br/>全局状态 会话 / 角色 / 筛选 / 主题 · 页面态 · 事件订阅缓存"]
   ADP["<b>服务适配器 · 同一契约三种实现（部分实现）</b><br/>IpcAdapter 生产形态 · HttpAdapter 预留【二期】 · MockAdapter 浏览器独立开发"]
-  GW["<b>接入层【已实现】</b><br/>IPC Router 注册表 + 鉴权 + traceId · API Routes 8 条"]
-  BIZ["<b>业务层（认证已实现，其余设计中）</b><br/>认证与会话 · 任务 / 车辆 / 站点 / 模板 · 调度编排 M4 · 路径服务 M5 · 告警 / 监控 / 执行 M7 M8"]
+  GW["<b>接入层【已实现】</b><br/>IPC Router 注册表 + 鉴权 + traceId · API Routes（条数见 docs/api.md §3）"]
+  BIZ["<b>业务层【已实现】</b><br/>认证与会话 M1 · 任务 M3 · 基础数据 M2 · 调度编排 M4 · 路径服务 M5 · 告警 M8 · 监控与执行 M7 · 审计 M9 · 设置 M10"]
   ALG["<b>算法层 · 纯函数，禁止访问数据库（设计中）</b><br/>A* / Dijkstra · 贪心 / 匈牙利 / 遗传【二期】 · 代价函数 / 约束评估"]
   DATA["<b>数据层 · 主进程独占【已实现】</b><br/>SQLite node:sqlite · Repository 查询仓库 部分 · 迁移 / 种子 · 审计 / 事件日志"]
 
@@ -720,7 +720,7 @@ flowchart TB
 ```mermaid
 flowchart TB
   subgraph L0["地基"]
-    M1["M1 登录与权限【部分实现】"]
+    M1["M1 登录与权限 【已实现】<br/>（登录/会话/退出 + 用户维护页）"]
     M2["M2 基础数据 【已实现】"]
   end
 
@@ -732,13 +732,13 @@ flowchart TB
 
   subgraph L2["呈现与运行"]
     M6["M6 地图可视化 【已实现】"]
-    M7["M7 运行监控与执行 【设计中】"]
-    M8["M8 告警 【设计中】"]
+    M7["M7 运行监控与执行 【已实现】<br/>（监控读模型 + 模拟执行器 + 轨迹）"]
+    M8["M8 告警 【已实现】<br/>（五态闭环 + 去重窗口 + 处置建议）"]
   end
 
   subgraph L3["支撑"]
-    M9["M9 审计与日志【部分实现】"]
-    M10["M10 系统设置【部分实现】"]
+    M9["M9 审计与日志 【已实现】<br/>（查询 + CSV 导出）"]
+    M10["M10 系统设置 【已实现】<br/>（schema 驱动表单 + 整批校验）"]
   end
 
   M11["二期 统计分析 【二期】"]
@@ -899,7 +899,10 @@ flowchart LR
 > **历史注记（2026-09-20 已解除）**：本图此前标注两个 P1 阻塞 —— `renderer` 缺 `src/main.tsx`（导致 `npm run build` 失败、`dev:electron` 白屏）、
 > `tests/setup.ts` 缺 `@testing-library/jest-dom`（导致 `npm test` 跑 0 个用例）。两者均已修复，现基线为 `npm test` 18 套件 110 用例全绿、`npm run build` 通过。
 >
-> **P1 剩余缺口**：4 个业务页仍为 `PlaceholderPage`（M1 用户管理 / M8 告警 / M9 审计 / M10 设置），见 `docs/issues.md` ISS-010。
+> **P1 缺口已清空（2026-09-28）**：原先「4 个业务页仍为 `PlaceholderPage`」的缺口已关闭 ——
+> M1 / M7 / M8 / M9 / M10 的页面全部落地，**当前没有任何路由指向 `PlaceholderPage`**
+> （`renderer/src/app/App.tsx`）。登记表 `PLANNED_MODULES` 因此是空表，它保留给下一个模块。
+> 缺口的历史记录见 `docs/issues.md` ISS-010（条目保留、状态改为已解决）。
 
 ---
 
@@ -912,8 +915,8 @@ flowchart LR
   LOG --> SEQ["取得 eventSeq"]
   SEQ --> PUSH["按会话权限过滤后推送<br/>webContents.send udm:event 【已实现】"]
   PUSH --> RENDER["渲染层 dispatchApi.on<br/>按事件名过滤 【已实现】"]
-  RENDER --> DEDUP["按 eventSeq 去重与节流 【设计中】"]
-  DEDUP --> UI["更新 store 与视图 【设计中】"]
+  RENDER --> DEDUP["按 eventSeq 去重与节流 【已实现】"]
+  DEDUP --> UI["更新 store 与视图 【已实现】"]
 
   TIMER["定时兜底<br/>settings monitor.refreshIntervalMs 默认 1000ms"] -.断连或丢失时补齐.-> RENDER
 ```

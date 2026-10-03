@@ -105,6 +105,8 @@ export interface VehicleWriteRow {
   maxSpeedMps: number;
   x: number;
   y: number;
+  /** 车辆所在节点：调度算空驶段时用它当出发点（见 `shared/src/dispatch-evaluate.ts`）。 */
+  currentNodeId: string | null;
   battery: number;
   remark: string | null;
   at: string;
@@ -113,11 +115,14 @@ export interface VehicleWriteRow {
 export function insertVehicle(db: Db, row: VehicleWriteRow): void {
   run(
     db,
-    `INSERT INTO vehicles (id, code, name, type, status, capacity_kg, load_kg, max_speed_mps, battery, x, y, online, remark, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'idle', ?, 0, ?, ?, ?, ?, 0, ?, ?, ?)`,
+    `INSERT INTO vehicles (id, code, name, type, status, capacity_kg, load_kg, max_speed_mps, battery, x, y, current_node_id, online, remark, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'idle', ?, 0, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
     // `online = 0`：刚建档的车**还没上线**。心跳是「真实存在的通信事实」，
     // 建档时把它置 1 会让监控台显示一辆从未通信过的车「在线」（§6.1 的同一口径）
-    [row.id, row.code, row.name, row.type, row.capacityKg, row.maxSpeedMps, row.battery, row.x, row.y, row.remark, row.at, row.at]
+    [
+      row.id, row.code, row.name, row.type, row.capacityKg, row.maxSpeedMps,
+      row.battery, row.x, row.y, row.currentNodeId, row.remark, row.at, row.at
+    ]
   );
 }
 
@@ -131,6 +136,8 @@ export function updateVehicleRow(
     maxSpeedMps?: number;
     x?: number;
     y?: number;
+    /** `null` 是**显式清空**（与可空列的约定一致，见 `base-rules.ts`） */
+    currentNodeId?: string | null;
     battery?: number;
     remark?: string | null;
   },
@@ -161,6 +168,10 @@ export function updateVehicleRow(
   if (patch.y !== undefined) {
     assignments.push('y = ?');
     params.push(patch.y);
+  }
+  if (patch.currentNodeId !== undefined) {
+    assignments.push('current_node_id = ?');
+    params.push(patch.currentNodeId);
   }
   if (patch.battery !== undefined) {
     assignments.push('battery = ?');

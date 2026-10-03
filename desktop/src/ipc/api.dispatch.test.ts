@@ -55,8 +55,8 @@ function pendingTask(db: Db) {
     {
       title: `路由用例任务 ${seq}`,
       cargoKg: 100,
-      fromSiteId: SEED_IDS.siteDepotA,
-      toSiteId: SEED_IDS.siteDepotB,
+      fromSiteId: SEED_IDS.siteDepot,
+      toSiteId: SEED_IDS.siteDorm,
       submit: true
     }
   );

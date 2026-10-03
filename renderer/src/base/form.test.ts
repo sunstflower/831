@@ -6,6 +6,7 @@ import {
   emptyFormValues,
   formValuesOfRow,
   nodeOptionsOf,
+  optionNeedsOf,
   statusActionOf,
   statusBlockedReason,
   targetTextOf
@@ -302,6 +303,31 @@ describe('任务模板表单', () => {
     for (const key of ['restrictions', 'templates'] as const) {
       expect(FORM_SPECS[key].fields.length).toBeGreaterThan(3);
       expect(FORM_SPECS[key].titleCreate.length).toBeGreaterThan(0);
+    }
+  });
+
+  /*
+   * 候选清单的需求**从字段定义推导**，不手写页签清单。
+   *
+   * 这条用例是实测事故的回归护栏：车辆表单加上「所在节点」后，页面里那份手写的
+   * `tabKey === 'sites' || ...` 没跟着改，节点下拉永远是空的 ——
+   * 选项加载不出来，界面看起来像节点表坏了。
+   */
+  it('候选清单的需求由字段推导：有 node 字段的页签就要节点清单，只有 target 才要边清单', () => {
+    // 车辆有了「所在节点」→ 必须拉节点清单
+    expect(optionNeedsOf('vehicles')).toEqual({ nodes: true, edges: false });
+    expect(optionNeedsOf('sites')).toEqual({ nodes: true, edges: false });
+    expect(optionNeedsOf('edges')).toEqual({ nodes: true, edges: false });
+    // 禁行规则的目标是多态的 → 节点与边都要
+    expect(optionNeedsOf('restrictions')).toEqual({ nodes: true, edges: true });
+    // 模板没有任何引用型字段 → 一个都不拉（省掉两次无谓请求）
+    expect(optionNeedsOf('templates')).toEqual({ nodes: false, edges: false });
+    // 与字段定义保持一致：改了字段却忘了这里，这条断言会先红
+    for (const key of Object.keys(FORM_SPECS) as Array<keyof typeof FORM_SPECS>) {
+      const kinds = FORM_SPECS[key].fields.map((field) => field.kind);
+      if (kinds.includes('node') || kinds.includes('target')) {
+        expect(optionNeedsOf(key).nodes, key).toBe(true);
+      }
     }
   });
 });

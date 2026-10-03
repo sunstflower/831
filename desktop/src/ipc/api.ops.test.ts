@@ -6,6 +6,7 @@ import { seedDatabase } from '../db/seed.js';
 import { ExecutionRunner } from '../domain/execution/executor.js';
 import { EventBus } from '../services/event-bus.js';
 import { SessionStore } from '../services/session.js';
+import { SEED_VEHICLE_COUNT } from '../db/seed-fixture.js';
 import { login } from '../services/auth.js';
 import { createApiRoutes } from './api.js';
 import { createRouter, type Router } from './router.js';
@@ -56,9 +57,10 @@ describe('ipc · M7/M8/M9/M10/M1', () => {
     if (result.code === 0) {
       const data = result.data as { taskCounts: Record<string, number>; vehicleCounts: Record<string, number>; eventSeq: number };
       expect(data.taskCounts['running']).toBe(1);
+      // seed 车队：AGV-01 busy（演示任务在跑），其余全部 idle。
+      // 条数从车队清单推出来（`SEED_FLEET`），不写死「三台车」这个已经过时的口径
       expect(data.vehicleCounts['busy']).toBe(1);
-      // seed 三台车：AGV-01 busy，CAR-01 / DRN-01 idle
-      expect(data.vehicleCounts['idle']).toBe(2);
+      expect(data.vehicleCounts['idle']).toBe(SEED_VEHICLE_COUNT - 1);
       expect(typeof data.eventSeq).toBe('number');
     }
   });

@@ -48,6 +48,11 @@ export interface RouteGraphEdge {
   toNodeId: string;
   lengthM: number;
   speedMps: number;
+  /**
+   * 通行权重（≥ 1，见 `RouteEdgeInput.weight`）。**只进耗时，不进里程**：
+   * 施工中的 150 m 还是 150 m，只是走完它要更久。
+   */
+  weight: number;
 }
 
 /** 节点/边被排除出可用图的两个原因 —— 两者的错误引导完全不同（见 `route.service.ts`）。 */
@@ -133,14 +138,19 @@ export interface RouteSearchRequest {
 }
 
 /**
- * 单条边的通行时间（秒）。
+ * 单条边的通行时间（秒）= `长度 × 权重 ÷ 速度`。
  *
- * `speedMps` 已由构图步骤算好（含 `min` 与车种默认值），这里只做除法；
+ * `speedMps` 已由构图步骤算好（含 `min` 与车种默认值），这里只做乘除；
  * 但仍然兜一个 `> 0` 的底线：速度为 0 会让耗时变成 `Infinity`，
  * 而 `Infinity` 一旦进入代价排序，表现是「这条路线永远排最后」而不是报错。
+ *
+ * 权重乘在这里而**不是**乘在 `lengthM` 上，是为了让两个量各归其位：
+ * 里程统计（`Segment.distanceM`）与几何检查用真实长度，只有排序代价用加权时间。
+ * 反过来做（把权重乘进长度）会让界面显示「这条路 375 m」，而它在物理上是 150 m ——
+ * 一条谁也没法在地图上量出来的数字。
  */
 function edgeDurationS(edge: RouteGraphEdge): number {
-  return edge.speedMps > 0 ? edge.lengthM / edge.speedMps : Number.POSITIVE_INFINITY;
+  return edge.speedMps > 0 ? (edge.lengthM * edge.weight) / edge.speedMps : Number.POSITIVE_INFINITY;
 }
 
 /** 邻接表：`fromNodeId` → 出边下标。构图时算一次，两次搜索共用。 */
@@ -262,7 +272,9 @@ function searchSegment(
     }
     const node = nodeIndex.get(nodeId);
     const target = nodeIndex.get(toId);
-    // 欧氏距离 ÷ 全网最高速度：真实剩余时间只可能更大（速度只可能更慢），故不会高估
+    // 欧氏距离 ÷ 全网最高速度：真实剩余时间只可能更大（速度只可能更慢），故不会高估。
+    // 权重 ≥ 1（`edges.weight` 的 CHECK）同样只让真实耗时更大，因此启发式仍然可采纳 ——
+    // 若哪天允许 weight < 1，这里必须乘全网最小权重，否则 A* 会安静地返回非最优解。
     return node && target && graph.maxSpeedMps > 0 ? euclidean(node, target) / graph.maxSpeedMps : 0;
   };
 

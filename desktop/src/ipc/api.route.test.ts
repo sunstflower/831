@@ -3,6 +3,7 @@ import type { DomainEvent } from '@udm/shared';
 import { openDatabase, run, type Db } from '../db/index.js';
 import { applyMigrations } from '../db/migrate.js';
 import { seedDatabase } from '../db/seed.js';
+import { gridNodeId, installGridFixture, seedFixture } from '../db/seed-fixture.js';
 import { login } from '../services/auth.js';
 import { ExecutionRunner } from '../domain/execution/executor.js';
 import { EventBus } from '../services/event-bus.js';
@@ -28,6 +29,8 @@ function setup() {
   const db = openDatabase(':memory:');
   applyMigrations(db);
   seedDatabase(db);
+  // 几何量（100 m）由本文件自己的方格网给出，与 `data/campus/` 解耦（见 seed-fixture.ts）
+  installGridFixture(db);
   const sessions = new SessionStore();
   const bus = new EventBus(db, sessions);
   // 执行器按依赖注入传入（M7）：这些用例不点执行接口，但构造签名必须与主进程一致
@@ -39,7 +42,7 @@ function setup() {
   return { db, router, bus, admin, dispatcher, monitor };
 }
 
-const n = (index: number) => `seed-n${String(index).padStart(2, '0')}`;
+const n = gridNodeId;
 
 describe('ipc · M5 路径规划', () => {
   let db: Db;
@@ -105,7 +108,13 @@ describe('ipc · M5 路径规划', () => {
     });
     expect(result.code).toBe(0);
     if (result.code === 0) {
-      expect(result.data).toMatchObject({ id: 'seed-route-demo', taskId: 'seed-task-demo', distanceM: 100 });
+      const demo = seedFixture().demoRoute;
+      expect(result.data).toMatchObject({
+        id: 'seed-route-demo',
+        taskId: 'seed-task-demo',
+        distanceM: demo.distanceM,
+        durationS: demo.durationS
+      });
     }
   });
 

@@ -32,7 +32,10 @@ import {
 import { apiClient } from '../api';
 import { usePagedList } from '../api/usePagedList';
 import { IconDispatch, IconInfo, IconRefresh, IconWarning } from '../components/icons';
+import { useNavigate } from 'react-router-dom';
 import { useSessionStore } from '../store/session';
+import { useSelectionStore } from '../store/selection';
+import { vehicleNodeId } from '../map/model/ids';
 import { TASK_PRIORITY_LABEL } from '../domain/labels';
 import { ConfirmDispatchDialog } from './ConfirmDispatchDialog';
 import { DispatchLogPanel } from './DispatchLogPanel';
@@ -42,6 +45,7 @@ import {
   candidateOptions,
   confirmLinesOf,
   confirmRejectLinesOf,
+  differenceLinesOf,
   manualAssignPayload,
   outcomeOf,
   outcomeRowOf,
@@ -54,6 +58,7 @@ import {
   strategyLabel,
   strategyOptions,
   taskCodesOf,
+  vehiclePlanGroupsOf,
   type PreviewSelection
 } from './model';
 
@@ -80,10 +85,20 @@ export function DispatchConsole() {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /*
+   * 刚派发出去的那一批（用于「去地图上看」）。
+   *
+   * 为什么要留一个 state 而不是渲染完就丢：派发是这一页唯一会**改变世界**的动作，
+   * 使用者紧接着要做的几乎一定是「去看看车现在在哪」。
+   * 只留一条「已派发 N 单」的提示，等于把下一步交给使用者自己找。
+   */
+  const [applied, setApplied] = useState<{ vehicles: Array<{ id: string; code: string }>; count: number } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [logsRevision, setLogsRevision] = useState(0);
   const [manual, setManual] = useState({ taskId: '', vehicleId: '', reason: '' });
   const [recomputeForm, setRecomputeForm] = useState({ taskId: '', reason: '' });
+  const navigate = useNavigate();
+  const select = useSelectionStore((state) => state.select);
 
   const candidates = useMemo(() => candidateOptions(pending.records), [pending.records]);
   const taskCodes = useMemo(() => taskCodesOf(pending.records), [pending.records]);
@@ -92,6 +107,15 @@ export function DispatchConsole() {
   const activeOutcome = outcomeOf(preview, activeStrategy ?? strategy);
   const recommendation = useMemo(() => recommendationOf(preview?.strategies ?? []), [preview]);
   const allSelected = selectionState(selected, candidates) === 'all';
+  const differences = useMemo(
+    () => differenceLinesOf(preview?.strategies ?? [], recommendation.strategy),
+    [preview, recommendation.strategy]
+  );
+  // 按车辆分组的明细：平铺表看不出「接力」，这一份视图专门给它
+  const fleetGroups = useMemo(
+    () => (activeOutcome ? vehiclePlanGroupsOf(activeOutcome, taskCodes) : []),
+    [activeOutcome, taskCodes]
+  );
 
   // 策略清单来自服务端（`enabled` 决定哪一项可用），失败时不阻塞页面：下拉仍有 `all` 一项
   useEffect(() => {
@@ -175,7 +199,10 @@ export function DispatchConsole() {
     setBusy('apply');
     setError(null);
     try {
-      const result = await apiClient.invoke<{ appliedPlans: unknown[]; summary: { assigned: number } }>(
+      const result = await apiClient.invoke<{
+        appliedPlans: Array<{ vehicleId: string; vehicleCode: string }>;
+        summary: { assigned: number };
+      }>(
         '/api/dispatch/apply',
         applyPayload(preview.requestId, outcome.strategy),
         token,
@@ -183,6 +210,15 @@ export function DispatchConsole() {
       );
       if (result.code === 0) {
         setNotice(`已派发 ${result.data.appliedPlans.length} 单（${strategyLabel(outcome.strategy)}）`);
+        // 去重：同一台车在这批里可能接了两单（接力），「去看车」只需要去一次
+        const uniqueVehicles = new Map<string, string>();
+        for (const plan of result.data.appliedPlans) {
+          uniqueVehicles.set(plan.vehicleId, plan.vehicleCode);
+        }
+        setApplied({
+          vehicles: [...uniqueVehicles].map(([id, code]) => ({ id, code })),
+          count: result.data.appliedPlans.length
+        });
         setPreview(null);
         setActiveStrategy(null);
         setSelected([]);
@@ -462,7 +498,31 @@ export function DispatchConsole() {
         ) : null}
         {notice ? (
           <div className="udm-dispatch__notice" role="status">
-            {notice}
+            <span>{notice}</span>
+            {/*
+              派发是这一页唯一会改变世界的动作，而「它到底变成了什么样」只有地图答得了：
+              车在哪、走哪条线、什么时候开始动。因此这里必须给一条直达路径，
+              而不是让使用者自己想起来「还有个地图页」。
+            */}
+            {applied && applied.vehicles.length > 0 ? (
+              <button
+                type="button"
+                className="udm-btn udm-btn--ghost udm-dispatch__to-map"
+                title="在地图上选中这批派发里的第一台车"
+                onClick={() => {
+                  const first = applied.vehicles[0]!;
+                  select({
+                    entityType: 'vehicle',
+                    entityId: first.id,
+                    flowId: vehicleNodeId(first.id),
+                    label: first.code
+                  });
+                  navigate('/map');
+                }}
+              >
+                在地图上查看这 {applied.vehicles.length} 台车
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -486,8 +546,12 @@ export function DispatchConsole() {
                       <th>策略</th>
                       <th className="udm-table__num">指派 / 任务</th>
                       <th className="udm-table__num">拒绝</th>
+                      <th className="udm-table__num">执行里程</th>
+                      <th className="udm-table__num">行驶耗时</th>
+                      <th className="udm-table__num">全部完成</th>
+                      <th className="udm-table__num">用车</th>
                       <th className="udm-table__num">总代价</th>
-                      <th className="udm-table__num">耗时</th>
+                      <th className="udm-table__num">算法耗时</th>
                       <th />
                     </tr>
                   </thead>
@@ -501,6 +565,10 @@ export function DispatchConsole() {
                             {row.assigned} / {row.totalTasks}
                           </td>
                           <td className="udm-table__num">{row.rejectedCount}</td>
+                          <td className="udm-table__num">{row.distance}</td>
+                          <td className="udm-table__num">{row.drive}</td>
+                          <td className="udm-table__num">{row.finishAt}</td>
+                          <td className="udm-table__num">{row.fleet}</td>
                           <td className="udm-table__num">{row.totalCost}</td>
                           <td className="udm-table__num">{row.elapsedMs}ms</td>
                           <td className="udm-table__actions">
@@ -519,6 +587,18 @@ export function DispatchConsole() {
                   </tbody>
                 </table>
               </div>
+              {differences.length > 0 ? (
+                <ul className="udm-dispatch__diffs">
+                  {differences.map((item) => (
+                    <li key={item.strategy}>{item.text}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <p className="udm-dispatch__hint">
+                「执行里程」只算任务起点 → 终点的载货段（空驶段没有路线摘要，故不计入）；
+                「行驶耗时」= 空驶 + 执行，即车真正在动的时间。「用车」里标出的接力，
+                指同一台车在这批里连跑两单。
+              </p>
             </div>
 
             {activeOutcome ? (
@@ -546,6 +626,7 @@ export function DispatchConsole() {
                         <tr>
                           <th>任务</th>
                           <th>车辆</th>
+                          <th>路线（载货段）</th>
                           <th className="udm-table__num">空驶</th>
                           <th className="udm-table__num">执行</th>
                           <th className="udm-table__num">等待</th>
@@ -562,6 +643,7 @@ export function DispatchConsole() {
                             <tr key={plan.taskId}>
                               <td>{row.taskCode}</td>
                               <td>{row.vehicleCode}</td>
+                              <td className={row.routeSegments === 0 ? 'udm-dispatch__noroute' : undefined}>{row.route}</td>
                               <td className="udm-table__num">{row.deadheadS}</td>
                               <td className="udm-table__num">{row.executeS}</td>
                               <td className="udm-table__num">{row.waitS}</td>
@@ -576,6 +658,41 @@ export function DispatchConsole() {
                     </table>
                   </div>
                 )}
+
+                {fleetGroups.length > 0 ? (
+                  <div className="udm-dispatch__fleet">
+                    <p className="udm-dispatch__confirm-sub">
+                      按车辆分组（同一台车有第 2 单即为<strong>接力</strong>，顺序就是它跑单的先后）：
+                    </p>
+                    {fleetGroups.map((group) => (
+                      <div key={group.vehicleId} className="udm-dispatch__fleet-group">
+                        <p className="udm-dispatch__fleet-head">
+                          <strong>{group.vehicleCode}</strong>
+                          <span
+                            className={`udm-badge ${group.relay ? 'udm-badge--info' : 'udm-badge--ok'}`}
+                          >
+                            {group.relay ? `接力 ${group.steps.length} 单` : '单趟'}
+                          </span>
+                        </p>
+                        <ol className="udm-dispatch__fleet-steps">
+                          {group.steps.map((step) => (
+                            <li key={step.taskId}>
+                              <span className="udm-dispatch__fleet-seq">第 {step.seq} 单</span>
+                              <span className="udm-dispatch__fleet-task">{step.taskCode}</span>
+                              <span className="udm-dispatch__fleet-time">
+                                {step.beginsAt} → {step.doneAt}
+                              </span>
+                              <span className="udm-dispatch__fleet-meta">
+                                {step.distanceM} m · 空驶 {step.deadheadS} + 执行 {step.executeS} · 代价{' '}
+                                {step.cost}
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
 
                 {activeOutcome.rejected.length > 0 ? (
                   <>

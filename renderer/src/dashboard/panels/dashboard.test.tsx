@@ -66,10 +66,16 @@ describe('DashboardPage · 渲染', () => {
     // 否则 `getByText` 会因命中多个元素而失败（与被测组件无关的失败最误导人）
     const taskList = container.querySelector('.udm-tasks');
     expect(taskList).not.toBeNull();
-    expect(within(taskList as HTMLElement).getByText('A-01')).toBeInTheDocument();
-    expect(within(taskList as HTMLElement).getByText('B-01')).toBeInTheDocument();
+    // 逐行断言：演示任务（T-DEMO-0001）那一行必须显示起终点**站点编码**
+    // 不能对整个列表 `getByText('DEPOT')` —— 待派发任务里也有以 DEPOT 为端点的，
+    // 多个命中会让 `getByText` 抛错，那种失败与被测组件无关，最误导人
+    const demoRow = within(taskList as HTMLElement).getByText('T-DEMO-0001').closest('li');
+    expect(demoRow).not.toBeNull();
+    expect(within(demoRow as HTMLElement).getByText('DEPOT')).toBeInTheDocument();
+    expect(within(demoRow as HTMLElement).getByText('ST09')).toBeInTheDocument();
     // 内部 id 绝不该出现在界面文案里
-    expect(screen.queryByText(SEED_IDS.siteDepotA)).toBeNull();
+    expect(screen.queryByText(SEED_IDS.siteDepot)).toBeNull();
+    expect(screen.queryByText(SEED_IDS.siteDorm)).toBeNull();
   });
 
   it('告警用中文类型名与级别，不把机器值印给使用者', async () => {
@@ -81,11 +87,18 @@ describe('DashboardPage · 渲染', () => {
     expect(screen.getByText('警告')).toBeInTheDocument();
   });
 
-  it('如实标注数据来源与「M7 未实现」，不把地图快照说成运行监控接口', async () => {
+  /*
+   * 数据来源的标注必须与事实一致，两个方向都要断言：
+   *   - 说得出本页读的是哪一份数据（`/api/map/overview` 快照）；
+   *   - 同时说得出 M7 的 `/api/monitor/*` **已经存在**、用在哪里 ——
+   *     此前这里断言的是「M7 未实现」，M7 落地后那句话就变成了假信息。
+   */
+  it('标注数据来源：既是快照，也说得出 M7 的接口用在哪里', async () => {
     renderDashboard();
     await waitFor(() => {
-      expect(screen.getByText(/M7 运行监控的专属接口/)).toBeInTheDocument();
+      expect(screen.getByText(/同一份快照/)).toBeInTheDocument();
     });
     expect(screen.getByText('GET /api/map/overview')).toBeInTheDocument();
+    expect(screen.getByText(/计数聚合与执行控制/)).toBeInTheDocument();
   });
 });

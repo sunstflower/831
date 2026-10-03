@@ -50,6 +50,13 @@ import {
 } from '../task/model';
 import { actionPayload, canEditTask, needsConfirm, taskActionDefs, type TaskActionDef } from '../task/actions';
 import {
+  executionActionDefOf,
+  executionActionsOf,
+  executionNotice,
+  executionPayload,
+  type ExecutionActionDef
+} from '../task/execution';
+import {
   TASK_FORM,
   buildTaskPayload,
   emptyTaskForm,
@@ -74,18 +81,38 @@ interface DialogState {
   formError: string | null;
 }
 
-/** 待确认的状态操作（含必须填写的原因）。 */
+/** 待确认的状态操作（含必须填写的原因）。执行动作（接管）与状态动作共用这一层。 */
 interface PendingState {
   row: TaskListItem;
-  def: TaskActionDef;
+  def: TaskActionDef | ExecutionActionDef;
   reason: string;
   error: string | null;
+}
+
+/**
+ * 判据：这个动作走的是执行接口（`/api/execution/tasks/{id}/{action}`）而不是任务接口。
+ *
+ * 为什么要用「有没有 `permission` 字段」来分辨，而不是判断 `action` 的取值：
+ * 两族动作都有一个叫 `start` 的动作（任务状态机里的 `start` 由执行器触发、
+ * 页面不渲染按钮入口，见 `task/actions.ts`）。按 `action` 判断会把两者混为一谈，
+ * 而「是否携带权限点」与「是否走执行接口」是同一件事。
+ * 类型守卫写成 `def is ExecutionActionDef`，调用点才能拿到收窄后的类型。
+ */
+function isExecutionAction(def: TaskActionDef | ExecutionActionDef): def is ExecutionActionDef {
+  return 'permission' in def;
 }
 
 export function TasksPage() {
   const token = useSessionStore((state) => state.token);
   const role = useSessionStore((state) => state.user?.role);
   const canWrite = role !== undefined && hasPermission(role, 'task:write');
+  /*
+   * 执行动作的入口按各自的权限点开关（`execution:start` / `execution:takeover`）：
+   * 「派给谁」与「现在开跑」在真实现场往往不是同一个人（D-11）。当前三个角色里
+   * 两者都是 `task:write` 的子集，但判据不能靠这个巧合 —— 权限点各判各的。
+   */
+  const canStart = role !== undefined && hasPermission(role, 'execution:start');
+  const canTakeover = role !== undefined && hasPermission(role, 'execution:takeover');
 
   const [query, setQuery] = useState<ListQuery>(EMPTY_QUERY);
   const [searchDraft, setSearchDraft] = useState('');
@@ -231,16 +258,23 @@ export function TasksPage() {
    * `delete` 走 `DELETE`、其余走 `POST …/{action}` —— 动作与方法的对应关系写在
    * `docs/api.md` §3.3，这里不另立规则：状态机里 `delete` 是「移出表」而不是改状态。
    */
-  async function runAction(row: TaskListItem, def: TaskActionDef, reason = '') {
+  async function runAction(row: TaskListItem, def: TaskActionDef | ExecutionActionDef, reason = '') {
     const outcome =
       def.action === 'delete'
         ? await write.run(`/api/tasks/${row.id}`, 'DELETE', {}, `已删除草稿“${row.code}”`)
-        : await write.run(
-            `/api/tasks/${row.id}/${def.action}`,
-            'POST',
-            actionPayload(def, reason),
-            `已${def.label}“${row.code}”`
-          );
+        : isExecutionAction(def)
+          ? await write.run(
+              `/api/execution/tasks/${row.id}/${def.action}`,
+              'POST',
+              executionPayload(reason),
+              `已${def.label}“${row.code}”`
+            )
+          : await write.run(
+              `/api/tasks/${row.id}/${def.action}`,
+              'POST',
+              actionPayload(def, reason),
+              `已${def.label}“${row.code}”`
+            );
     if (outcome.ok) {
       setPending(null);
       setActionError(null);
@@ -248,9 +282,12 @@ export function TasksPage() {
       // 只说「操作成功」等于让人自己回去看状态列
       const transition = (outcome.data as { transition?: TaskTransitionInfo } | undefined)?.transition;
       setNotice(
-        transition && transition.from !== transition.to
-          ? `${outcome.message}（${labelOf(TASK_STATUS_LABEL, transition.from)} → ${labelOf(TASK_STATUS_LABEL, transition.to)}）`
-          : outcome.message
+        isExecutionAction(def)
+          ? // 接管会带回「建议下一步」，必须一起说出来（见 `task/execution.ts`）
+            executionNotice(def, row.code, outcome.data)
+          : transition && transition.from !== transition.to
+            ? `${outcome.message}（${labelOf(TASK_STATUS_LABEL, transition.from)} → ${labelOf(TASK_STATUS_LABEL, transition.to)}）`
+            : outcome.message
       );
       list.refresh();
       return;
@@ -264,7 +301,7 @@ export function TasksPage() {
     }
   }
 
-  function onActionClick(row: TaskListItem, def: TaskActionDef) {
+  function onActionClick(row: TaskListItem, def: TaskActionDef | ExecutionActionDef) {
     setNotice(null);
     setActionError(null);
     if (needsConfirm(def)) {
@@ -406,6 +443,10 @@ export function TasksPage() {
               <tbody>
                 {list.records.map((row) => {
                   const defs = taskActionDefs(row.status);
+                  // 执行动作（M7）：开始执行 / 手动接管，按权限点逐个过滤
+                  const execDefs = executionActionsOf(row.status).filter((def) =>
+                    def.permission === 'execution:start' ? canStart : canTakeover
+                  );
                   return (
                     <tr key={row.id}>
                       {TASK_COLUMNS.map((column) => (
@@ -428,6 +469,18 @@ export function TasksPage() {
                               </button>
                             ) : null}
                             {defs.map((def) => (
+                              <button
+                                key={def.action}
+                                type="button"
+                                className={def.style === 'danger' ? 'udm-btn udm-btn--danger' : 'udm-btn udm-btn--ghost'}
+                                onClick={() => onActionClick(row, def)}
+                                disabled={write.busy}
+                                title={def.note}
+                              >
+                                {def.label}
+                              </button>
+                            ))}
+                            {execDefs.map((def) => (
                               <button
                                 key={def.action}
                                 type="button"

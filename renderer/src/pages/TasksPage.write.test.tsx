@@ -70,8 +70,8 @@ async function createDraft(title: string): Promise<string> {
   fireEvent.change(within(dialog).getByLabelText('载重 (kg)'), { target: { value: '88' } });
   // 起终点的候选项是异步拉来的：`<select>` 的 value 在选项还不存在时会被丢弃
   for (const [label, code] of [
-    ['起点站点', 'A-01'],
-    ['终点站点', 'B-01']
+    ['起点站点', 'DEPOT'],
+    ['终点站点', 'ST01']
   ] as const) {
     const select = within(dialog).getByLabelText(label);
     await waitFor(() =>
@@ -117,12 +117,12 @@ describe('TasksPage · 新建', () => {
       const select = within(dialog).getByLabelText(label);
       await waitFor(() =>
         expect(
-          within(select).getAllByRole('option').some((option) => (option as HTMLOptionElement).textContent?.includes('A-01'))
+          within(select).getAllByRole('option').some((option) => (option as HTMLOptionElement).textContent?.includes('DEPOT'))
         ).toBe(true)
       );
       const option = within(select)
         .getAllByRole('option')
-        .find((item) => (item as HTMLOptionElement).textContent?.includes('A-01')) as HTMLOptionElement;
+        .find((item) => (item as HTMLOptionElement).textContent?.includes('DEPOT')) as HTMLOptionElement;
       fireEvent.change(select, { target: { value: option.value } });
     }
     fireEvent.click(within(dialog).getByRole('button', { name: '创建' }));

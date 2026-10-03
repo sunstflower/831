@@ -31,9 +31,10 @@ function edge(
   toNodeId: string,
   lengthM: number,
   speedLimitMps: number | null = null,
-  status: 'enabled' | 'disabled' = 'enabled'
+  status: 'enabled' | 'disabled' = 'enabled',
+  weight = 1
 ): RouteEdgeInput {
-  return { id, fromNodeId, toNodeId, lengthM, speedLimitMps, status };
+  return { id, fromNodeId, toNodeId, lengthM, speedLimitMps, status, weight };
 }
 
 /** 用构图层搭一个图（比手写 `RouteGraph` 更接近真实调用点，顺带覆盖构图逻辑）。 */
@@ -115,6 +116,38 @@ describe('route-search · 最短路', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.durationS).toBeCloseTo(20 / 0.5, 3);
+  });
+
+  it('通行权重改变选路：权重高的近路会被让开，改走更远但更快的路', () => {
+    /*
+     * 不加权时 n1→n3 走上面两段（40 m，20 s）。
+     * 把第一段 e12 加重到 8 倍后：40 m 的近路变成 20×8 = 160 s，
+     * 而唯一的绕行路 n1→n4→n5→n2→n3（80 m）只要 53.3 s —— 于是必须绕。
+     * 这条断言是「权重真的进了代价函数」的证据：权重若只出现在展示层，
+     * 结果会与不加权时一模一样（照样返回 e12 / e23）。
+     */
+    const edges = gridEdges().map((item) => (item.id === 'e12' ? { ...item, weight: 8 } : item));
+    const weighted = searchRoute(graphOf(gridNodes(), edges), request({ toNodeId: 'n3' }));
+    expect(weighted.ok).toBe(true);
+    if (!weighted.ok) return;
+    expect(weighted.edgeIds).toEqual(['e14', 'e45', 'e52', 'e23']);
+    // 里程仍是**物理长度**之和（80 m）—— 权重只进耗时，不该让它变成「加权里程」
+    expect(weighted.distanceM).toBe(80);
+    expect(weighted.durationS).toBeCloseTo(80 / ROUTE_DEFAULT_SPEED_MPS.agv, 3);
+    // 反向核对：加权后的近路确实更慢，否则上一条断言可能只是碰巧
+    expect((20 * 8) / ROUTE_DEFAULT_SPEED_MPS.agv).toBeGreaterThan(weighted.durationS);
+  });
+
+  it('权重 ≥ 1 时 A* 与 Dijkstra 仍然一致（启发式仍可采纳）', () => {
+    // 若哪天允许 weight < 1，这条会立刻转红：欧氏启发式会高估，A* 返回非最优
+    const edges = gridEdges().map((item) => (item.weight === 1 ? { ...item, weight: 3 } : item));
+    const graph = graphOf(gridNodes(), edges);
+    const astar = searchRoute(graph, request({ algorithm: 'aStar' }));
+    const dijkstra = searchRoute(graph, request({ algorithm: 'dijkstra' }));
+    expect(astar.ok && dijkstra.ok).toBe(true);
+    if (!astar.ok || !dijkstra.ok) return;
+    expect(astar.edgeIds).toEqual(dijkstra.edgeIds);
+    expect(astar.durationS).toBeCloseTo(dijkstra.durationS, 6);
   });
 
   it('起点即终点：返回单节点空路线，而不是报「找不到路」', () => {

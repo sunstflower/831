@@ -15,7 +15,16 @@
  * 因此区块顺序是「先调度、后试算」，并在规划区的说明里写明：
  * 任务实际使用的路线要等「应用派发」才会写进 `routes` 表 ——
  * 否则使用者会以为规划出来的路线就是任务会走的路线。
+ *
+ * ## 应用之后呢（不在这里继续做）
+ *
+ * 应用派发把任务推进到「已派发」，**车还没动**。让它开跑是 M7 的执行动作
+ * （`/api/execution/tasks/{id}/start`），入口在任务管理页的操作列 ——
+ * 这条链路刻意不搬到本页：调度决定「派给谁」、现场决定「现在开跑」，
+ * 两个动作的权限点也不同（`dispatch:apply` vs `execution:start`，见 D-11）。
+ * 页面上给出这一句，免得使用者在这页找不到「让车动起来」的按钮时以为是缺功能。
  */
+import { Link } from 'react-router-dom';
 import { IconDispatch, IconInfo } from '../components/icons';
 import { DispatchConsole } from '../dispatch/DispatchConsole';
 import { RoutePlanner } from '../route/RoutePlanner';
@@ -34,6 +43,14 @@ export function DispatchPage() {
       <p className="udm-page__lead">
         勾选待派任务 → 预览策略（贪心 / 匈牙利，或一次对比两者）→ 应用派发。也可对已派发任务手动指派或回收重算；
         每一步都会写调度日志。
+      </p>
+      <p className="udm-list__note" role="note">
+        <IconInfo />
+        <span>
+          应用派发后任务处于<strong>已派发</strong>（车还没动）。要让它开跑或中途停下，
+          去<Link to="/tasks">任务管理</Link>的操作列用「开始执行」/「手动接管」——
+          那是执行侧的动作与权限点（<code>execution:start</code> / <code>execution:takeover</code>）。
+        </span>
       </p>
 
       <section className="udm-card" aria-label="调度台">

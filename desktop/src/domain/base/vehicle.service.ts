@@ -15,6 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import { DomainError, validateVehicleInput, type VehicleStatus } from '@udm/shared';
 import { nowIso, tx } from '../../db/index.js';
+import { findNodeById } from '../../db/repositories/graph.repo.js';
 import {
   insertVehicle,
   setVehicleStatus as setVehicleStatusRow,
@@ -23,7 +24,7 @@ import {
 } from '../../db/repositories/vehicle.repo.js';
 import { writeAudit } from '../../services/audit.js';
 import { BASE_ACTIONS, toAuditActor, type CrudContext } from './context.js';
-import { ensureCodeFree, invalid } from './validate.js';
+import { ensureCodeFree, ensureNodeExists, invalid } from './validate.js';
 
 export interface VehicleWriteOptions {
   traceId?: string;
@@ -45,6 +46,24 @@ function requireVehicle(db: CrudContext['db'], id: string) {
   return vehicle;
 }
 
+/**
+ * 车辆坐标：优先用请求里给的，其次**跟随所在节点**，最后才是 `(0, 0)`。
+ *
+ * 与站点的 `resolveXY` 同一口径（`site.service.ts`）：车停在某个节点上时，
+ * 它的位置**本来就等于**那个节点的位置，要求调用方把同一个坐标抄两遍
+ * 只会制造「两处坐标不一致」的机会。
+ *
+ * 与站点不同的一处：车辆所在节点**不**在读取时派生。节点只是「停在哪」的声明，
+ * 坐标才是地图上画的点；显式存下来，改节点时才能看出「坐标是否跟着改过」。
+ */
+function resolveVehicleXY(
+  db: CrudContext['db'],
+  input: { x: number | null; y: number | null; currentNodeId: string | null }
+): { x: number; y: number } {
+  const node = input.currentNodeId ? findNodeById(db, input.currentNodeId) : undefined;
+  return { x: input.x ?? node?.x ?? 0, y: input.y ?? node?.y ?? 0 };
+}
+
 export function createVehicle(ctx: CrudContext, raw: Record<string, unknown>) {
   return tx(ctx.db, () => {
     const parsed = validateVehicleInput(raw, 'create');
@@ -53,6 +72,10 @@ export function createVehicle(ctx: CrudContext, raw: Record<string, unknown>) {
     }
     const input = parsed.value;
     ensureCodeFree(ctx.db, 'vehicle', input.code);
+    if (input.currentNodeId) {
+      ensureNodeExists(ctx.db, input.currentNodeId, 'currentNodeId');
+    }
+    const { x, y } = resolveVehicleXY(ctx.db, input);
     const at = nowIso();
     const id = randomUUID();
     insertVehicle(ctx.db, {
@@ -62,8 +85,9 @@ export function createVehicle(ctx: CrudContext, raw: Record<string, unknown>) {
       type: input.type,
       capacityKg: input.capacityKg,
       maxSpeedMps: input.maxSpeedMps,
-      x: input.x,
-      y: input.y,
+      x,
+      y,
+      currentNodeId: input.currentNodeId,
       battery: input.battery,
       remark: input.remark,
       at
@@ -91,8 +115,25 @@ export function updateVehicle(
     if (!parsed.ok) {
       throw invalid(parsed.fields);
     }
+    const patch = { ...parsed.value };
+    if (patch.currentNodeId) {
+      ensureNodeExists(ctx.db, patch.currentNodeId, 'currentNodeId');
+    }
+    /*
+     * 只给了节点、没给坐标时，坐标跟着节点走 —— 否则会留下一辆
+     * 「所在节点是 N13、坐标却在老位置」的车，地图上它并不在 N13 上。
+     * 反过来（只给坐标不给节点）**不动** `currentNodeId`：那可能是使用者
+     * 想把车挪到路网中间，此时已有节点仍然是它最后一次被声明的停靠点。
+     */
+    if (patch.currentNodeId !== undefined && patch.x === undefined && patch.y === undefined) {
+      const node = patch.currentNodeId ? findNodeById(ctx.db, patch.currentNodeId) : undefined;
+      if (node) {
+        patch.x = node.x;
+        patch.y = node.y;
+      }
+    }
     const at = nowIso();
-    updateVehicleRow(ctx.db, id, parsed.value, at);
+    updateVehicleRow(ctx.db, id, patch, at);
     const after = requireVehicle(ctx.db, id);
     writeAudit(ctx.db, toAuditActor(ctx.actor), {
       module: 'base',

@@ -116,8 +116,12 @@ export function taskActionDefs(status: TaskStatus): TaskActionDef[] {
  *
  * 需要写原因的动作**由那个原因弹层兼任确认**（它已经打断了操作并说明副作用），
  * 不再叠一层「确定吗」。删除没有原因可写，因此单独要一次确认。
+ *
+ * 参数写成**结构类型**而不是 `TaskActionDef`：执行动作（M7 的开始执行 / 手动接管，
+ * 见 `task/execution.ts`）走的是另一组接口，但「要不要先确认」的判据完全相同。
+ * 绑死一个动作族就得为同一套确认层写第二份判断，两份迟早分叉（D-34）。
  */
-export function needsConfirm(def: TaskActionDef): boolean {
+export function needsConfirm(def: { action: string; reasonRequired: boolean }): boolean {
   return def.reasonRequired || def.action === 'delete';
 }
 

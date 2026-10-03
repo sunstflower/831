@@ -9,8 +9,10 @@
  * 数据来源：只读 GET /api/map/overview 的同一份快照（Req-M6-5 的「画布唯一数据入口」）。
  * 本层不发请求、不落库、不写业务状态，因此可以完整单测。
  *
- * 注意：这不是 M7（运行监控）。M7 的专属接口 /api/monitor/* 尚未实现（ISS-010），
- * 工作台当前展示的是地图快照里已有的指标，页面上如实标注了数据来源。
+ * 为什么不用 M7 的 /api/monitor/overview（它已实现）：本层的四个数字要**互相印证**
+ * （可用车辆 / 执行中任务 / 待确认告警 / 平均电量），分四次请求取回的数字可能来自
+ * 四个不同的时刻 —— 而那种不一致看起来完全正常，是最难发现的一类错。
+ * 单快照 = 同一时刻。理由与取舍的完整说明见 `pages/DashboardPage.tsx` 的文件头。
  */
 import type { AlertLevel, AlertStatus, TaskStatus, VehicleStatus } from '@udm/shared';
 import type { MapAlert, MapOverview, MapTask } from '../../api/types';

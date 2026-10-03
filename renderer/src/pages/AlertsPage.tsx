@@ -29,8 +29,10 @@ import {
   hasPermission,
   type AlertDetail,
   type AlertListItem,
-  type AlertStatus
+  type AlertStatus,
+  type PlanRiskReport
 } from '@udm/shared';
+import { Link } from 'react-router-dom';
 import { apiClient } from '../api';
 import { usePagedList } from '../api/usePagedList';
 import { useApiWrite } from '../api/useApiWrite';
@@ -41,12 +43,17 @@ import {
   ALERT_ACTION_LABEL,
   ALERT_ACTION_REQUIRES_NOTE,
   ALERT_TYPE_HINT,
+  ackTargetsOf,
   actionsOf,
   alertActionNotice,
+  alertAgeOf,
+  batchAckNotice,
+  isOpenAlert,
   pageSummary,
   shortTime
 } from '../ops/model';
 import { useSessionStore } from '../store/session';
+import { RiskPanels } from '../ops/RiskPanels';
 import '../ops/style/ops.css';
 
 /** 级别 → 视觉色调（与地图/看板的 `tone-*` 一致，避免出现第二套配色语义）。 */
@@ -69,7 +76,52 @@ export function AlertsPage() {
   const [note, setNote] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const write = useApiWrite(token);
+  /*
+   * 批量认领：异常常常是成批来的（一次断网让一片车同时心跳超时）。
+   * 逐条点「认领」在真实处置里最容易整步跳过，而跳过认领，
+   * 后面接手的人就看不出「这条已经有人在看了」。
+   *
+   * 这里不新增接口：逐条打已有的 `POST /api/alerts/:id/acknowledge`，
+   * 因此**权限与状态机校验完全复用**，不会绕过服务端。
+   */
+  const [nowMs] = useState(() => Date.now());
+
+  /*
+   * 风险预检（`GET /api/alerts/risks`）：与告警列表**分开取**。
+   *
+   * 为什么不合进列表接口：两者回答不同的问题，且刷新时机不同 —— 告警列表按筛选与分页取，
+   * 预检是「当前世界的全量扫描」，没有分页也没有筛选（分页会让使用者以为
+   * 「这一页没有冲突」，而冲突在第二页）。
+   */
+  const [risks, setRisks] = useState<PlanRiskReport | null>(null);
+  const [riskError, setRiskError] = useState<string | null>(null);
+  const [riskLoading, setRiskLoading] = useState(false);
+  const [riskRevision, setRiskRevision] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRiskLoading(true);
+    void apiClient
+      .invoke<PlanRiskReport>('/api/alerts/risks', {}, token)
+      .then((result) => {
+        if (cancelled) return;
+        if (result.code === 0) {
+          setRisks(result.data);
+          setRiskError(null);
+        } else {
+          setRiskError(result.message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRiskLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, riskRevision]);
+
 
   const query = useMemo(
     () => ({
@@ -83,6 +135,7 @@ export function AlertsPage() {
     [page, type, level, status, objectType]
   );
   const list = usePagedList<AlertListItem>('/api/alerts', query, token);
+  const ackTargets = useMemo(() => ackTargetsOf(list.records), [list.records]);
 
   /** 详情单独取：列表项没有 `detail` / `related` / 建议（契约 §3.8.2）。 */
   const loadDetail = useCallback(
@@ -117,6 +170,39 @@ export function AlertsPage() {
 
   const canWrite = Boolean(user && hasPermission(user.role, 'alert:ack'));
   const actions = detail ? actionsOf(detail.status) : [];
+
+  /** 一键认领本页所有 `new` 告警，并**分开**报出成功与失败。 */
+  async function runBatchAck() {
+    if (ackTargets.length === 0) {
+      setNotice(batchAckNotice(0, 0));
+      return;
+    }
+    setNotice(null);
+    setActionError(null);
+    setBusy(true);
+    let succeeded = 0;
+    let failed = 0;
+    try {
+      for (const id of ackTargets) {
+        const result = await apiClient.invoke(`/api/alerts/${id}/acknowledge`, { note: '' }, token, { method: 'POST' });
+        if (result.code === 0) {
+          succeeded += 1;
+        } else {
+          failed += 1;
+        }
+      }
+    } finally {
+      setBusy(false);
+    }
+    setNotice(batchAckNotice(succeeded, failed));
+    // 详情对齐到最新状态：被认领的那一条如果正开着详情，按钮必须跟着变
+    if (selectedId) {
+      void loadDetail(selectedId);
+    }
+    list.refresh();
+    // 认领只改告警状态，不改派发 —— 预检不必重扫（省一次全量查询）
+
+  }
 
   async function runAction(action: 'acknowledge' | 'resolve' | 'archive') {
     if (!detail) {
@@ -198,10 +284,30 @@ export function AlertsPage() {
             ))}
           </select>
         </label>
-        <button type="button" className="udm-btn udm-btn--ghost" onClick={list.refresh}>
+        <button
+          type="button"
+          className="udm-btn udm-btn--ghost"
+          onClick={() => {
+            list.refresh();
+            // 预检是「当前世界的全量扫描」，与列表筛选无关：刷新时一起重扫，
+            // 否则会出现「刚改完派发，风险区块还停在旧结论」
+            setRiskRevision((value) => value + 1);
+          }}
+        >
           <IconRefresh />
           刷新
         </button>
+        {canWrite ? (
+          <button
+            type="button"
+            className="udm-btn"
+            disabled={busy || write.busy || ackTargets.length === 0}
+            title={ackTargets.length === 0 ? '本页没有待确认的告警' : `逐条调用认领接口，共 ${ackTargets.length} 条`}
+            onClick={() => void runBatchAck()}
+          >
+            批量认领本页待确认（{ackTargets.length}）
+          </button>
+        ) : null}
       </div>
 
       {notice ? (
@@ -216,6 +322,13 @@ export function AlertsPage() {
           <span>读取告警失败：{list.error}</span>
         </div>
       ) : null}
+
+      <RiskPanels
+        report={risks}
+        loading={riskLoading}
+        error={riskError}
+        onRefresh={() => setRiskRevision((value) => value + 1)}
+      />
 
       <div className="udm-ops__split">
         <section className="udm-card" aria-label="告警列表">
@@ -243,25 +356,43 @@ export function AlertsPage() {
                       <th>类型</th>
                       <th>消息</th>
                       <th>状态</th>
+                      <th>停滞</th>
                       <th>时间</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {list.records.map((row) => (
-                      <tr
-                        key={row.id}
-                        className={row.id === selectedId ? 'is-selected' : undefined}
-                        onClick={() => setSelectedId(row.id)}
-                      >
-                        <td>
-                          <span className={`udm-badge ${LEVEL_TONE[row.level] ?? ''}`}>{ALERT_LEVEL_LABEL[row.level]}</span>
-                        </td>
-                        <td>{ALERT_TYPE_LABEL[row.type]}</td>
-                        <td>{row.message}</td>
-                        <td>{ALERT_STATUS_LABEL[row.status]}</td>
-                        <td className="udm-table__num">{shortTime(row.createdAt)}</td>
-                      </tr>
-                    ))}
+                    {list.records.map((row) => {
+                      const age = alertAgeOf(row, nowMs);
+                      // 严重 + 仍在流程里 → 整行加一层提醒：真正烧起来的那几条要一眼看到
+                      const attention = age.open && row.level === 'critical';
+                      return (
+                        <tr
+                          key={row.id}
+                          className={[
+                            row.id === selectedId ? 'is-selected' : undefined,
+                            attention ? 'udm-ops__row--attention' : undefined
+                          ]
+                            .filter(Boolean)
+                            .join(' ') || undefined}
+                          onClick={() => setSelectedId(row.id)}
+                        >
+                          <td>
+                            <span className={`udm-badge ${LEVEL_TONE[row.level] ?? ''}`}>{ALERT_LEVEL_LABEL[row.level]}</span>
+                          </td>
+                          <td>{ALERT_TYPE_LABEL[row.type]}</td>
+                          <td>{row.message}</td>
+                          <td>{ALERT_STATUS_LABEL[row.status]}</td>
+                          <td className="udm-table__num">
+                            {age.text === '—' ? (
+                              '—'
+                            ) : (
+                              <span className={age.stale ? 'udm-ops__age udm-ops__age--stale' : 'udm-ops__age'}>{age.text}</span>
+                            )}
+                          </td>
+                          <td className="udm-table__num">{shortTime(row.createdAt)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -315,11 +446,21 @@ export function AlertsPage() {
                   <div>
                     <dt>对象</dt>
                     <dd>
-                      {detail.related.task
-                        ? `任务 ${detail.related.task.code} · ${detail.related.task.title}`
-                        : detail.related.vehicle
-                          ? `车辆 ${detail.related.vehicle.code} · ${detail.related.vehicle.name}`
-                          : `${detail.objectType}${detail.objectId ? ` / ${detail.objectId}` : ''}（关联对象已不存在）`}
+                      {/*
+                        可直接跳到那一页去处置：告警页只回答「哪里不对」，
+                        真正要动手的地方是任务管理 / 基础数据（车辆的停用启用在那里）。
+                      */}
+                      {detail.related.task ? (
+                        <>
+                          任务 <Link to="/tasks">{detail.related.task.code}</Link> · {detail.related.task.title}
+                        </>
+                      ) : detail.related.vehicle ? (
+                        <>
+                          车辆 <Link to="/base-data">{detail.related.vehicle.code}</Link> · {detail.related.vehicle.name}
+                        </>
+                      ) : (
+                        `${detail.objectType}${detail.objectId ? ` / ${detail.objectId}` : ''}（关联对象已不存在）`
+                      )}
                     </dd>
                   </div>
                   <div>

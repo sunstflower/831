@@ -1,6 +1,9 @@
 /**
  * 路由表（与 `design.md` §7.1 的页面清单对齐）。
- * 未实现模块一律落到 `PlaceholderPage`，并写明模块编号，不静默给空白页。
+ *
+ * 九个模块的页面**全部已落地**，因此当前没有任何路由指向 `PlaceholderPage`。
+ * 保留它与其登记表 `app/modules.ts` 的 `PLANNED_MODULES` 是为了下一个模块：
+ * 先登记「将来有什么能力、依赖哪些接口」再挂占位页，不静默给空白页。
  */
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
@@ -39,7 +42,7 @@ export function App() {
          */}
         {/* M3 任务管理：列表 + 新建/编辑 + 状态流转 + 详情（`pages/TasksPage.tsx`） */}
         <Route path="/tasks" element={<TasksPage />} />
-        {/* M5 路径规划已落地；M4 调度引擎仍是占位（页面内如实标注未实现的部分） */}
+        {/* M4 调度引擎 + M5 路径规划：同属一页（页内如实标注尚未覆盖的部分） */}
         <Route path="/dispatch" element={<DispatchPage />} />
         {/* M2 基础数据：读取路径已落地，写路径仍是占位（页面内如实标注） */}
         <Route path="/base-data" element={<BaseDataPage />} />

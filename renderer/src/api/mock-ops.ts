@@ -20,6 +20,9 @@
 import {
   ALERT_ACTIONS,
   ALERT_NEXT_STEPS,
+  buildPlanRiskReport,
+  planInputsOf,
+  scanPlanRisks,
   DEFAULT_PAGE_SIZE,
   ERROR_CODES,
   MAX_PAGE_SIZE,
@@ -47,7 +50,8 @@ import {
   type VehicleTrackPoint
 } from '@udm/shared';
 import type { HttpMethod } from './client';
-import type { MockBaseData, MockTaskStore } from './mock-data';
+import { mockSeedDataset } from './mock-data';
+import type { MockBaseData, MockRouteStore, MockTaskStore } from './mock-data';
 
 export interface MockOpsRequest {
   method: HttpMethod;
@@ -120,18 +124,20 @@ const MOCK_USERS: MockUserRow[] = [
 
 export function buildMockOpsStore(): MockOpsStore {
   return {
+    /*
+     * 演示告警**取自与 seed 同一份推导**（`shared/src/seed-data.ts`），只补上 Mock
+     * 特有的几个字段（`detail` / `dedupeKey` / 处置时间）。
+     *
+     * 曾经这里手写了一条 `createdAt: MOCK_AT`（2026-01-01）：主进程 seed 写的是
+     * 「seed 那一刻」，Mock 却把它钉在九个月前 —— 告警列表新加的「停滞时长」
+     * 于是显示成「已 9 个月未认领」，看起来像一条被遗忘的真实故障。
+     * 时间戳必须跟着「现在」走，故事才成立（与 `mock-data.ts` 的文件头同一条教训）。
+     */
     alerts: [
       {
-        id: SEED_IDS.demoAlert,
-        type: 'vehicle_offline',
-        level: 'warning',
-        objectType: 'vehicle',
-        objectId: SEED_IDS.vehicleDrone,
-        message: 'DRN-01 心跳超时，疑似离线',
+        ...mockSeedDataset().demoAlert,
         detail: {},
-        status: 'new',
-        dedupeKey: `vehicle_offline:${SEED_IDS.vehicleDrone}`,
-        createdAt: MOCK_AT,
+        dedupeKey: `vehicle_offline:${mockSeedDataset().demoAlert.objectId}`,
         ackAt: null,
         ackBy: null,
         resolveAt: null,
@@ -256,6 +262,31 @@ function record(
 interface MonitoringDeps {
   baseData: MockBaseData;
   taskStore: MockTaskStore;
+  /**
+   * 已生效的派发计划（风险预检用）。
+   *
+   * 用**函数**而不是数组：`mock.ts` 在启动时构造依赖，而计划会随
+   * 「应用派发 / 重算」实时增长 —— 传一份快照会让预检永远停在启动那一刻。
+   * 同理不 import 调度 store 的类型：`mock-dispatch.ts` 已经很大，
+   * 这里只要一个只读的最小形状，避免为了一个字段把两个 store 绑在一起。
+   */
+  plans: () => readonly MockRiskPlan[];
+  /**
+   * 路线表（回退用）：演示数据「有任务 + 有路线、但没有派发计划」（D-26），
+   * 与主进程一样要能按 `routes.task_id` 回退取出路线，否则会为一条正常执行中的
+   * 演示任务误报「缺路线」。
+   */
+  routeStore: MockRouteStore;
+}
+
+/** 风险预检需要的计划字段（`dispatch_plans` 的对应子集）。 */
+export interface MockRiskPlan {
+  taskId: string;
+  vehicleId: string;
+  routeId: string | null;
+  occupiedFrom: string;
+  occupiedTo: string;
+  status: 'applied' | 'superseded' | 'cancelled';
 }
 
 function overviewOf(store: MockOpsStore, deps: MonitoringDeps): MonitorOverview {
@@ -670,6 +701,72 @@ export function mockOpsRead(
       )
       .map(toAlertItem);
     return ok(paginate(rows, payload));
+  }
+  /*
+   * 任务风险预检（`docs/api.md` §3.8.3）。
+   *
+   * 必须放在 `/api/alerts/{id}` 的前缀分支**之前**：`risks` 会被那条分支当成
+   * 一个告警 id 去查，然后返回 `ALERT.NOT_FOUND` —— 页面会报「告警不存在」，
+   * 而真正的原因是新接口没接上（ISS-055 的同类：错的原因把人带偏）。
+   *
+   * 判断本身来自 `@udm/shared`（与主进程同一个函数），这里只负责把 Mock 的
+   * 内存数据翻译成它的入参 —— 因此「两边结论一致」是结构性的，不是靠比对用例维持的。
+   */
+  if (path === '/api/alerts/risks') {
+    const vehicleById = new Map(deps.baseData.vehicles.map((row) => [row.id, row]));
+    const applied = deps.plans().filter((plan) => plan.status === 'applied');
+    const routeByTask = new Map<string, { id: string; durationS: number }>();
+    for (const row of deps.routeStore.rows) {
+      // 同一任务可能有多条历史路线：取**最新**的一条（与主进程 `ORDER BY created_at DESC LIMIT 1` 同口径）
+      if (row.taskId && !routeByTask.has(row.taskId)) {
+        routeByTask.set(row.taskId, { id: row.id, durationS: row.durationS });
+      }
+    }
+
+    const tasks = deps.taskStore.rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      status: row.status,
+      timeWindowStart: row.timeWindowStart,
+      timeWindowEnd: row.timeWindowEnd,
+      cargoKg: row.cargoKg
+    }));
+
+    /*
+     * 「计划优先、否则按任务路线回退」这条规则**不在这里**：它是业务判断，
+     * 唯一作者是 `shared` 的 `planInputsOf`（主进程调的是同一个函数）。
+     * 这里只把内存里的三张表拼成它要的素材 —— Mock 与主进程因此只在
+     * 「从哪里取数」上不同，结论不可能分叉。
+     */
+    const plans = planInputsOf(
+      deps.taskStore.rows.map((row) => {
+        const vehicle = row.assignedVehicleId ? vehicleById.get(row.assignedVehicleId) : undefined;
+        const plan = applied.find((item) => item.taskId === row.id);
+        return {
+          taskId: row.id,
+          taskStatus: row.status,
+          vehicleId: vehicle ? vehicle.id : null,
+          vehicleCode: vehicle ? vehicle.code : null,
+          plan: plan
+            ? { routeId: plan.routeId, occupiedFrom: plan.occupiedFrom, occupiedTo: plan.occupiedTo }
+            : null,
+          fallbackRoute: routeByTask.get(row.id) ?? null,
+          fallbackFrom: row.startedAt ?? row.assignedAt ?? row.createdAt
+        };
+      })
+    );
+
+    const vehicles = deps.baseData.vehicles.map((row) => ({
+      id: row.id,
+      code: row.code,
+      status: row.status,
+      battery: row.battery
+    }));
+    const now = new Date().toISOString();
+    // 与主进程同一个函数、同一份输入形状：`tasks` / `plans` 也一并交给报告去拼派发区块
+    return ok(
+      buildPlanRiskReport(scanPlanRisks(tasks, plans, vehicles, { nowMs: Date.parse(now) }), now, { tasks, plans })
+    );
   }
   if (path.startsWith('/api/alerts/')) {
     const id = path.slice('/api/alerts/'.length);

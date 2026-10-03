@@ -40,6 +40,18 @@ export interface RouteEdgeInput {
   lengthM: number;
   /** 道路限速（可空 = 该路段不单独设限速，按车种默认速度计）。 */
   speedLimitMps: number | null;
+  /**
+   * 通行权重（`edges.weight`，≥ 1 的惩罚系数：1 = 畅通，越大越慢）。
+   *
+   * 与 `lengthM` / `speedLimitMps` 三者的分工：
+   *   - `lengthM` 是**物理事实**（这条边有多长），里程统计只认它；
+   *   - `speedLimitMps` 是**交规事实**（这段路限速多少）；
+   *   - `weight` 是**通行代价**（施工、限流、路面差），它既不改变长度也不改变限速，
+   *     只把这段路的通行时间乘以一个系数。规划取的是时间，所以代价变化必须在这一层表达。
+   *
+   * 缺省 1：不填 = 畅通，读库的调用方负责把 NULL 兜成 1（列本身 NOT NULL DEFAULT 1）。
+   */
+  weight: number;
   status: 'enabled' | 'disabled';
 }
 
@@ -138,7 +150,10 @@ export function buildRouteGraph(input: BuildRouteGraphInput): import('./route-se
       toNodeId: edge.toNodeId,
       lengthM: edge.lengthM,
       // 道路限速是**上限**，车种速度也是 —— 取小值。漏掉 min 会让慢速车按道路限速通过
-      speedMps: Math.min(edge.speedLimitMps ?? speedMps, speedMps)
+      speedMps: Math.min(edge.speedLimitMps ?? speedMps, speedMps),
+      // 权重兜底 1：调用方漏填（老数据 / 测试桩）时按畅通算，而不是按 0 算 ——
+      // 0 会让这条边的耗时为 0，表现是「规划结果总走它」而不是报错
+      weight: edge.weight >= 1 ? edge.weight : 1
     }));
 
   const speeds = edges.map((edge) => edge.speedMps).filter((value) => value > 0);

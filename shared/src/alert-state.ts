@@ -9,7 +9,7 @@
  * （见 `task-state.ts` 文件头）：按钮能点、服务端拒绝，或者反过来更糟 ——
  * 两条路径都放行，数据进入一个没有任何模块认可的状态。
  *
- * ## 迁移表（`docs/api.md` §3.8.3）
+ * ## 迁移表（`docs/api.md` §3.8.4）
  *
  *   - `acknowledge`：`new → acknowledged`
  *   - `resolve`：`acknowledged / processing → resolved`

@@ -48,7 +48,7 @@ export const LAYERS: LayerMeta[] = [
     toggleable: true,
     group: 'network',
     tone: 'net',
-    hint: '可行驶路段（含方向），禁行边为虚线'
+    hint: '可行驶路段（含方向）；禁行边为灰色虚线，拥堵慢行边为橙色点线'
   },
   {
     key: 'netNodes',

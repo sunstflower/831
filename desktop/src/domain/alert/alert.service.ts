@@ -145,7 +145,7 @@ function readNote(payload: Record<string, unknown>, field: string, required: boo
 }
 
 /**
- * 状态操作（`docs/api.md` §3.8.3）。
+ * 状态操作（`docs/api.md` §3.8.4）。
  *
  * `resolve` 的说明文字是**必填**的：处置结论是这条告警唯一有价值的知识
  * （「上次同类问题是怎么解决的」），允许空着等于把这条信息永久丢掉。

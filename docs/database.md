@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS edges (
   CHECK (from_node_id <> to_node_id)
 );
 
+-- `weight` 由 0005 追加（本段是**迁移后的最终形态**，不是 0001 的原文）：
+--   weight REAL NOT NULL DEFAULT 1 CHECK (weight >= 1)
+-- 语义是「耗时惩罚系数」而不是长度：通行耗时 = length_m × weight ÷ 有效限速。
+-- 约束 >= 1 是**有原因的**，不是随手写的下限 —— 见 `docs/api.md` §3.2.4（A* 可采纳性）。
+
 CREATE TABLE IF NOT EXISTS sites (
   id         TEXT PRIMARY KEY,
   code       TEXT NOT NULL UNIQUE,
@@ -343,20 +348,36 @@ seed 由代码执行（`desktop/src/db/seed.ts`），**幂等**：全部使用�
 | 数据 | 内容 | 固定 id 示例 |
 | --- | --- | --- |
 | 账号 ×3 | admin / dispatcher / monitor；密码 bcrypt 运行时哈希（默认密码见 design §3.7） | `seed-admin`、`seed-dispatcher`、`seed-monitor` |
-| 路网 | 12 节点网格（4×3，间距 20m），节点间双向边 | `seed-n01`…`seed-n12`、`seed-e-n01-n02`… |
-| 站点 ×3 | A仓(depot)、B仓(depot)、充电桩(charging)，各绑定一个节点 | `seed-site-a`、`seed-site-b`、`seed-site-chg` |
-| 车辆 ×3 | AGV-01 / CAR-01 / DRN-01，初始 `idle`、电量 100、停靠在站点节点 | `seed-veh-agv01`… |
-| 模板 ×2 | 仓到仓标准配送、仓到充电桩回充 | `seed-tpl-std`、`seed-tpl-chg` |
+| 路网 | **`data/campus/` 的校园路网**（`campus_nodes.csv` / `campus_edges.csv`）：30 节点、90 条有向边 | `seed-n-N00`…、`seed-e-E_N00_N10`… |
+| 边权重 | `campus_congestion.csv` 的拥堵叠加层（≥ 1 的耗时系数），逐**有向边**写；删掉该文件即回到全网畅通基线 | 列 `edge_code,weight,remark` |
+| 站点 ×13 | 校园各站点，绑定到边 / 节点（泊位模型见 `docs/data-interfaces.md` §4.7） | `seed-site-DEPOT`、`seed-site-ST01`… |
+| 禁行 ×2 | 演示占道规则 | `seed-restriction-*` |
+| 车辆 ×5 | AGV-01/02、CAR-01/02、DRN-01；初始 `idle`（AGV-01 演示执行时置 `busy`）、电量 100 | `seed-veh-agv01`…、`seed-veh-car02` |
+| 模板 ×2 | 仓到仓标准配送、仓到充电桩回充 | `seed-tpl-std`、`seed-tpl-return` |
 | 设置 | design §4.10 键目录的默认值 | `dispatch.defaultStrategy`… |
-| 演示执行 ×1 组 | 任务 `running`（A仓→B仓，进度 0.42）+ 路线（`N01→N05→N09→N10→N11→N12`，每段都是库中真实存在的边）+ 告警 1 条（挂 DRN-01）；同时把 AGV-01 置 `busy`、`load_kg` 与任务载重一致 | `seed-task-demo`、`seed-route-demo`、`seed-alert-demo` |
+| 演示执行 ×1 组 | 任务 `running`（含进度）+ 路线（**每一段都是库中真实存在的边**）+ 告警 1 条（挂 DRN-01）；同时把 AGV-01 置 `busy`、`load_kg` 与任务载重一致 | `seed-task-demo`、`seed-route-demo`、`seed-alert-demo` |
+| 演示待派发 ×6 | `pending` 任务，供调度中心一打开就有活干；**时间窗跟着当前时刻刷新**（只在仍为 `pending` 时），否则这份演示数据过一天就会被 100% 以「时间窗冲突」拒绝 | `seed-task-p01`…`seed-task-p06` |
 
 注意：seed **不写明文密码**；`admin123` 等仅在文档与演示说明中出现，DB 只存哈希。
+
+**推导只有一处**：路网 / 站点 / 车辆 / 演示任务都来自 `shared/src/seed-data.ts` 的 `buildSeedDataset()`，
+`desktop/src/db/seed.ts` 只负责「取数（读 `data/campus/`）→ 推导 → 落库」，
+浏览器 Mock 调用的是**同一个函数**。因此本文件与 `seed.ts` 里都没有业务数字
+（节点数、边长、权重、任务清单都在数据与推导里）—— 这是 D-27 的升级：从
+「两边各写一遍再比对」改成「只写一遍」，比对就再也不会失败，因为它不再有两份。
 
 演示执行数据的用途：真实业务中 `tasks`/`routes` 由调度流程产生、初始为空，
 于是地图上永远只有路网，**路线高亮与车辆动画没有任何可见样本**。
 该组数据必须**状态自洽**：任务 `running` 就必须有车辆 `busy` 且 `load_kg > 0`
 （不能出现「running 任务挂在 idle 车上」），路线每一段也必须是真实存在的边。
 约束已由 `desktop/src/db/db.test.ts` 的用例固定。
+
+**演示待派发任务为什么有 6 条**（比 5 台车多）：任务数 ≤ 车辆数时两种策略都是
+「一车一单」、给出**完全一样**的计划，界面上「哪个策略更优」永远是平局；
+多出来的那一单只能靠**接力**（一辆车跑完一单再接下一单）派出，而接力只有贪心会做
+（匈牙利是整体匹配），对比于是有了真实结论。这条与上一段一样，是**可执行的**：
+`renderer/src/api/mock-parity.test.ts` 断言「贪心里至少有一台车带两条计划，
+且两条计划的占用区间不重叠」。
 
 ## 5. 常用查询（Repository 参考）
 
@@ -400,6 +421,7 @@ ORDER BY ts;
    | `0002_data_import.sql` | 四类导入数据文件（订单 CSV / 仿真地图 / 车辆参数 / 算法配置）所需的新表与新列；含 `edges.code`（业务键，D-35） | **草案，待评审**；表/列建议见 `docs/data-interfaces.md` §10，订单领域见 `docs/order-data-map-design.md` §3 |
    | `0003_object_types.sql` | 重建 `alerts` 表以放宽 `object_type` 的 CHECK：加入 `restriction` / `taskTemplate`（`OBJECT_TYPES` 扩项，`docs/database.md` §6 规则 4） | 已落地（2026-09-26）。**编号说明**：`0002` 已指派给导入管线，故取下一个空号；本文件按文件名排序会先于将来的 `0002` 应用，两者互不依赖（本条只动 `alerts` 的 CHECK） |
    | `0004_task_pause_reason.sql` | `tasks` 新增 `pause_reason` 列（`design.md` §4.3 要求 pause 写暂停原因，而 0001 建表时漏了该列）；`resume` 时清空 | 已落地（2026-09-26）。非破坏性新增可空列，走裸 `ALTER TABLE` |
+   | `0005_edge_weight.sql` | `edges` 新增 `weight`（通行权重，`REAL NOT NULL DEFAULT 1 CHECK (weight >= 1)`，见 D-54） | 已落地（2026-09-28）。非破坏性新增带缺省值的列；`>= 1` 的理由与「为什么不能放进 `length_m` / `speed_limit_mps`」写在 `docs/api.md` §3.2.4 与迁移文件头 |
 
    > 早期草案中的 `0002_seed.sql`（SQL 种子）与 `0002_order_ingestion.sql` 均已**作废** ——
    > 前者被代码侧 seed 取代，后者合并进 `0002_data_import.sql`（避免两个同号迁移）。

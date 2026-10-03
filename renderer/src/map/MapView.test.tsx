@@ -21,7 +21,12 @@ import { buildMockOverview } from '../api/mock-data';
  * 也不能断言「节点可见」——React Flow 在拿到 `measured` 之前会给节点
  * 加 `visibility: hidden`。
  */
-async function waitForNodes(container: HTMLElement, expected = 20) {
+/** 画布上的节点总数：路网 + 站点 + 车辆 + 每条任务的两个端点。 */
+function expectedNodeCount(overview: ReturnType<typeof buildMockOverview>): number {
+  return overview.nodes.length + overview.sites.length + overview.vehicles.length + overview.tasks.length * 2;
+}
+
+async function waitForNodes(container: HTMLElement, expected: number) {
   await waitFor(() => {
     expect(container.querySelectorAll('.react-flow__node')).toHaveLength(expected);
   });
@@ -39,18 +44,21 @@ function renderCanvas(overview = buildMockOverview()) {
 }
 
 describe('FlowCanvas · jsdom 渲染', () => {
-  it('挂载后渲染出全部节点（12 路网 + 3 站点 + 3 车辆 + 2 任务端点 = 20）', async () => {
-    const { container } = renderCanvas();
-    await waitForNodes(container);
-    expect(container.querySelectorAll('.react-flow__node-net')).toHaveLength(12);
-    expect(container.querySelectorAll('.react-flow__node-site')).toHaveLength(3);
-    expect(container.querySelectorAll('.react-flow__node-vehicle')).toHaveLength(3);
-    expect(container.querySelectorAll('.react-flow__node-taskEndpoint')).toHaveLength(2);
+  it('挂载后渲染出全部节点（路网 + 站点 + 车辆 + 任务端点，逐类与快照对齐）', async () => {
+    const overview = buildMockOverview();
+    const { container } = renderCanvas(overview);
+    await waitForNodes(container, expectedNodeCount(overview));
+    expect(container.querySelectorAll('.react-flow__node-net')).toHaveLength(overview.nodes.length);
+    expect(container.querySelectorAll('.react-flow__node-site')).toHaveLength(overview.sites.length);
+    expect(container.querySelectorAll('.react-flow__node-vehicle')).toHaveLength(overview.vehicles.length);
+    // 每条上图的任务各两个端点（起 / 终）—— 快照里有几条任务，就画几个端点
+    expect(container.querySelectorAll('.react-flow__node-taskEndpoint')).toHaveLength(overview.tasks.length * 2);
   });
 
   it('渲染出图层容器与控件（Background / Controls / MiniMap）', async () => {
-    const { container } = renderCanvas();
-    await waitForNodes(container);
+    const overview = buildMockOverview();
+    const { container } = renderCanvas(overview);
+    await waitForNodes(container, expectedNodeCount(overview));
     expect(container.querySelector('.react-flow__viewport')).not.toBeNull();
     expect(container.querySelector('.react-flow__edgelabel-renderer')).not.toBeNull();
     expect(container.querySelector('.react-flow__controls')).not.toBeNull();
@@ -58,8 +66,9 @@ describe('FlowCanvas · jsdom 渲染', () => {
   });
 
   it('路线高亮标签会渲染到独立的标签层', async () => {
-    const { container } = renderCanvas();
-    await waitForNodes(container);
+    const overview = buildMockOverview();
+    const { container } = renderCanvas(overview);
+    await waitForNodes(container, expectedNodeCount(overview));
     // 标签由 EdgeLabelRenderer 渲染；jsdom 下边本身不渲染，但标签层容器存在
     expect(container.querySelector('.react-flow__edgelabel-renderer')).not.toBeNull();
   });

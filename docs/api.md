@@ -325,6 +325,14 @@
 
 ### 3.1 登录与权限（M1）
 
+> **已实现范围（2026-09-28）**：本节 **§3.1.1-§3.1.7 全部落地** —— 登录/会话/退出（`services/auth.ts` ·
+> `services/session.ts`）、改本人密码与用户维护（`domain/user/user.service.ts`）、接口在
+> `desktop/src/ipc/api.ts`，用例见 `desktop/src/domain/user/user.service.test.ts` 与
+> `desktop/src/ipc/api.auth.test.ts`；页面为 `renderer/src/pages/UsersPage.tsx`。
+> 两条护栏值得单独记住（它们是**服务端**判据，前端只是把按钮禁掉并说明原因）：
+> 不能停用/降级**最后一个启用的管理员**、不能停用当前登录的账号。
+> 前者的字段归属随调用点走（禁用时报在 `status`、改角色时报在 `role`），因此前端能把红框标在正确的控件上。
+
 #### 3.1.1 登录
 
 `POST /api/auth/login` · 公开（no-audit 仅在失败时不写，成功写审计）
@@ -447,11 +455,33 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 | --- | --- |
 | `GET /api/vehicles` | query：`keyword/status/type/page/pageSize` |
 | `GET /api/vehicles/{id}` | 详情 |
-| `POST /api/vehicles` | 创建：`code/name/type/capacityKg/maxSpeedMps/x/y/battery` |
-| `PUT /api/vehicles/{id}` | 更新基础属性（**不含 `status`**） |
+| `POST /api/vehicles` | 创建：`code/name/type/capacityKg/maxSpeedMps/currentNodeId?/x?/y?/battery?` |
+| `PUT /api/vehicles/{id}` | 更新基础属性（**不含 `status`**）；`currentNodeId` 可改为 `null`（解除绑定） |
 | `PATCH /api/vehicles/{id}/status` | `{ "status": "disabled" }` 停用（D-07 软删）或 `{ "status": "idle" }` 启用（恢复）。取值必须是 §1.5 车辆状态枚举的成员 —— **车辆域没有 `enabled`**（与 `sites` 不同）；调度占用中（`reserved`/`busy`）停用被拒 → `VEHICLE.STATE_CONFLICT` |
 
 说明：`offline/fault/charging` 等运行态状态由执行器/心跳更新，管理接口不直接改；`online`（心跳标志）同样不由本接口维护。启用（`disabled → idle`）的目标状态固定为 `idle`，完整迁移表见 `design.md` §4.2。
+
+**「车停在哪」有三种写法，优先级从高到低（2026-09-28 明确）**：
+
+1. 显式坐标 `x` / `y`；
+2. 所在节点 `currentNodeId`（坐标跟随该节点）；
+3. 兜底 `(0, 0)`。
+
+判据是「**谁的意图更具体**」——同一次请求里同时给了坐标与节点时按坐标（`x`/`y`）走，
+节点只作为「从哪出发」的业务标注；只给节点时坐标取节点坐标，不要求调用方自己查一遍。
+
+创建时**两者至少要有一个**：都不给直接报 `VALIDATION.FAILED`，`detail.fields` 同时列出 `x` 与 `y`
+（一个概念、一处报错）。这条约束只在创建时成立 —— `PUT` 允许 `x`/`y` 与 `currentNodeId` 都为 `null`，
+因为「已知车辆、临时清空坐标」不该被拒。
+
+`currentNodeId` 指向不存在的节点 → `NODE.NOT_FOUND`（与站点同一口径）。
+`x`/`y` 在创建时可为 `null`（含义是「跟着节点走」）；`PUT` **不接受** `null` 坐标（那会让车没有位置），
+要清空坐标请改 `currentNodeId`。
+
+「按节点建车」不是界面糖：调度算**空驶段**的起点就是当前位置（`docs/module-M4-dispatch.md` §4），
+坐标差一个节点就会让空驶时间与实际不符。界面上「所在节点」是下拉（选项来自 `GET /api/nodes`），
+坐标两个输入框可留空并明确写着「选了所在节点可留空」——那条候选清单由字段定义派生
+（`renderer/src/base/form.ts` 的 `optionNeedsOf`），不是手写的一份。
 
 界面上还有一条**客户端**的预防措施（不是接口约束）：调度占用中（`reserved`/`busy`）的车辆，「停用」按钮直接禁用并给出原因，
 不让使用者点了才被 `VEHICLE.STATE_CONFLICT` 拒 —— 服务端校验仍是唯一的判定者。
@@ -472,9 +502,23 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 | --- | --- |
 | `GET /api/edges` | query：`code/fromNodeId/toNodeId/status/page/pageSize`；记录含 `code` |
 | `GET /api/edges/{id}` | 详情 |
-| `POST /api/edges` | `code?/fromNodeId/toNodeId/lengthM?/speedLimitMps?/remark?`；`code` 缺省按两端节点 `code` 生成 `E_<from>_<to>`，唯一（见 `docs/data-interfaces.md` §4.3、D-35）；`lengthM` 缺省按坐标欧氏距离自动计算；重复方向对拒绝 |
-| `PUT /api/edges/{id}` | 更新（`code` 不可改） |
+| `POST /api/edges` | `code?/fromNodeId/toNodeId/lengthM?/speedLimitMps?/weight?/remark?`；`code` 缺省按两端节点 `code` 生成 `E_<from>_<to>`，唯一（见 `docs/data-interfaces.md` §4.3、D-35）；`lengthM` 缺省按坐标欧氏距离自动计算；重复方向对拒绝 |
+| `PUT /api/edges/{id}` | 更新（`code` 不可改；可改 `weight`） |
 | `PATCH /api/edges/{id}/status` | 封路（`disabled`）。**当前实现**：只写状态与审计并广播 `map.updated`；「触发相关任务告警评估」是 M5 的评估器落地后的行为（`edge.status` 事件已带 `edgeId`/`status`，评估器接上即可用） |
+
+**`weight`：通行权重（2026-09-28 新增列，见 D-54）**。默认 `1` = 畅通，越大越慢，约束 `weight >= 1`。
+
+| 维度 | 取值口径 |
+| --- | --- |
+| 它是什么 | **耗时惩罚系数**，不是长度。规划的最小化目标是**通行时间**，耗时 = `lengthM × weight ÷ 有效限速` |
+| 它不是什么 | 不是距离（`lengthM` 不能被用来谎报拥堵：物理长度是事实），也不是限速（限速是交规事实，不该为了表达拥堵被改写） |
+| 典型来源 | 施工占道、限流、路面差、早晚高峰；也可由障碍物文件折算（`data/campus/campus.obstacles.rou.xml`，见 `docs/data-interfaces.md`） |
+| 为什么必须 ≥ 1 | A* 的启发式是「欧氏直线距离 ÷ 全网最高速度」，只有在**边代价 ≥ 未加权代价**时才不高估剩余代价。允许 `weight < 1` 会让启发式高估，A* 于是**静默返回非最优路线**（不报错，只是偶尔绕远）。写入小于 1 的值报 `VALIDATION.FAILED` |
+| 界面上的体现 | 地图把 `weight > 1` 的边画成**橙色点线**（`is-slow`），详情里写「拥堵（通行变慢）」；调度绕开它时使用者得看得出原因 |
+
+修改 `weight` **会改变规划结果**（同一对起终点可能换一条路），因此它属于「影响业务的数据」而非装饰：
+写路径走审计，并在读快照里带出（`GET /api/map/overview` 的边记录含 `weight`）。
+`weight` 缺省不是「0 成本」而是 **1**（全网畅通）——省略该字段建的边与旧数据行为一致。
 
 #### 3.2.5 禁行规则 restrictions
 
@@ -694,6 +738,22 @@ query：`status`(可逗号多值)/`priority`/`vehicleId`/`from`(timeWindowStart�
 }
 ```
 
+**对比怎么读（2026-09-28 明确）**：`plans` / `rejected` / `summary` 是**结构化事实**，
+界面上那张对比表的每个数字都由渲染层从它们派生（D-48：展示口径由函数产出，接口不产出人读结论）：
+
+| 对比列 | 派生自 | 口径（**不是**「所有计划的时间相加」） |
+| --- | --- | --- |
+| 执行里程 | 各计划的 `route.distanceM` 之和 | **只累加执行段**（任务起点 → 终点）。空驶段没有路线摘要，因此不计入 —— 混进去会让「谁少跑路」看起来是另一回事 |
+| 行驶耗时 | `costDetail.deadheadTimeS + executeTimeS` | 空驶 + 执行，即**车真正在动**的时间；不含等待与充电风险项 |
+| 全部完成 | `max(occupiedTo)` | 整批最后一单的结束时刻；只要有一条计划取不到时刻就显示 `—`，不显示一个凭空的早时刻 |
+| 用车 | `Set(vehicleId)` 的大小 | 其中「接力 n 单」= 同一台车在这批里接了第 2 单及以后的次数 |
+
+`weight` 会进入 `route.durationS` 与 `costDetail`（见 §3.2.4），因此改一条边的权重就会改变
+两个策略的相对结论 —— 这正是「让调度更复杂」的入口：长度相同的两条路，哪条更快由 `weight` 决定。
+
+`elapsedMs` 是**墙钟耗时**（算法实际跑了多久），与上面的业务量无关，两侧必然不同值也不代表分叉。
+`summary.elapsedMs` 与 `explain` 里的「耗时 Nms」同源。
+
 #### 3.4.3 应用派发
 
 `POST /api/dispatch/apply` · `dispatch:apply`
@@ -853,15 +913,36 @@ query：`include=`(逗号可选图层，默认全量；**该参数尚未实现**
 
 #### 3.6.2 车辆轨迹
 
-`GET /api/map/tracks/{vehicleId}` · `map:read` · 【设计中，未实现】
+`GET /api/map/tracks/{vehicleId}` · `map:read` · **【已实现】**
 
-query：`taskId?/from?/to?`。响应：
+query：`taskId?/from?/to?`（都是可选过滤；三者可叠加）。响应：
 
 ```json
-{ "vehicleId": "…", "points": [ { "ts": "…", "x": 0, "y": 0, "speedMps": 1.5, "status": "running" } ], "total": 42 }
+{
+  "vehicleId": "…",
+  "points": [ { "ts": "…", "x": 0, "y": 0, "speedMps": 1.5, "status": "running", "taskId": "…" } ],
+  "total": 42
+}
 ```
 
+实现要点（2026-09-28）：
+
+- 点序**按时间升序**（`ORDER BY ts ASC, id ASC`）：折线回放要求点序与时间一致，倒序返回会让
+  要么前端自己排、要么折线来回打结。`total` 是**过滤后的总数**，与 `points.length` 可能不同
+  （有条数上限），界面必须按 `total` 说明「导出了多少 / 共多少」而不是假设两者相等。
+- `taskId` 是**可选字段**（手工写入或早期采样的行可能为 `null`），前端不得把它当必填渲染。
+- 采样由**执行器**写入（M7 的 `ExecutionRunner` 每个 tick 采一点），因此本接口在 M7 落地前
+  只会返回空数组；「空轨迹」与「接口坏了」在界面上必须能区分（见 `renderer/src/map/panels/TrackPanel.tsx`）。
+- 车辆不存在时报 `VEHICLE.NOT_FOUND`（而不是返回空数组）—— 空数组是「这台车没有历史」，
+  与「根本没有这台车」是两件事。
+
 ### 3.7 运行监控与执行（M7）
+
+> **已实现范围（2026-09-28）**：本节 **§3.7.1-§3.7.4 全部落地** —— 读模型在
+> `desktop/src/domain/monitor/monitor.service.ts`，执行器在 `desktop/src/domain/execution/executor.ts`，
+> 路由在 `desktop/src/ipc/api.ts`；用例见 `desktop/src/domain/execution/executor.test.ts`
+> 与 `desktop/src/ipc/api.ops.test.ts`；页面入口是任务管理页的操作列
+> （`renderer/src/task/execution.ts` + `renderer/src/pages/TasksPage.tsx`）。
 
 #### 3.7.1 监控概览
 
@@ -882,11 +963,36 @@ query：`taskId?/from?/to?`。响应：
 - `GET /api/monitor/tasks` · `monitor:read`：等价 `GET /api/tasks`，默认只看 `running,paused,failed`，记录额外含 `progress`。
 - `GET /api/monitor/vehicles` · `monitor:read`：等价 `GET /api/vehicles`，记录额外含 `currentTaskId`。
 
+实现要点（2026-09-28）：
+
+- 两条列表**复用** `listTasks` / `listVehicles` 后补字段，不复制一份 SQL：复制会让
+  「基础数据页修了排序、监控页没修」这类分叉在两个页面上同时存在（D-34）。
+- 「默认只看 `running,paused,failed`」的默认值由**路由**兜住
+  （`MONITOR_DEFAULT_TASK_STATUSES`），传了 `status` 就以传入的为准，因此 `?status=pending`
+  能查到待派任务 —— 「默认」不是「白名单」。
+- `currentTaskId` 由 `running`/`paused` 任务反查（与 `map.overview` 的车辆 `taskId` 同一口径，D-25），
+  空闲车辆一律给 `null` 而不是省略键。
+- `alertCounts.unresolved` = `new + acknowledged + processing`（**未闭环**），
+  与「待确认」（只有 `new`）是两个口径，看板上不要混用。
+
 #### 3.7.3 开始执行
 
 `POST /api/execution/tasks/{id}/start` · `execution:start`
 
-请求 `{ "note": "车辆已到达起点" }`。迁移 `assigned→running`，启动模拟执行器，写轨迹采样开始。错误：`TASK.STATE_CONFLICT`。
+请求 `{ "note": "车辆已到达起点" }`（`note` 可选；**空说明不发明细字段**，否则审计里会出现
+一条「有说明但说明是空的」记录）。迁移 `assigned→running`，执行器开始按周期推进位置/进度/轨迹。
+
+错误：`TASK.STATE_CONFLICT`（当前状态不是 `assigned` 时，`detail` 给出 `from`/`expected`/`to`）。
+成功响应 `{ taskId, vehicleId, status, startedAt }`；入口是任务管理页操作列的**开始执行**按钮，
+仅在任务处于 `assigned` 时出现（其余状态点了必然 `STATE_CONFLICT`，因此不渲染 —— `ISS-010` 的判据）。
+
+**模拟执行器的口径**（`docs/module-M6-map.md` 之外唯一记录处，D-10）：
+
+- 起点是**执行器自己算的**：任务当前计划的路线（`routes`）折线，按 tick 折线插值推进，
+  不重新搜索路径（路径权威在 M5）。
+- 每个 tick 做三件事：推进里程、扣电量、采一个轨迹点；**电量与位置同批更新**，
+  否则地图上会出现「车到了但电量还是出发时的」。
+- 任务完成时置 `finished`、车辆回 `idle`、路线与计划不再变化；失败/超时留给 M8 的告警规则。
 
 #### 3.7.4 手动接管
 
@@ -894,9 +1000,20 @@ query：`taskId?/from?/to?`。响应：
 
 请求 `{ "note": "现场检查，暂停执行", "alertType": "task_timeout" }`；`alertType` 取值范围 `task_timeout` / `route_blocked` / `task_failed`，缺省 `task_timeout`。
 
-副作用：任务 `running→paused`（或 `assigned` 时置回）；生成 `warning` 级 `alertType` 告警，`detail.nextSteps` 给出建议。返回 `{ taskId, alertId, nextSteps: [...] }`。错误：`TASK.STATE_CONFLICT`。
+副作用：任务 `running→paused`（或 `assigned` 时置回，此时不扣进度）；生成 `warning` 级 `alertType` 告警，
+`detail.nextSteps` 给出建议。返回 `{ taskId, alertId, nextSteps: [...] }`。
+
+错误：`TASK.STATE_CONFLICT`。`note` 在本接口里是**必填**的（与 `start` 相反）：接管是停在半路，
+原因就是复盘时唯一的人工线索；前端在输入框为空时禁用提交按钮，而不是等 400 回来再报。
+`nextSteps` 由 `shared/src/alert-state.ts` 的 `ALERT_NEXT_STEPS` 提供（与告警详情的
+`suggestedNextSteps` **同一份**），因此两条路径给出的建议不会分叉。
 
 ### 3.8 告警（M8）
+
+> **已实现范围（2026-09-28；风险预检增补于 2026-10-03）**：§3.8.1-§3.8.4 全部落地 —— 领域服务
+> `desktop/src/domain/alert/alert.service.ts` 与 `desktop/src/domain/alert/risk.service.ts`；
+> 状态机与风险判据分别以 `shared/src/alert-state.ts` / `shared/src/plan-risk.ts` 为**唯一作者**
+> （服务端与前端按钮、主进程与浏览器 Mock 用的都是同一份）；页面 `renderer/src/pages/AlertsPage.tsx`。
 
 #### 3.8.1 告警列表
 
@@ -904,11 +1021,76 @@ query：`taskId?/from?/to?`。响应：
 
 query：`type/level/status/objectType/objectId/from/to/page/pageSize`。记录：`id/type/level/message/objectType/objectId/status/createdAt/ackBy/ackAt/resolveBy/resolveAt`。
 
+**界面上多出来的两样东西都不是新接口**（2026-09-28）：
+
+- **「停滞」列**（`已 45 分钟未认领` / `已 1 天 9 小时未解决`）由 `createdAt + status` 与**当前时刻**派生。
+  同一行在不同状态下的措辞不同，因为「没人认领」与「认领了但没解决」是两种待办；
+  已终结（`resolved` / `archived`）显示 `—` 而不是显示一个越来越大的数字。
+  阈值 `ALERT_STALE_MINUTES` 只用于**加粗提示**，不改变任何数据（`renderer/src/ops/model.ts`）。
+- **「批量认领本页待确认」** 逐条调用本节下面的 `POST /api/alerts/{id}/acknowledge`，
+  **没有批量接口**：状态机校验、权限与审计因此完全复用单条路径（多一个批量接口就多一处
+  绕过状态机的机会）。成功与失败的条数分开报，不把「认领了 3 条、失败 2 条」说成一句「已完成」。
+
 #### 3.8.2 告警详情
 
 `GET /api/alerts/{id}` · `alert:read`：全字段 + `detail` + 关联任务/车辆摘要 + `suggestedNextSteps`。
 
-#### 3.8.3 状态操作
+#### 3.8.3 任务风险预检
+
+`GET /api/alerts/risks` · `alert:read` · 无 query（「现在」取**服务端时钟**，不接受客户端传入）
+
+**它不是告警**：不读也不写 `alerts` 表、不进状态机、没有 `id`、不能认领。告警回答「已经发生了什么」，
+本接口回答「按现在这份『任务 → 车辆 → 路线』的生效派发，接下来会撞上什么」——要么处理掉，要么等它真的发生
+（真的发生了，§3.8.1 的流水里才会出现一条告警）。判据的唯一作者是 `shared/src/plan-risk.ts`
+（主进程与浏览器 Mock 调**同一个函数**），因此两端不可能给出不同结论。
+
+七个 `kind` 分两类（`level` 列标出级别；后三类会随「超出容忍的时长」在 warning / critical 之间变化 ——
+容忍值是内核的同一个常量，见 `docs/module-M4-dispatch.md`）：
+
+| 类别 | `kind` | 级别 | 判据 |
+| --- | --- | --- | --- |
+| 任务冲突 | `VEHICLE_OVERLAP` | critical | 同一台车**两条仍在占用的**计划，占用区间相交（半开区间，与内核同判据） |
+| | `VEHICLE_UNAVAILABLE` | critical | 派给了一台此刻 `offline` / `fault` / `charging` / `disabled` 的车 |
+| | `BATTERY_RISK` | critical | 车辆电量低于下限却仍挂着未完成任务 |
+| | `PLAN_WITHOUT_ROUTE` | critical | 有计划但查不到路线（地图上画不出这条线） |
+| 任务超时 | `LATE_FINISH` | warning / critical | 预计完成晚于时间窗末端；在容忍内 warning，超出 critical |
+| | `WINDOW_EXPIRED` | warning / critical | 时间窗已过而任务仍未结束（**含 `pending`**） |
+| | `UNASSIGNED_TASK` | warning / critical | `pending` 任务还没排上车；已过窗口则升为 critical |
+
+排序由服务端定死：先按 `level`（critical → warning → info），再按上表 `kind` 的顺序，
+同类内按任务编码 —— 同一份数据两次扫描必然同序，界面不再排一次。
+
+响应（`PlanRiskReport`）：
+
+```json
+{
+  "scannedAt": "2026-10-03T02:00:00.000Z",
+  "total": 3,
+  "counts": { "critical": 1, "warning": 2, "info": 0 },
+  "records": [
+    { "kind": "VEHICLE_OVERLAP", "level": "critical", "message": "AGV-01 的两单时间重叠 120 秒：T1 与 T2 抢同一台车", "suggestion": "把其中一单改派给别的车，或改时间窗。", "taskIds": ["…"], "taskCodes": ["T1", "T2"], "vehicleIds": ["…"], "vehicleCodes": ["AGV-01"], "detail": { "overlapS": 120 } }
+  ],
+  "assignments": [
+    { "taskId": "…", "taskCode": "T1", "taskStatus": "assigned", "vehicleId": "…", "vehicleCode": "AGV-01", "routeId": "…", "occupiedFrom": "…", "occupiedTo": "…" }
+  ],
+  "unassignedTasks": [ { "taskId": "…", "taskCode": "T3", "timeWindowEnd": "…" } ]
+}
+```
+
+**三个视图来自同一次读取**，不是三条接口：分成三次请求就会出现「风险说某车撞单，而派发区块里那两单已经不在」
+这种自相矛盾的画面。
+
+- `records[]`：风险条目。`detail` 里的每个数字都能对上 `message` 里的那句话（与 `rejected[].detail` 同口径）。
+- `assignments[]`：这次扫描看到的**已生效派发**（任务 → 车辆 → 占用区间），是告警页「任务分配派发」区块的数据源；
+  排序固定为「车辆编码 → 开始时刻」。同一台车的第 2 条及以后即「接力」。
+- `unassignedTasks[]`：没有任何计划的 `pending` 任务 —— 界面上显示为「还没安排」的缺口。
+
+**两级查法**：「这条任务派给谁、走哪条路」先取 `dispatch_plans` 中 `status='applied'` 的计划，
+查不到再按 `routes.task_id` 回退；回退区间 = 开始执行 / 指派 / 创建中第一个有值的时刻 + 路线时长。
+回退不是补丁而是 D-26 演示数据的必然结果（它不经调度流程），且执行器与任务详情用的是**同一套判据** ——
+否则会出现「车真的在按演示路线跑，而风险预检报它没有路线」的假红。
+
+#### 3.8.4 状态操作
 
 | 方法/路径 | 权限 | 请求 | 迁移 |
 | --- | --- | --- | --- |
@@ -918,11 +1100,43 @@ query：`type/level/status/objectType/objectId/from/to/page/pageSize`。记录�
 
 错误：`ALERT.NOT_FOUND` / `ALERT.STATE_CONFLICT`。
 
+实现要点（2026-09-28）：
+
+- 迁移表与「某状态可有哪些操作」都取自 `shared/src/alert-state.ts`
+  （`ALERT_TRANSITIONS` / `alertActionsOf`）：服务端据此校验、前端据此渲染按钮，
+  因此**界面上能点的、服务端一定放行**；被拒时页面会给出原因，不静默失败。
+- `resolve` 的字段名是 `resolution`（不是 `note`），且**必填** —— 处置结论是这条告警唯一
+  有价值的知识（「上次同类问题是怎么解决的」），允许留空等于把它永久丢掉。
+  `acknowledge` / `archive` 用 `note`，可选。
+- `archive` 允许从**任意非归档状态**直接归档（跳过中间态），这是 `design.md` §4.8 的显式许可，
+  不是漏洞；但 `resolve` 只能从 `acknowledged`/`processing` 进入。
+- 去重：同一对象同一原因在**未解决**前不重复生成（`dedupeKey` + 时间窗），
+  窗口长度是设置项。`detail` 里保存触发上下文（如接管时写入 `nextSteps`）。
+
 ### 3.9 审计与日志（M9）
 
 - `GET /api/audit/logs` · `audit:read`：query `module/action/actorId/objectType/objectId/from/to/page/pageSize`；记录：`ts/actorName/role/module/action/objectType/objectId/result/message/costMs/traceId`（before/after 仅详情）。
-- `GET /api/audit/logs/export` · `audit:read`：导出 CSV（`Content-Disposition` attachment）。
+- `GET /api/audit/logs/export` · `audit:read`：导出 CSV。
 - 调度日志查询见 `GET /api/dispatch/logs`（§3.4.6）。
+
+**导出的承载方式（2026-09-28 实测修正）**：本地 IPC 形态**没有响应头**可放
+`Content-Disposition`，而两种适配器（ipc / http）必须共用同一个信封 ——
+因此契约把「文件名 + 正文」放进 `data`，由渲染层拼 `Blob` 触发下载：
+
+```json
+{ "filename": "udm-audit-20260928.csv", "content": "\uFEFFts,actorName,…", "total": 42 }
+```
+
+三点必须照此实现：`content` 带 **UTF-8 BOM**（否则 Excel 打开中文是乱码）、
+正文按 **RFC 4180** 转义（引号内的引号翻倍）、`total` 是**导出条数**（与列表分页无关，
+界面照它说明「导出了多少条」）。导出只读不写审计 —— 它不改数据。
+
+### 3.9.1 审计写入的模块取值
+
+`audit_logs.module` 的取值清单唯一来源是 `shared/src/enums.ts` 的 `AUDIT_MODULES`
+（`auth` / `user` / `task` / `base` / `route` / `dispatch` / `execution` / `alert` / `settings`），
+审计页的筛选项直接渲染该枚举。**新增写入点必须先改枚举**，否则筛选项里看不到那个模块，
+使用者会得出「这个模块没有操作记录」的错误结论。
 
 ### 3.10 系统设置（M10）
 
@@ -930,6 +1144,15 @@ query：`type/level/status/objectType/objectId/from/to/page/pageSize`。记录�
 - `GET /api/settings/schema` · `settings:read`：返回键目录（`key/type/label/default/min/max/options/unit/remark`），前端据此渲染表单。
 - `PATCH /api/settings` · `settings:write`：`{ "updates": { "monitor.refreshIntervalMs": 500 } }`；按 schema 校验，非法返回 `VALIDATION.FAILED`。写审计。
 - 启动加载：主进程读取设置表，缺失键回退默认值（见 design §4.10）。
+
+**PATCH 的语义（2026-09-28 明确）**：只改 `updates` 里**提到**的键，未提到的键保持原值 ——
+不是整体替换。前端因此只提交「值与已保存值不同」的键（`SettingsPage` 的草稿差值），
+否则「两个页面各改一个」会变成后提交者覆盖前者。
+
+**整批校验后才写**：一次 PATCH 里的多个键要么全成功、要么全不动（字段级错误在
+`detail.fields` 里逐键返回，键名就是设置项的 key，因此红框能直接标在对应控件上）。
+校验判据在 `shared/src/settings-rules.ts` 的 `validateSettingValue`，**主进程与 Mock 共用同一份**
+（`shared` 的 `SETTINGS_SCHEMA` 是键目录的唯一作者，页面按它动态渲染表单）。
 
 ### 3.11 健康检查
 

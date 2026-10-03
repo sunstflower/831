@@ -40,6 +40,7 @@ interface EdgeRow {
   to_node_id: string;
   length_m: number;
   speed_limit_mps: number | null;
+  weight: number;
   status: string;
 }
 
@@ -162,13 +163,15 @@ export function getMapOverview(db: Db): MapOverview {
 
   const edges = all<EdgeRow>(
     db,
-    'SELECT id, from_node_id, to_node_id, length_m, speed_limit_mps, status FROM edges ORDER BY id'
+    'SELECT id, from_node_id, to_node_id, length_m, speed_limit_mps, weight, status FROM edges ORDER BY id'
   ).map((row) => ({
     id: row.id,
     fromNodeId: row.from_node_id,
     toNodeId: row.to_node_id,
     lengthM: row.length_m,
     speedLimitMps: row.speed_limit_mps,
+    // 权重进快照：地图用它把「慢路」画得更醒目（施工 / 限流）。缺省 1 = 畅通
+    weight: row.weight ?? 1,
     status: row.status as 'enabled' | 'disabled'
   }));
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuditContext, DomainError } from '@udm/shared';
+import { campusEdgeId, campusNodeId } from '@udm/shared';
 import { openDatabase, type Db } from '../../db/index.js';
 import { applyMigrations } from '../../db/migrate.js';
 import { seedDatabase } from '../../db/seed.js';
@@ -203,6 +204,70 @@ describe('vehicle.service', () => {
     expect(audits(db, 'enable').some((row) => row.object_id === vehicle.id)).toBe(true);
   });
 
+  it('创建：给了所在节点、没给坐标 → 坐标跟随该节点（与站点同一口径）', () => {
+    const node = campusNodeId('N13');
+    const vehicle = createVehicle(ctx, {
+      code: 'V-97',
+      name: '落点车',
+      type: 'carrier',
+      capacityKg: 500,
+      maxSpeedMps: 3,
+      currentNodeId: node
+    });
+    const row = db.prepare('SELECT x, y FROM nodes WHERE id = ?').get(node) as { x: number; y: number };
+    expect(vehicle).toMatchObject({ currentNodeId: node, x: row.x, y: row.y });
+  });
+
+  it('创建：显式坐标优先于节点坐标（两份都给时以坐标为准）', () => {
+    const vehicle = createVehicle(ctx, {
+      code: 'V-98',
+      name: '中间车',
+      type: 'carrier',
+      capacityKg: 500,
+      maxSpeedMps: 3,
+      currentNodeId: campusNodeId('N13'),
+      x: 123,
+      y: 45
+    });
+    expect(vehicle).toMatchObject({ currentNodeId: campusNodeId('N13'), x: 123, y: 45 });
+  });
+
+  it('创建：节点不存在 → NODE.NOT_FOUND 并指到 currentNodeId 字段', () => {
+    const error = expectDomainError(
+      () =>
+        createVehicle(ctx, {
+          code: 'V-99',
+          name: '野车',
+          type: 'carrier',
+          capacityKg: 500,
+          maxSpeedMps: 3,
+          currentNodeId: 'seed-n-NOT-EXIST'
+        }),
+      'NODE.NOT_FOUND'
+    );
+    expect((error.detail as Record<string, unknown>)['currentNodeId']).toBe('seed-n-NOT-EXIST');
+  });
+
+  it('创建：既没有坐标也没有节点 → 两个字段一起报必填（一辆没有位置的车无法被调度）', () => {
+    const error = expectDomainError(
+      () => createVehicle(ctx, { code: 'V-100', name: '无位置车', type: 'carrier', capacityKg: 500, maxSpeedMps: 3 }),
+      'VALIDATION.FAILED'
+    );
+    const fields = (error.detail as Record<string, Record<string, string>>)['fields']!;
+    expect(fields['x']).toBeDefined();
+    expect(fields['y']).toBeDefined();
+  });
+
+  it('更新：只改所在节点时坐标跟着走；只改坐标时不动所在节点', () => {
+    const vehicle = createVehicle(ctx, { code: 'V-101', name: 'V', type: 'agv', capacityKg: 10, maxSpeedMps: 1, x: 0, y: 0 });
+    const moved = updateVehicle(ctx, vehicle.id, { currentNodeId: campusNodeId('N22') });
+    const row = db.prepare('SELECT x, y FROM nodes WHERE id = ?').get(campusNodeId('N22')) as { x: number; y: number };
+    expect(moved).toMatchObject({ currentNodeId: campusNodeId('N22'), x: row.x, y: row.y });
+
+    const nudged = updateVehicle(ctx, vehicle.id, { x: 7, y: 8 });
+    expect(nudged).toMatchObject({ currentNodeId: campusNodeId('N22'), x: 7, y: 8 });
+  });
+
   it('启停：不修改 online（心跳是通信事实，管理接口不得代为声明）', () => {
     const vehicle = createVehicle(ctx, { code: 'V-96', name: 'V', type: 'agv', capacityKg: 10, maxSpeedMps: 1, x: 0, y: 0 });
     setVehicleStatus(ctx, vehicle.id, 'disabled');
@@ -349,12 +414,14 @@ describe('graph.service · 边', () => {
  *   3. 删除是**物理**删除 —— 行真的没了，但审计里留着（这正是「允许真删」仍然可控的原因）。
  */
 describe('restriction.service', () => {
-  const edgeId = 'seed-e-N01-N05';
+  // 用地图包里真实存在的边（`N01 → N02`）与节点；写错 id 的用例在下面单独覆盖
+  const edgeId = campusEdgeId('E_N01_N02');
+  const nodeId = campusNodeId('N01');
 
   it('创建：默认 active，targetCode 是派生的，created_by 取自会话', () => {
     const { db, ctx } = setup();
     const created = createRestriction(ctx, { type: 'edge', targetId: edgeId, reason: '施工' });
-    expect(created).toMatchObject({ type: 'edge', targetCode: 'E_N01_N05', status: 'active', createdBy: 'seed-admin' });
+    expect(created).toMatchObject({ type: 'edge', targetCode: 'E_N01_N02', status: 'active', createdBy: 'seed-admin' });
     const rows = audits(db, 'create');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ object_type: 'restriction', object_id: created.id, trace_id: 'trace-test' });
@@ -366,7 +433,7 @@ describe('restriction.service', () => {
     const { db, ctx } = setup();
     // 节点 id 出现在 edge 规则里：两边都是「目标不存在」，但只有这条能拦住「类型选错」
     expectDomainError(() => createRestriction(ctx, { type: 'node', targetId: edgeId, reason: 'x' }), 'MAP.RESTRICTION_TARGET_NOT_FOUND');
-    expectDomainError(() => createRestriction(ctx, { type: 'edge', targetId: 'seed-n01', reason: 'x' }), 'MAP.RESTRICTION_TARGET_NOT_FOUND');
+    expectDomainError(() => createRestriction(ctx, { type: 'edge', targetId: nodeId, reason: 'x' }), 'MAP.RESTRICTION_TARGET_NOT_FOUND');
     expectDomainError(() => createRestriction(ctx, { type: 'node', targetId: 'ghost', reason: 'x' }), 'MAP.RESTRICTION_TARGET_NOT_FOUND');
   });
 
@@ -376,7 +443,7 @@ describe('restriction.service', () => {
       () =>
         createRestriction(ctx, {
           type: 'node',
-          targetId: 'seed-n01',
+          targetId: nodeId,
           reason: 'x',
           startAt: '2026-09-27T10:00:00.000Z',
           endAt: '2026-09-27T09:00:00.000Z'
@@ -387,7 +454,7 @@ describe('restriction.service', () => {
 
   it('更新：只传 endAt 时与**库里的** startAt 配对判（跨字段校验只有服务层做得到）', () => {
     const { db, ctx } = setup();
-    const created = createRestriction(ctx, { type: 'node', targetId: 'seed-n01', reason: 'x', startAt: '2026-09-27T10:00:00.000Z' });
+    const created = createRestriction(ctx, { type: 'node', targetId: nodeId, reason: 'x', startAt: '2026-09-27T10:00:00.000Z' });
     // 库里 startAt = 10:00，把 endAt 改到 09:00 必须被拒
     expectDomainError(() => updateRestriction(ctx, created.id, { endAt: '2026-09-27T09:00:00.000Z' }), 'VALIDATION.FAILED');
     const ok = updateRestriction(ctx, created.id, { endAt: '2026-09-27T11:00:00.000Z' });
@@ -396,12 +463,12 @@ describe('restriction.service', () => {
 
   it('更新：改 type 时会重判目标；置为 expired 记 disable 而不是 update', () => {
     const { db, ctx } = setup();
-    const created = createRestriction(ctx, { type: 'node', targetId: 'seed-n01', reason: 'x' });
+    const created = createRestriction(ctx, { type: 'node', targetId: nodeId, reason: 'x' });
     // 只改 type 不改 targetId：新类型下那个 id 不存在 → 必须被拒
     expectDomainError(() => updateRestriction(ctx, created.id, { type: 'edge' }), 'MAP.RESTRICTION_TARGET_NOT_FOUND');
     updateRestriction(ctx, created.id, { type: 'edge', targetId: edgeId });
     const expired = updateRestriction(ctx, created.id, { status: 'expired' });
-    expect(expired).toMatchObject({ status: 'expired', targetCode: 'E_N01_N05' });
+    expect(expired).toMatchObject({ status: 'expired', targetCode: 'E_N01_N02' });
     // 失效走的是 disable 动作：按 action='disable' 查「谁停用了它」时必须能查到这条规则
     expect(audits(db, 'disable').map((row) => row.object_id)).toEqual([created.id]);
     // before/after 都在（只存一半就无法回答「它原来是什么状态」）
@@ -411,10 +478,11 @@ describe('restriction.service', () => {
 
   it('删除是**物理**删除：行没了，但审计留着（before 里有完整的被删对象）', () => {
     const { db, ctx } = setup();
-    const created = createRestriction(ctx, { type: 'node', targetId: 'seed-n01', reason: '临停' });
+    const created = createRestriction(ctx, { type: 'node', targetId: nodeId, reason: '临停' });
     const result = deleteRestriction(ctx, created.id);
     expect(result).toEqual({ id: created.id, deleted: true });
-    expect(all(db, 'SELECT id FROM restrictions')).toHaveLength(0);
+    // seed 自带 2 条占道规则，因此断言「这一行没了」而不是「表空了」
+    expect(all(db, 'SELECT id FROM restrictions WHERE id = ?', [created.id])).toHaveLength(0);
     const rows = audits(db, 'delete');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ object_type: 'restriction', object_id: created.id });

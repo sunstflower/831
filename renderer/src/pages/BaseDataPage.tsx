@@ -30,6 +30,7 @@ import {
   emptyFormValues,
   formValuesOfRow,
   nodeOptionsOf,
+  optionNeedsOf,
   rowTitleOf,
   statusActionOf,
   statusBlockedReason,
@@ -106,8 +107,8 @@ export function BaseDataPage() {
    * 届时契约不变 —— 这是「先做完，再做好」的边界，写在实现旁边以免被当成疏忽。
    */
   const loadOptions = useCallback(async () => {
-    const needsNodes = tabKey === 'sites' || tabKey === 'edges' || tabKey === 'restrictions';
-    const needsEdges = tabKey === 'restrictions';
+    // 「这张表要不要节点 / 边清单」由字段定义推导（`optionNeedsOf`），不在页面里手写页签清单
+    const { nodes: needsNodes, edges: needsEdges } = optionNeedsOf(tabKey);
     if (!needsNodes) {
       return;
     }

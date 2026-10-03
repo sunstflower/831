@@ -183,6 +183,19 @@ function updateSite(store: MockBaseData, id: string, payload: Record<string, unk
   return ok(site);
 }
 
+/**
+ * 车辆坐标：优先用请求里给的，其次跟随所在节点，最后才是 `(0, 0)`。
+ * 与主进程 `vehicle.service.ts` 的 `resolveVehicleXY` 同一口径（否则两种形态下
+ * 同一份请求会建出位置不同的车，而界面上看不出差别）。
+ */
+function resolveVehicleXY(
+  store: MockBaseData,
+  input: { x: number | null; y: number | null; currentNodeId: string | null }
+): { x: number; y: number } {
+  const node = input.currentNodeId ? store.nodes.find((row) => row.id === input.currentNodeId) : undefined;
+  return { x: input.x ?? node?.x ?? 0, y: input.y ?? node?.y ?? 0 };
+}
+
 function createVehicle(store: MockBaseData, payload: Record<string, unknown>): ApiResult<unknown> {
   const parsed = validateVehicleInput(payload, 'create');
   if (!parsed.ok) {
@@ -192,6 +205,10 @@ function createVehicle(store: MockBaseData, payload: Record<string, unknown>): A
   if (findByCode(store.vehicles, input.code)) {
     return fail('BASE.CODE_EXISTS', { code: input.code, kind: 'vehicle' });
   }
+  if (input.currentNodeId && !store.nodes.some((row) => row.id === input.currentNodeId)) {
+    return fail('NODE.NOT_FOUND', { currentNodeId: input.currentNodeId });
+  }
+  const { x, y } = resolveVehicleXY(store, input);
   const at = nowIso();
   const created: VehicleListItem = {
     id: nextId('veh'),
@@ -203,9 +220,9 @@ function createVehicle(store: MockBaseData, payload: Record<string, unknown>): A
     loadKg: 0,
     maxSpeedMps: input.maxSpeedMps,
     battery: input.battery,
-    x: input.x,
-    y: input.y,
-    currentNodeId: null,
+    x,
+    y,
+    currentNodeId: input.currentNodeId,
     // 新车未上线：与主进程 `insertVehicle` 的 `online = 0` 同解
     online: false,
     lastHeartbeatAt: null,
@@ -226,7 +243,19 @@ function updateVehicle(store: MockBaseData, id: string, payload: Record<string, 
   if (!parsed.ok) {
     return invalidFields(parsed.fields);
   }
-  Object.assign(vehicle, { ...parsed.value, updatedAt: nowIso() });
+  const patch = { ...parsed.value };
+  if (patch.currentNodeId && !store.nodes.some((row) => row.id === patch.currentNodeId)) {
+    return fail('NODE.NOT_FOUND', { currentNodeId: patch.currentNodeId });
+  }
+  // 只给了节点、没给坐标时坐标跟着节点走（与主进程同一条规则）
+  if (patch.currentNodeId !== undefined && patch.x === undefined && patch.y === undefined && patch.currentNodeId) {
+    const node = store.nodes.find((row) => row.id === patch.currentNodeId);
+    if (node) {
+      patch.x = node.x;
+      patch.y = node.y;
+    }
+  }
+  Object.assign(vehicle, { ...patch, updatedAt: nowIso() });
   return ok(vehicle);
 }
 
@@ -356,6 +385,7 @@ function createEdge(store: MockBaseData, payload: Record<string, unknown>): ApiR
     toNodeCode: to!.code,
     lengthM,
     speedLimitMps: input.speedLimitMps,
+    weight: input.weight,
     status: 'enabled',
     remark: input.remark
   };

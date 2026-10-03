@@ -196,9 +196,26 @@ describe('validateNodeInput / validateEdgeInput', () => {
   it('边：lengthM / speedLimitMps 可选且必须为正数；code 可省略（缺省由两端节点推导）', () => {
     expect(validateEdgeInput({ fromNodeId: 'a', toNodeId: 'b' }, 'create')).toEqual({
       ok: true,
-      value: { code: null, fromNodeId: 'a', toNodeId: 'b', lengthM: null, speedLimitMps: null, remark: null }
+      value: { code: null, fromNodeId: 'a', toNodeId: 'b', lengthM: null, speedLimitMps: null, weight: 1, remark: null }
     });
     expect(validateEdgeInput({ fromNodeId: 'a', toNodeId: 'b', lengthM: 0 }, 'create').ok).toBe(false);
+  });
+
+  it('边：weight 下限是 1（不是「大于 0」）——小于 1 会让 A* 的启发式高估并静默给出非最优路线', () => {
+    // 不填 = 畅通：与 DDL 的 DEFAULT 1、与 `RouteEdgeInput.weight` 的兜底同一口径
+    const omitted = validateEdgeInput({ fromNodeId: 'a', toNodeId: 'b', weight: undefined }, 'create');
+    expect(omitted.ok && omitted.value.weight).toBe(1);
+    // 边界值 1 必须放行（「畅通」是一个合法取值，而不是「不填」的替代品）
+    const one = validateEdgeInput({ fromNodeId: 'a', toNodeId: 'b', weight: 1 }, 'create');
+    expect(one.ok && one.value.weight).toBe(1);
+    // 4 倍慢可以，0.5 倍快不行 —— 后者超出模型的表达能力（权重只增不减）
+    const heavy = validateEdgeInput({ fromNodeId: 'a', toNodeId: 'b', weight: 4 }, 'create');
+    expect(heavy.ok && heavy.value.weight).toBe(4);
+    const lighter = validateEdgeInput({ fromNodeId: 'a', toNodeId: 'b', weight: 0.5 }, 'create');
+    expect(lighter.ok).toBe(false);
+    if (!lighter.ok) {
+      expect(lighter.fields['weight']).toMatch(/≥|大于|1/);
+    }
   });
 
   it('边：更新时传 code 被拒（D-35：code 创建后不可改）', () => {

@@ -116,6 +116,9 @@ const EDGE_COLUMNS: Column[] = [
   column<EdgeListItem>('toNodeCode', '终点'),
   column<EdgeListItem>('lengthM', '长度 (m)', { align: 'right' }),
   column<EdgeListItem>('speedLimitMps', '限速 (m/s)', { align: 'right', cell: (row) => text(row.speedLimitMps) }),
+  // 权重与限速相邻：两者都影响通行时间，分开放会让人以为它们是无关的两个数。
+  // 1 显式写成「1×」而不是留空 —— 空格看起来像「没填」，而 1 是一个明确的取值（畅通）
+  column<EdgeListItem>('weight', '通行权重', { align: 'right', cell: (row) => `${row.weight}×` }),
   column<EdgeListItem>('status', '状态', { cell: (row) => labelOf(ENABLED_STATUS_LABEL, row.status) })
 ];
 

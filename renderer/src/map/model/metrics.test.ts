@@ -30,10 +30,12 @@ describe('computeMetrics', () => {
     expect(metrics.nodes).toBe(overview.nodes.length);
     expect(metrics.edges).toBe(overview.edges.length);
     expect(metrics.runningTasks).toBe(1);
-    // AGV-01 busy + 两辆 idle
+    // 分组条数从快照自身推出来（车队规模由 `shared/src/seed-data.ts` 的 SEED_FLEET 决定）
     const byStatus = new Map(metrics.vehiclesByStatus);
+    for (const status of ['busy', 'idle'] as const) {
+      expect(byStatus.get(status) ?? 0).toBe(overview.vehicles.filter((v) => v.status === status).length);
+    }
     expect(byStatus.get('busy')).toBe(1);
-    expect(byStatus.get('idle')).toBe(2);
   });
 
   it('未处理告警只算 status 为 new（或未给状态）的那些', () => {

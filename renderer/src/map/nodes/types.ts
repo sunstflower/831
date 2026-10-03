@@ -62,6 +62,18 @@ export interface NetEdgeData extends Record<string, unknown> {
   disabled: boolean;
   /** 通行耗时（s）；缺少长度或限速时为 null。 */
   travelSeconds: number | null;
+  /** 通行权重（≥ 1）：> 1 即「慢边」，画布上用橙色点线标出。 */
+  weight: number;
+  /**
+   * 有生效路线且路线图层可见时为 true：路网底板要变细变淡。
+   *
+   * 为什么这个布尔要进 `data` 而不是只留在边的 `className` 上：
+   * React Flow 把边的 `className` 拼到**外层 `<g>`**，而样式要作用在 `<path>` 上
+   * （`NetEdge.tsx` 的 `BaseEdge` 才是 path 的作者）。两处各写一份判断迟早会漂移 ——
+   * 实测就是这么坏掉的：`is-muted` / `is-slow` 从来只落到 `<g>`，
+   * CSS 里的 `.react-flow__edge-path.…` 规则一条都没生效，且页面不报任何错。
+   */
+  muted: boolean;
   /** 「可通行 / 禁行」的展示文案。 */
   kind: string;
   fromCode: string;

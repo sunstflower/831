@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildMockOverview } from '../../api/mock-data';
 import { computeFocus, isDimmed } from './focus';
 import { netEdgeId, netNodeId, routeSegmentId, siteNodeId, taskEndpointId, vehicleNodeId } from './ids';
-import { SEED_IDS } from '@udm/shared';
+import { SEED_IDS, campusNodeId } from '@udm/shared';
 
 describe('computeFocus · 无选中', () => {
   it('未选中任何对象时不产生压暗（active=false）', () => {
@@ -36,8 +36,8 @@ describe('computeFocus · 车辆（执行链双向可达）', () => {
     // 它的路线分段
     expect(focus.edgeIds.has(routeSegmentId(SEED_IDS.demoRoute, 0))).toBe(true);
     // 两端站点
-    expect(focus.nodeIds.has(siteNodeId(SEED_IDS.siteDepotA))).toBe(true);
-    expect(focus.nodeIds.has(siteNodeId(SEED_IDS.siteDepotB))).toBe(true);
+    expect(focus.nodeIds.has(siteNodeId(SEED_IDS.siteDepot))).toBe(true);
+    expect(focus.nodeIds.has(siteNodeId(SEED_IDS.siteDorm))).toBe(true);
   });
 
   it('空闲车辆：只聚焦自己，不牵连别的任务', () => {
@@ -76,7 +76,7 @@ describe('computeFocus · 任务 / 路线 / 站点 / 节点', () => {
     });
     expect(focus.nodeIds.has(taskEndpointId(SEED_IDS.demoTask, 'from'))).toBe(true);
     expect(focus.edgeIds.has(routeSegmentId(SEED_IDS.demoRoute, 0))).toBe(true);
-    expect(focus.nodeIds.has(siteNodeId(SEED_IDS.siteDepotA))).toBe(true);
+    expect(focus.nodeIds.has(siteNodeId(SEED_IDS.siteDepot))).toBe(true);
   });
 
   it('选中路线 → 路线的每个节点与每段边都在集合内', () => {
@@ -98,24 +98,27 @@ describe('computeFocus · 任务 / 路线 / 站点 / 节点', () => {
   it('选中站点 → 含站点自身与其挂靠的路网节点', () => {
     const overview = buildMockOverview();
     const focus = computeFocus(overview, {
-      flowId: siteNodeId(SEED_IDS.siteDepotA),
+      flowId: siteNodeId(SEED_IDS.siteDepot),
       entityType: 'site',
-      entityId: SEED_IDS.siteDepotA
+      entityId: SEED_IDS.siteDepot
     });
-    expect(focus.nodeIds.has(siteNodeId(SEED_IDS.siteDepotA))).toBe(true);
-    expect(focus.nodeIds.has(netNodeId('seed-n01'))).toBe(true);
+    expect(focus.nodeIds.has(siteNodeId(SEED_IDS.siteDepot))).toBe(true);
+    // 站点挂靠的节点从快照读出来，不写死（换地图数据后站点会挂到别的路口）
+    const anchor = overview.sites.find((site) => site.id === SEED_IDS.siteDepot)!.nodeId!;
+    expect(focus.nodeIds.has(netNodeId(anchor))).toBe(true);
   });
 
   it('选中路网节点 → 含该节点与它连出去的所有边', () => {
     const overview = buildMockOverview();
+    const nodeId = campusNodeId('N01');
     const focus = computeFocus(overview, {
-      flowId: netNodeId('seed-n01'),
+      flowId: netNodeId(nodeId),
       entityType: 'node',
-      entityId: 'seed-n01'
+      entityId: nodeId
     });
-    expect(focus.nodeIds.has(netNodeId('seed-n01'))).toBe(true);
+    expect(focus.nodeIds.has(netNodeId(nodeId))).toBe(true);
     const connected = overview.edges.filter(
-      (edge) => edge.fromNodeId === 'seed-n01' || edge.toNodeId === 'seed-n01'
+      (edge) => edge.fromNodeId === nodeId || edge.toNodeId === nodeId
     );
     expect(connected.length).toBeGreaterThan(0);
     for (const edge of connected) {
