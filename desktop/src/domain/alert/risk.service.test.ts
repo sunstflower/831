@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { SEED_IDS } from '@udm/shared';
+import { PLAN_RISK_SECTION_OF, SEED_IDS } from '@udm/shared';
 import { nowIso, openDatabase, run, type Db } from '../../db/index.js';
 import { applyMigrations } from '../../db/migrate.js';
 import { seedDatabase } from '../../db/seed.js';
 import { alertRisks } from './risk.service.js';
+import { apply as applyDispatch, preview as previewDispatch } from '../dispatch/dispatch.service.js';
+import { setVehicleStatus } from '../base/vehicle.service.js';
+import type { AuditContext } from '@udm/shared';
 
 /**
  * 风险预检的**取数层**（`docs/api.md` §3.8.3）。
@@ -81,6 +84,36 @@ describe('risk.service · 取数口径', () => {
     expect(item, '窗口过去一天后仍未完成的任务必须报超时').toBeDefined();
     expect(item!.detail['overdueS']).toBeGreaterThan(0);
     expect(item!.level).toBe('critical');
+  });
+
+  it('D-62 演示路径：派发一单 → 给那台车人工报障 → 「派发冲突」节立刻出现这条计划', () => {
+    /*
+     * 这一条锁的是**可达性**而不是算法（算法已在 `shared/src/plan-risk.test.ts` 钉死）：
+     * `ISS-097` 说「告警中心节 1 的五类风险常规操作造不出来」。修法③（D-62）之后，
+     * 唯一需要的操作是「基础数据页把那台车标记为故障」—— 用例照这条路径走一遍：
+     *   pending 任务 → 预览 → 应用（车变 reserved / 任务变 assigned）→ 报障 → 再扫描。
+     * 若 `fault` 又被打回「执行器专管」，这里会先红在 `setVehicleStatus` 上。
+     */
+    const ctx = { db, actor: { actorId: 'seed-admin', actorName: 'admin', role: 'admin', traceId: 'trace-risk' } as AuditContext };
+    const taskId = SEED_IDS.pendingTasks[0]!;
+    const previewResult = previewDispatch(ctx, { taskIds: [taskId], strategy: 'greedy' });
+    const applied = applyDispatch(ctx, { requestId: previewResult.requestId, strategy: 'greedy' });
+    const plan = applied.appliedPlans[0]!;
+
+    // 报障前：这条计划**不是**风险（车是 reserved，正是正常中间态）
+    const before = alertRisks(db);
+    expect(before.records.some((item) => item.kind === 'VEHICLE_UNAVAILABLE' && item.taskIds.includes(taskId))).toBe(false);
+
+    setVehicleStatus(ctx, plan.vehicleId, 'fault');
+
+    const after = alertRisks(db);
+    const item = after.records.find((row) => row.kind === 'VEHICLE_UNAVAILABLE');
+    expect(item, '报障后必须报「车辆不可用」').toBeDefined();
+    expect(item!.taskIds).toContain(taskId);
+    expect(item!.vehicleCodes).toContain(plan.vehicleCode);
+    expect(item!.detail['vehicleStatus']).toBe('fault');
+    // 它属于「派发冲突与执行风险」这一节（依赖已生效派发），不是待派缺口
+    expect(PLAN_RISK_SECTION_OF['VEHICLE_UNAVAILABLE']).toBe('dispatch');
   });
 
   it('同一时刻两次扫描结果完全相同（同一个 db、同一个 now）', () => {

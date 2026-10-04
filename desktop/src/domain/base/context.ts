@@ -47,6 +47,14 @@ export const BASE_ACTIONS = {
   enable: 'enable',
   disable: 'disable',
   /**
+   * 人工报障（`fault`，`AGENTS.md` D-62）。
+   *
+   * 与 `disable` 的区别是**语义而不是存储**：停用是「这辆车不再投入使用」（D-07 软删），
+   * 报障是「这辆车暂时坏了、修好就能回来」。两者都保留数据行，故不能共用一个动作名 ——
+   * 事后按 `action='disable'` 查「谁把这辆车退役了」时，故障车不该混在里面。
+   */
+  fault: 'fault',
+  /**
    * 物理删除（目前只有禁行规则用，`design.md` D-07 的唯一例外）。
    *
    * 与 `disable` 的区别是**行还在不在**：软删留痕在数据里，物理删除的痕迹只剩审计。

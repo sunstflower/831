@@ -310,6 +310,32 @@ export function statusActionOf(tabKey: BaseDataTabKey, status: string): { label:
   return { label: '停用', next: 'disabled' };
 }
 
+/**
+ * 车辆「运维标记」动作（`AGENTS.md` D-62）：标记故障 / 恢复可用。
+ *
+ * 为什么单独一个动作而不是并进 `statusActionOf`：启停（`disabled`，D-07 软删）与
+ * 报障（`fault`，修好就回来）是**两件事**，共用一颗按钮会让「停用」这个动作
+ * 在一半的行上变成「报障」—— 过滤日志时再也说不清谁做过什么。
+ *
+ * 只在三个状态下出现（其余各由别的路径管）：
+ *   - `idle` / `reserved` → 「标记故障」（`busy` 不行，执行器正在驱动它，见 D-62；
+ *     `disabled` 已有「启用」按钮，再加一个只会让「这行到底要按哪颗」变模糊）；
+ *   - `fault` → 「恢复可用」（目标固定 `idle`，与 `disabled` 的出口同一口径）；
+ *   - `charging` / `offline`（执行器专管）、`busy`（执行中）、`disabled`（已停用）→ `null`。
+ */
+export function faultActionOf(tabKey: BaseDataTabKey, status: string): { label: string; next: 'fault' | 'idle' } | null {
+  if (tabKey !== 'vehicles') {
+    return null;
+  }
+  if (status === 'fault') {
+    return { label: '恢复可用', next: 'idle' };
+  }
+  if (status === 'idle' || status === 'reserved') {
+    return { label: '标记故障', next: 'fault' };
+  }
+  return null;
+}
+
 /** 该行的启停按钮是否要禁用：调度占用中的车不能停用（服务端会以 `VEHICLE.STATE_CONFLICT` 拒绝）。 */
 export function statusBlockedReason(tabKey: BaseDataTabKey, row: BaseDataRow): string | null {
   if (tabKey !== 'vehicles') {

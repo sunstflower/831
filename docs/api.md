@@ -432,8 +432,9 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 >      已是目标状态的启停请求**幂等返回且不写审计**（否则重复点两次会在审计里留下两条 disable）；
 >   3. **`map.updated` 事件在事务提交之后发**，渲染层收到事件时一定能读到新值。
 >
-> 易被误解的一处：车辆停用**不是**通用的 `{ "status": "disabled" }` 语义 ——
-> 取值必须是 §1.5 车辆状态枚举成员，且 `reserved`/`busy` 停用返回 `VEHICLE.STATE_CONFLICT`（见 §3.2.2）。
+> 易被误解的一处：车辆状态**不是**通用的 `{ "status": "disabled" }` 语义 ——
+> 取值必须在管理白名单（`idle`/`disabled`/`fault`）内，其余枚举成员报 `VALIDATION.FAILED`；
+> 白名单内也有状态冲突（`reserved`/`busy` 停用、`busy` 报障）返回 `VEHICLE.STATE_CONFLICT`（见 §3.2.2、D-62）。
 >
 > 六类资源的能力**并不对称**，而且都是契约决定的，不是实现缺口：
 > `sites`/`vehicles`/`nodes`/`edges` 有启停；`restrictions` 有**物理删除**但没有启停接口
@@ -457,9 +458,18 @@ query：`page/pageSize/keyword/role/status`。记录字段：`id/username/displa
 | `GET /api/vehicles/{id}` | 详情 |
 | `POST /api/vehicles` | 创建：`code/name/type/capacityKg/maxSpeedMps/currentNodeId?/x?/y?/battery?` |
 | `PUT /api/vehicles/{id}` | 更新基础属性（**不含 `status`**）；`currentNodeId` 可改为 `null`（解除绑定） |
-| `PATCH /api/vehicles/{id}/status` | `{ "status": "disabled" }` 停用（D-07 软删）或 `{ "status": "idle" }` 启用（恢复）。取值必须是 §1.5 车辆状态枚举的成员 —— **车辆域没有 `enabled`**（与 `sites` 不同）；调度占用中（`reserved`/`busy`）停用被拒 → `VEHICLE.STATE_CONFLICT` |
+| `PATCH /api/vehicles/{id}/status` | `{ "status": "disabled" }` 停用（D-07 软删） / `{ "status": "idle" }` 恢复 / `{ "status": "fault" }` **人工报障**（`AGENTS.md` D-62）。取值必须在管理白名单内（`shared/src/base-rules.ts` 的 `MANAGED_VEHICLE_STATUSES` = `idle` / `disabled` / `fault`）—— **车辆域没有 `enabled`**（与 `sites` 不同），`reserved` / `busy` / `charging` / `offline` 一律返回 `VALIDATION.FAILED`（`detail.fields.status`） |
 
-说明：`offline/fault/charging` 等运行态状态由执行器/心跳更新，管理接口不直接改；`online`（心跳标志）同样不由本接口维护。启用（`disabled → idle`）的目标状态固定为 `idle`，完整迁移表见 `design.md` §4.2。
+说明：`charging` / `offline` 等运行态由执行器/心跳更新，管理接口不直接改；`online`（心跳标志）同样不由本接口维护。**`fault` 是本接口唯一例外的运行态**：执行器判故障是 M7 的事，但「这车坏了」常常是现场先知道的事，没有手动入口就只能在「什么都不能做」与「停用（软删、且不能停在已派发车上）」之间二选一（D-62）。
+
+两类冲突返回 `VEHICLE.STATE_CONFLICT`（文案保持目录原话，具体原因在 `detail.reason` / `detail.hint`）：
+
+| `detail.reason` | 触发 | 为什么 |
+| --- | --- | --- |
+| `disableOccupied` | `reserved` / `busy` 的车被停用 | 停用是软删，会造出「任务挂着一辆已停用车」 |
+| `faultRunning` | `busy`（执行器正在驱动）的车被报障 | 否则会出现「故障车还在跑」——先在调度中心接管（暂停）再报障 |
+
+`reserved`（已派发未开跑）**允许**报障 —— 那正是报障最有用的时刻（还没出发，直接改派）。启用 / 恢复（`disabled → idle`、`fault → idle`）的目标状态都固定为 `idle`，完整迁移表见 `design.md` §4.2。
 
 **「车停在哪」有三种写法，优先级从高到低（2026-09-28 明确）**：
 

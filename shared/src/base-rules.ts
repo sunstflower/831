@@ -31,6 +31,7 @@ import {
   type RestrictionType,
   type SiteType,
   type TaskPriority,
+  type VehicleStatus,
   type VehicleType
 } from './enums.js';
 
@@ -151,6 +152,53 @@ export const isVehicleType = (value: unknown): value is VehicleType =>
 
 export const isEdgeStatus = (value: unknown): value is EdgeStatus =>
   typeof value === 'string' && (EDGE_STATUSES as readonly string[]).includes(value);
+
+/**
+ * **管理接口可以设置的车辆状态**（白名单，唯一作者）。
+ *
+ * 车辆七态里，`reserved` / `busy` 由调度占用（M4），`charging` / `offline` 是运行态读数
+ * （M7 执行器与心跳）—— 这三者管理接口不得代写。剩下的三个是运维真正需要改的：
+ *
+ *   - `idle`：恢复可用（`disabled` / `fault` 的唯一出口）；
+ *   - `disabled`：D-07 的软删停用；
+ *   - `fault`：**人工报障** —— 「这车坏了」是现场先知道、执行器后知道的事。
+ *     没有它就只能靠停用（软删）来表达「暂时别派这辆车」，而停用语义上更重、
+ *     也不能停在 `reserved` 车上（见下面的冲突规则）。见 `AGENTS.md` D-62。
+ *
+ * 用白名单而非「排除 reserved/busy/charging/offline」：后者在枚举新增取值时会默认放行，
+ * 而新增的运行态本该继续归执行器管。
+ */
+export const MANAGED_VEHICLE_STATUSES = ['idle', 'disabled', 'fault'] as const;
+
+export type ManagedVehicleStatus = (typeof MANAGED_VEHICLE_STATUSES)[number];
+
+/**
+ * 管理接口状态迁移的**冲突判定**（唯一作者）：主进程领域服务与浏览器 Mock 都调它，
+ * 两边不可能在「什么状态下不许改」上分叉。
+ *
+ * 两种情况各自有明确的理由，因此返回不同的原因而不是一个布尔：
+ *
+ *   - `disableOccupied`：`disabled` 是软删（语义上「这辆车不再投入使用」），
+ *     而 `reserved` / `busy` 说明它身上还挂着任务 —— 停用会造出「任务挂着一辆已停用车」，
+ *     也就是 seed 里那句「状态必须成对写」的反面。**不回收任务，只拒绝**（回收是 M3/M4 的事）。
+ *   - `faultRunning`：`fault` 是运行态。`busy` 意味着执行器正在驱动这辆车跑，
+ *     手动置故障会让「故障车还在跑」自相矛盾 —— 必须先在调度中心接管（暂停）再报障。
+ *     `reserved`（已派发未开跑）不在此列：那正是报障最有用的时刻（还没出发，直接改派）。
+ */
+export type VehicleStatusConflict = 'disableOccupied' | 'faultRunning';
+
+export function vehicleStatusConflictOf(
+  from: VehicleStatus,
+  to: ManagedVehicleStatus
+): VehicleStatusConflict | null {
+  if (to === 'disabled' && (from === 'busy' || from === 'reserved')) {
+    return 'disableOccupied';
+  }
+  if (to === 'fault' && from === 'busy') {
+    return 'faultRunning';
+  }
+  return null;
+}
 
 /**
  * M2 的 DTO 形状（写入用）。

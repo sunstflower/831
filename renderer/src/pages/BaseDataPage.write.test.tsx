@@ -181,6 +181,32 @@ describe('BaseDataPage · 停用 / 启用', () => {
     await waitFor(() => expect(within(rowOf('ST01')).getByText('启用')).toBeInTheDocument());
   });
 
+  it('运维标记（D-62）：空闲车可标记故障、再恢复可用，状态列随之变化', async () => {
+    await renderPage();
+    await loaded();
+    await openTab('车辆');
+    await waitFor(() => expect(screen.getByText('CAR-01')).toBeInTheDocument());
+
+    fireEvent.click(within(rowOf('CAR-01')).getByRole('button', { name: '标记故障' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已标记故障'));
+    await waitFor(() => expect(within(rowOf('CAR-01')).getByText('故障')).toBeInTheDocument());
+
+    fireEvent.click(within(rowOf('CAR-01')).getByRole('button', { name: '恢复可用' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已恢复可用'));
+    await waitFor(() => expect(within(rowOf('CAR-01')).getByText('空闲')).toBeInTheDocument());
+  });
+
+  it('执行中的车（AGV-01）没有「标记故障」按钮 —— 报障会让「故障车还在跑」', async () => {
+    await renderPage();
+    await loaded();
+    await openTab('车辆');
+    await waitFor(() => expect(screen.getByText('AGV-01')).toBeInTheDocument());
+
+    expect(within(rowOf('AGV-01')).queryByRole('button', { name: '标记故障' })).not.toBeInTheDocument();
+    // 已停用的车也没有：它已经有「启用」按钮了
+    expect(within(rowOf('AGV-01')).queryByRole('button', { name: '恢复可用' })).not.toBeInTheDocument();
+  });
+
   it('调度占用中的车不能停用：按钮直接禁用并说明原因（不让使用者点了才被拒）', async () => {
     await renderPage();
     await loaded();

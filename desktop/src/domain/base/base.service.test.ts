@@ -181,12 +181,40 @@ describe('vehicle.service', () => {
     expectDomainError(() => updateVehicle(ctx, vehicle.id, { battery: 101 }), 'VALIDATION.FAILED');
   });
 
-  it('启停：驳回执行器专管的状态（reserved / busy / charging…）', () => {
+  it('启停：驳回执行器专管的状态（reserved / busy / charging / offline）', () => {
     const vehicle = createVehicle(ctx, { code: 'V-93', name: 'V', type: 'agv', capacityKg: 10, maxSpeedMps: 1, x: 0, y: 0 });
-    for (const status of ['busy', 'reserved', 'charging', 'offline', 'fault']) {
+    for (const status of ['busy', 'reserved', 'charging', 'offline']) {
       const error = expectDomainError(() => setVehicleStatus(ctx, vehicle.id, status as never), 'VALIDATION.FAILED');
       expect(String((error.detail?.['fields'] as Record<string, string>)['status'])).toContain('idle');
     }
+  });
+
+  it('报障：空闲车可标记 fault，再「恢复可用」固定回 idle，审计动作是 fault / enable（D-62）', () => {
+    const vehicle = createVehicle(ctx, { code: 'V-98', name: 'V', type: 'agv', capacityKg: 10, maxSpeedMps: 1, x: 0, y: 0 });
+    expect(setVehicleStatus(ctx, vehicle.id, 'fault').status).toBe('fault');
+    // 幂等：重复报障不写第二条审计
+    expect(setVehicleStatus(ctx, vehicle.id, 'fault').status).toBe('fault');
+    expect(audits(db, 'fault').filter((row) => row.object_id === vehicle.id)).toHaveLength(1);
+    // 出口与「停用 → 启用」同一口径：固定 idle，不猜「故障前是什么」
+    expect(setVehicleStatus(ctx, vehicle.id, 'idle').status).toBe('idle');
+    expect(audits(db, 'enable').some((row) => row.object_id === vehicle.id)).toBe(true);
+    // 报障不是停用：审计里不该出现 disable
+    expect(audits(db, 'disable').some((row) => row.object_id === vehicle.id)).toBe(false);
+  });
+
+  it('报障：已派发未开跑（reserved）的车可以报障 —— 这正是「还没出发就发现坏了」的时刻', () => {
+    const vehicle = createVehicle(ctx, { code: 'V-99', name: 'V', type: 'agv', capacityKg: 10, maxSpeedMps: 1, x: 0, y: 0 });
+    db.prepare('UPDATE vehicles SET status = ? WHERE id = ?').run('reserved', vehicle.id);
+    expect(setVehicleStatus(ctx, vehicle.id, 'fault').status).toBe('fault');
+  });
+
+  it('报障：执行中（busy）的车不许直接标记故障 → VEHICLE.STATE_CONFLICT（否则「故障车还在跑」）', () => {
+    const vehicle = createVehicle(ctx, { code: 'V-100', name: 'V', type: 'agv', capacityKg: 10, maxSpeedMps: 1, x: 0, y: 0 });
+    db.prepare('UPDATE vehicles SET status = ? WHERE id = ?').run('busy', vehicle.id);
+    const error = expectDomainError(() => setVehicleStatus(ctx, vehicle.id, 'fault'), 'VEHICLE.STATE_CONFLICT');
+    // 具体原因放 detail（文案保持目录原话，见 `mock-parity` 的 message 一致性断言）
+    expect(error.detail?.['reason']).toBe('faultRunning');
+    expect(audits(db, 'fault').some((row) => row.object_id === vehicle.id)).toBe(false);
   });
 
   it('启停：占用中的车（busy / reserved）不许停用 → VEHICLE.STATE_CONFLICT', () => {

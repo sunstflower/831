@@ -18,6 +18,8 @@
  */
 import {
   deriveEdgeCode,
+  MANAGED_VEHICLE_STATUSES,
+  vehicleStatusConflictOf,
   validateEdgeInput,
   validateNodeInput,
   validateRestrictionInput,
@@ -259,23 +261,31 @@ function updateVehicle(store: MockBaseData, id: string, payload: Record<string, 
   return ok(vehicle);
 }
 
-/** 管理接口能设的车辆状态；其余五个由执行器维护（与 `vehicle.service.ts` 同一白名单）。 */
-const MANAGED_VEHICLE_STATUSES = ['idle', 'disabled'];
-
+/**
+ * 车辆状态写路径。
+ *
+ * 白名单与冲突判定都来自 `@udm/shared` 的 `base-rules.ts` —— 与主进程领域服务
+ * 调的是**同一个** `MANAGED_VEHICLE_STATUSES` / `vehicleStatusConflictOf`（D-34），
+ * 这里只负责把它落到内存数组上（存储那一半无法共享）。
+ */
 function setVehicleStatus(store: MockBaseData, id: string, payload: Record<string, unknown>): ApiResult<unknown> {
   const vehicle = store.vehicles.find((row) => row.id === id);
   if (!vehicle) {
     return fail('VEHICLE.NOT_FOUND', { id });
   }
   const status = payload.status;
-  if (typeof status !== 'string' || !MANAGED_VEHICLE_STATUSES.includes(status)) {
+  if (typeof status !== 'string' || !(MANAGED_VEHICLE_STATUSES as readonly string[]).includes(status)) {
     return invalidFields({ status: `管理接口只能设置为 ${MANAGED_VEHICLE_STATUSES.join(' / ')}；运行态由执行器维护` });
   }
   if (vehicle.status === status) {
     return ok(vehicle);
   }
-  if (status === 'disabled' && (vehicle.status === 'busy' || vehicle.status === 'reserved')) {
-    return fail('VEHICLE.STATE_CONFLICT', { id, status: vehicle.status, target: status });
+  const conflict = vehicleStatusConflictOf(
+    vehicle.status,
+    status as (typeof MANAGED_VEHICLE_STATUSES)[number]
+  );
+  if (conflict !== null) {
+    return fail('VEHICLE.STATE_CONFLICT', { id, status: vehicle.status, target: status, reason: conflict });
   }
   vehicle.status = status as VehicleListItem['status'];
   vehicle.updatedAt = nowIso();

@@ -358,18 +358,20 @@ interface DomainError {
 
 **车辆状态迁移（M2 拥有的部分）**：
 
-车辆 7 态中，本模块**只拥有**下表两条迁移；其余由 M4（计划流转）与 M7（运行态心跳）推进，本模块不得代写：
+车辆 7 态中，本模块**只拥有**下表三条迁移；其余由 M4（计划流转）与 M7（运行态心跳）推进，本模块不得代写：
 
 | 从 | 到 | 触发 | 前置 |
 | --- | --- | --- | --- |
-| `disabled` | `idle` | 管理接口启用 | 无未终结任务占用 |
-| `idle` / `charging` / `offline` / `fault` | `disabled` | 管理接口停用（D-07 软删） | 无（`reserved` / `busy` 不在此列，调用即 `VEHICLE.STATE_CONFLICT`） |
+| `disabled` / `fault` | `idle` | 管理接口启用 / 修复 | 无 |
+| `idle` / `charging` / `offline` / `fault` | `disabled` | 管理接口停用（D-07 软删） | 非 `reserved` / `busy`，否则 `VEHICLE.STATE_CONFLICT` |
+| `idle` / `reserved` / `charging` / `offline` | `fault` | 管理接口**人工报障**（`AGENTS.md` D-62） | 非 `busy`，否则 `VEHICLE.STATE_CONFLICT` |
 
 > **注意**：车辆域**没有** `enabled` 这个取值（`enabled` 属站点/节点/边）。管理接口只改 `status`，
 > 不写 `battery` / `loadKg` / `online` / `lastHeartbeatAt` 等运行态读数。
 > 上表外的迁移分两类：`reserved` / `busy` / `idle` 之间的流转已由 M4 定义（apply → `reserved`、start → `busy`、
 > recompute → 回收至 `idle`，见 `docs/module-M4-dispatch.md` §10 与 `docs/architecture.md` 车辆状态机图）；
-> `charging` / `offline` / `fault` 的进入与退出仍待 M7 补写（见 `docs/issues.md` ISS-016）。
+> `charging` / `offline` 的进入与退出、以及 `fault` 的**自动**进入（执行器判故障）仍待 M7 补写
+> （见 `docs/issues.md` ISS-016）。`fault` 之所以是管理动作里唯一的运行态：现场先知道车坏了。
 > 本模块实现口径见 `docs/module-M2-base-data.md` §6.1。
 
 ### 4.3 任务管理（M3）

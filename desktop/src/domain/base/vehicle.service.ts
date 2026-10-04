@@ -1,11 +1,15 @@
 /**
  * 车辆领域服务（M2，`docs/api.md` §3.2.2）。
  *
- * ## 本服务**只**拥有 `idle` 与 `disabled`
+ * ## 本服务拥有 `idle` / `disabled` / `fault` 三个端点
  *
- * 车辆的七个状态里，`reserved` / `busy` 由调度占用、`charging` / `offline` / `fault`
- * 由执行器与心跳维护（`docs/module-M2-base-data.md` §6.1）。管理接口能改的只有两个端点：
- * 停用（`→ disabled`）与启用（`disabled → idle`）。
+ * 车辆的七个状态里，`reserved` / `busy` 由调度占用（M4）、`charging` / `offline`
+ * 由执行器与心跳维护（M7，`docs/module-M2-base-data.md` §6.1）。管理接口能改的只有三个：
+ * 停用（`→ disabled`）、启用（`→ idle`）与**人工报障**（`→ fault`）。
+ *
+ * 为什么需要 `fault` 这一端：执行器判故障（心跳超时 / 电量耗尽）是 M7 的事，但
+ * 「这车坏了」常常是现场先知道的事 —— 没有手动入口，就只能在「什么都不能做」与
+ * 「停用（软删，语义更重且不能停在已派发的车上）」之间二选一。见 `AGENTS.md` D-62。
  *
  * 为什么启用时目标状态**固定**是 `idle` 而不是「恢复成停用前的状态」：
  * 「停用前是什么状态」这件事没有被保存过（`status` 是单列、不是历史）。
@@ -13,7 +17,13 @@
  * 它只是「可被调度」的候选，真正的可用性由调度约束再筛一遍。
  */
 import { randomUUID } from 'node:crypto';
-import { DomainError, validateVehicleInput, type VehicleStatus } from '@udm/shared';
+import {
+  DomainError,
+  MANAGED_VEHICLE_STATUSES,
+  vehicleStatusConflictOf,
+  validateVehicleInput,
+  type VehicleStatus
+} from '@udm/shared';
 import { nowIso, tx } from '../../db/index.js';
 import { findNodeById } from '../../db/repositories/graph.repo.js';
 import {
@@ -29,14 +39,6 @@ import { ensureCodeFree, ensureNodeExists, invalid } from './validate.js';
 export interface VehicleWriteOptions {
   traceId?: string;
 }
-
-/**
- * 管理接口允许设置的车辆状态（白名单，不是黑名单）。
- *
- * 用白名单而非「排除 reserved/busy」：后者在枚举新增取值时会默认放行，
- * 而新增的运行态（如 `maintenance`）本该归执行器管。
- */
-const MANAGED_STATUSES: readonly VehicleStatus[] = ['idle', 'disabled'];
 
 function requireVehicle(db: CrudContext['db'], id: string) {
   const vehicle = findVehicleById(db, id);
@@ -155,9 +157,9 @@ export function setVehicleStatus(
   return tx(ctx.db, () => {
     const before = requireVehicle(ctx.db, id);
     // 目标状态必须在白名单里 —— 这是「不是所有枚举值都能从这个接口改」的第一道闸
-    if (!MANAGED_STATUSES.includes(status)) {
+    if (!(MANAGED_VEHICLE_STATUSES as readonly string[]).includes(status)) {
       throw invalid({
-        status: `管理接口只能设置为 ${MANAGED_STATUSES.join(' / ')}；运行态由执行器维护`
+        status: `管理接口只能设置为 ${MANAGED_VEHICLE_STATUSES.join(' / ')}；运行态由执行器维护`
       });
     }
     if (before.status === status) {
@@ -165,15 +167,33 @@ export function setVehicleStatus(
       // 留下两条 disable，之后按审计追溯「谁停用了它」时会看到重复记录
       return before;
     }
-    if (status === 'disabled' && (before.status === 'busy' || before.status === 'reserved')) {
-      throw new DomainError('VEHICLE.STATE_CONFLICT', undefined, { id, status: before.status, target: status });
+    // 冲突判定（唯一作者在 `shared/src/base-rules.ts`，Mock 适配器调同一个函数）
+    const conflict = vehicleStatusConflictOf(before.status, status as (typeof MANAGED_VEHICLE_STATUSES)[number]);
+    if (conflict !== null) {
+      /*
+       * 错误**文案保持目录里的那句话**（`VEHICLE.STATE_CONFLICT`），具体原因放 `detail.hint`：
+       * `mock-parity.test.ts` 断言「同一请求两边 message 一字不差」，而 Mock 的 `fail()`
+       * 只从 `ERROR_CODES` 取文案 —— 在主进程单方面加一句更具体的话，会让两边
+       * 对同一个冲突说两种话（那正是该用例要防的形态）。针对性说明由
+       * 渲染层的 `statusBlockedReason` 在**点之前**给出，服务端只保留可机读的原因。
+       */
+      throw new DomainError('VEHICLE.STATE_CONFLICT', undefined, {
+        id,
+        status: before.status,
+        target: status,
+        reason: conflict,
+        hint:
+          conflict === 'disableOccupied'
+            ? '调度占用中（已预留 / 执行中）的车辆不能停用 —— 先取消任务或等它执行结束'
+            : '车辆正在执行任务，不能直接标记故障 —— 先在调度中心接管（暂停）这单，再报障'
+      });
     }
     const at = nowIso();
     setVehicleStatusRow(ctx.db, id, status, at);
     const after = requireVehicle(ctx.db, id);
     writeAudit(ctx.db, toAuditActor(ctx.actor), {
       module: 'base',
-      action: status === 'disabled' ? BASE_ACTIONS.disable : BASE_ACTIONS.enable,
+      action: status === 'disabled' ? BASE_ACTIONS.disable : status === 'fault' ? BASE_ACTIONS.fault : BASE_ACTIONS.enable,
       objectType: 'vehicle',
       objectId: id,
       before,

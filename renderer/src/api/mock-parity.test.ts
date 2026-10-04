@@ -370,6 +370,8 @@ describe('mock 适配器 · 与主进程写接口的错误码一致', () => {
     },
     { label: '车辆：占用中停用', path: `/api/vehicles/${SEED_IDS.vehicleAgv}/status`, method: 'PATCH', payload: { status: 'disabled' } },
     { label: '车辆：执行器专管状态', path: `/api/vehicles/${SEED_IDS.vehicleAgv}/status`, method: 'PATCH', payload: { status: 'charging' } },
+    // D-62：`fault` 是管理接口**允许**的取值，但执行中的车不许报障（两边都必须是 STATE_CONFLICT）
+    { label: '车辆：执行中报障', path: `/api/vehicles/${SEED_IDS.vehicleAgv}/status`, method: 'PATCH', payload: { status: 'fault' } },
     { label: '节点：坐标缺失', path: '/api/nodes', method: 'POST', payload: { code: 'N9', name: 'N' } },
     { label: '节点：编码重复', path: '/api/nodes', method: 'POST', payload: { code: 'N01', name: 'N', x: 0, y: 0 } },
     { label: '节点：被引用时禁用', path: `/api/nodes/${NODE_00}/status`, method: 'PATCH', payload: { status: 'disabled' } },
@@ -465,6 +467,27 @@ describe('mock 适配器 · 与主进程写接口的错误码一致', () => {
     // 防「循环提前退出 / 用例表被清空」把这条断言变成假通过
     expect(compared).toBe(cases.length);
     expect(compared).toBeGreaterThanOrEqual(20);
+    db.close();
+  });
+
+  it('运维标记成功路径也一致：两边都把空闲车置为 fault、再恢复成 idle（D-62）', async () => {
+    const { db, router, token } = setupRealRouter();
+    const mock = createMockAdapter();
+    const loginResult = await mock.invoke<{ token: string }>('/api/auth/login', { username: 'admin', password: 'admin123' }, null, { method: 'POST' });
+    const mockToken = loginResult.code === 0 ? loginResult.data.token : null;
+    const path = `/api/vehicles/${SEED_IDS.vehicleCarrier}/status`;
+
+    for (const [status, expected] of [
+      ['fault', 'fault'],
+      ['idle', 'idle']
+    ] as const) {
+      const realResult = await router.invoke({ path, method: 'PATCH', payload: { status }, token });
+      const mockResult = await mock.invoke(path, { status }, mockToken, { method: 'PATCH' });
+      expect(realResult.code, `real ${status}`).toBe(0);
+      expect(mockResult.code, `mock ${status}`).toBe(0);
+      expect(realResult.code === 0 && (realResult.data as { status: string }).status).toBe(expected);
+      expect(mockResult.code === 0 && (mockResult.data as { status: string }).status).toBe(expected);
+    }
     db.close();
   });
 

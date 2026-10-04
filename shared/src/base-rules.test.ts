@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FIELD_LIMITS,
+  MANAGED_VEHICLE_STATUSES,
   readEnum,
   readNumber,
   readText,
@@ -10,6 +11,7 @@ import {
   validateSiteInput,
   validateTemplateInput,
   validateVehicleInput,
+  vehicleStatusConflictOf,
   type FieldErrors
 } from './base-rules.js';
 
@@ -326,5 +328,26 @@ describe('validateTemplateInput', () => {
       ok: true,
       value: { defaultCargoKg: null, toSiteType: null }
     });
+  });
+});
+
+describe('车辆管理状态（D-62）', () => {
+  it('白名单只有 idle / disabled / fault —— 运行态（reserved/busy/charging/offline）一律挡在门外', () => {
+    expect([...MANAGED_VEHICLE_STATUSES]).toEqual(['idle', 'disabled', 'fault']);
+  });
+
+  it('冲突判定只拦两种情况，其余组合放行', () => {
+    // disabled 是软删：车身上还挂着任务时不能停用
+    expect(vehicleStatusConflictOf('busy', 'disabled')).toBe('disableOccupied');
+    expect(vehicleStatusConflictOf('reserved', 'disabled')).toBe('disableOccupied');
+    // fault 是运行态：执行器正在驱动它时不能报障（会变成「故障车还在跑」）
+    expect(vehicleStatusConflictOf('busy', 'fault')).toBe('faultRunning');
+    // 已派发未开跑的车可以报障 —— 这正是报障最有用的时刻
+    expect(vehicleStatusConflictOf('reserved', 'fault')).toBeNull();
+    expect(vehicleStatusConflictOf('idle', 'fault')).toBeNull();
+    expect(vehicleStatusConflictOf('idle', 'disabled')).toBeNull();
+    expect(vehicleStatusConflictOf('fault', 'idle')).toBeNull();
+    expect(vehicleStatusConflictOf('disabled', 'idle')).toBeNull();
+    expect(vehicleStatusConflictOf('charging', 'idle')).toBeNull();
   });
 });

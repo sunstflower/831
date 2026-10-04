@@ -7,6 +7,7 @@ import {
   formValuesOfRow,
   nodeOptionsOf,
   optionNeedsOf,
+  faultActionOf,
   statusActionOf,
   statusBlockedReason,
   targetTextOf
@@ -170,6 +171,20 @@ describe('启停动作', () => {
     for (const key of ['sites', 'nodes', 'edges'] as const) {
       expect(statusActionOf(key, 'enabled')).toEqual({ label: '停用', next: 'disabled' });
       expect(statusActionOf(key, 'disabled')).toEqual({ label: '启用', next: 'enabled' });
+    }
+  });
+
+  it('运维标记（D-62）：空闲/已预留可报障，故障可恢复，其余状态没有这颗按钮', () => {
+    expect(faultActionOf('vehicles', 'idle')).toEqual({ label: '标记故障', next: 'fault' });
+    expect(faultActionOf('vehicles', 'reserved')).toEqual({ label: '标记故障', next: 'fault' });
+    expect(faultActionOf('vehicles', 'fault')).toEqual({ label: '恢复可用', next: 'idle' });
+    // 执行器正在驱动（busy）/ 已停用（disabled）/ 执行器专管（charging/offline）都没有这颗按钮
+    for (const status of ['busy', 'disabled', 'charging', 'offline']) {
+      expect(faultActionOf('vehicles', status), status).toBeNull();
+    }
+    // 其它页签也不该出现车辆专属的运维标记
+    for (const key of ['sites', 'nodes', 'edges'] as const) {
+      expect(faultActionOf(key, 'enabled')).toBeNull();
     }
   });
 

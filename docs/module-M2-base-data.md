@@ -41,7 +41,7 @@ M2 是**唯一的主数据写入口**：站点、车辆、路网（节点 / 有�
 
 | 不负责 | 归属 | 原因 |
 | --- | --- | --- |
-| 车辆运行态（`charging` / `offline` / `fault` 的进入与退出） | M7 执行器 + 心跳 | 运行态由设备与执行器推进，管理接口不得代写（见 §6.1） |
+| 车辆**自动**运行态（`charging` / `offline` 的进入与退出，以及执行器判故障） | M7 执行器 + 心跳 | 运行态由设备与执行器推进，管理接口不得代写；唯一例外是**人工报障** `→ fault`（D-62，见 §6.1） |
 | 任务的状态迁移 | M3 | M2 只提供模板与站点校验 |
 | 路径计算与连通性判定 | M5 | M2 只保证图结构与引用自洽 |
 | 导入了什么文件、批次结果 | 导入管线（`docs/data-interfaces.md`） | M2 只消费导入后的落库结果 |
@@ -178,19 +178,24 @@ createTemplate(ctx, input): TaskTemplateDTO
 
 ## 6. 两条容易写错的规则
 
-### 6.1 车辆状态：M2 只拥有 `idle` / `disabled`
+### 6.1 车辆状态：M2 拥有 `idle` / `disabled` / `fault`
 
-车辆 7 态中的 `charging` / `offline` / `fault` 属**运行态**，其进入与退出条件是执行器与心跳的职责。
-`docs/api.md` §3.2.2 明确规定管理接口不直接改这些状态，本模块据此只实现**两个真正的迁移**
-（第三行为幂等 no-op）：
+车辆 7 态中的 `charging` / `offline` 属**运行态**，进入与退出是执行器与心跳的职责。
+`docs/api.md` §3.2.2 规定管理接口不得代写这些状态；**唯一例外是 `fault`** ——
+执行器判故障是 M7 的事，但「这车坏了」常常是现场先知道的事（`AGENTS.md` D-62）。
+白名单与冲突判定都来自 `shared/src/base-rules.ts`
+（`MANAGED_VEHICLE_STATUSES` / `vehicleStatusConflictOf`，主进程与 Mock 共用一份）。
 
 | 从 | 到 | 接口 | 前置 |
 | --- | --- | --- | --- |
-| `disabled` | `idle` | `PATCH /api/vehicles/{id}/status` `{status:"idle"}` | 该车无未终结任务（防御性校验，正常不应出现） |
-| `idle` / `charging` / `offline` / `fault` | `disabled` | 同上 `{status:"disabled"}` | 非 `reserved` / `busy`，否则 `VEHICLE.STATE_CONFLICT` |
-| `disabled` | `disabled` | 同上 `{status:"disabled"}` | **幂等**：不报错、不重复写审计（或按 §11 Q4 记一条 no-op，二选一） |
+| `disabled` / `fault` | `idle` | `PATCH /api/vehicles/{id}/status` `{status:"idle"}` | 无（出口固定 `idle`，不猜「之前是什么」） |
+| `idle` / `reserved` / `charging` / `offline` / `fault` | `disabled` | 同上 `{status:"disabled"}` | 非 `reserved` / `busy`（`reason=disableOccupied`），否则 `VEHICLE.STATE_CONFLICT` |
+| `idle` / `reserved` / `charging` / `offline` | `fault` | 同上 `{status:"fault"}` | 非 `busy`（`reason=faultRunning`），否则 `VEHICLE.STATE_CONFLICT` |
+| 目标 = 当前 | — | 同上 | **幂等**：不报错、不重复写审计（§11 Q4） |
 
-> `reserved`（已被计划占用）与 `busy`（执行中）**不在可停用之列** —— 必须先取消任务或等执行结束。
+> `reserved`（已被计划占用）**不能停用**、但**可以报障** —— 「已派发、还没出发就发现车坏了」
+> 正是报障最有用的时刻（此时改派代价最低）。`busy`（执行中）两者都不行：执行器正在驱动这辆车，
+> 停用会造出「任务挂着已停用车」、报障会造出「故障车还在跑」；先接管（暂停）再处理。
 > 从 `offline` / `fault` 直接停用是允许的（管理动作优先于运行态）：停用后即使心跳恢复，
 > 也须由管理接口显式启用才会回到 `idle`。
 
@@ -204,8 +209,9 @@ createTemplate(ctx, input): TaskTemplateDTO
 3. **不校验 `battery` / `loadKg`**：这两个字段是运行态**读数**，由执行器写；
    管理接口只允许创建时给初值，后续更新不得覆盖（否则会与真实读数打架）。
 
-> **与 ISS-016 的关系**：`charging` / `offline` / `fault` 的完整迁移表仍待 M7 补写，
-> 本模块**不臆测**其条件；本文只锁定 M2 真正拥有的这两条迁移。
+> **与 ISS-016 的关系**：`charging` / `offline` 的自动进入与退出条件仍待 M7 补写，
+> 本模块**不臆测**其条件；`fault` 的**自动**进入（执行器判故障，如心跳超时）同样待 M7。
+> 本文只锁定 M2 拥有的三条迁移（含 D-62 的人工报障）。
 
 ### 6.2 删除策略：一律软删，唯一例外是禁行规则
 
@@ -240,7 +246,8 @@ SELECT 1 FROM vehicles WHERE current_node_id = :nodeId LIMIT 1;   -- 按需
 | --- | --- | --- |
 | `create` | 新增任一主数据 | `before=null`，`after=完整记录` |
 | `update` | 更新基础属性 | 两者都是**变更前后的完整记录**（不是 diff） |
-| `status` | 启停 / 封路 | 两者都含 `status`，便于看出从哪到哪 |
+| `enable` / `disable` | 启用 / 停用（含封路） | 两者都含 `status`，便于看出从哪到哪 |
+| `fault` | 人工报障（车辆 `→ fault`，D-62） | 两者都含 `status`；与 `disable` 分开是因为「坏了要修」与「退役不用」不是一件事 |
 | `delete` | 仅禁行规则 | `before=原记录`，`after=null` |
 
 `objectType` 取 `shared/src/enums.ts` 的 `OBJECT_TYPES` 成员，对照如下：

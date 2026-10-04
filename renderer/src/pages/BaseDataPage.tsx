@@ -28,6 +28,7 @@ import {
   FORM_SPECS,
   buildWritePayload,
   emptyFormValues,
+  faultActionOf,
   formValuesOfRow,
   nodeOptionsOf,
   optionNeedsOf,
@@ -225,6 +226,25 @@ export function BaseDataPage() {
     }
   }
 
+  /**
+   * 运维标记：标记故障 / 恢复可用（`AGENTS.md` D-62）。
+   *
+   * 走的是与启停**同一个**接口（`PATCH .../status`），只是取值不同 ——
+   * 动作与文案由 `faultActionOf` 决定，页面不自己判断状态。
+   */
+  async function toggleFault(row: BaseDataRow) {
+    const action = faultActionOf(tabKey, String((row as { status?: string }).status ?? ''));
+    if (!action) {
+      return;
+    }
+    const outcome = await write.run(`${tab.path}/${row.id}/status`, 'PATCH', { status: action.next }, `已${action.label}“${rowTitleOf(row)}”`);
+    setNotice(outcome.ok ? outcome.message : null);
+    setActionError(outcome.ok ? null : (outcome.formError ?? '操作失败'));
+    if (outcome.ok) {
+      list.refresh();
+    }
+  }
+
   /** 物理删除（目前只有禁行规则）。**必须二次确认**：删掉的行不会进回收站。 */
   async function confirmDelete() {
     const row = pendingDelete;
@@ -388,8 +408,11 @@ export function BaseDataPage() {
                   // 启停按钮只在**有 status 列**的页签上出现：模板与禁行规则都没有
                   // 「一键启停」这回事（前者无状态列，后者的失效是要写理由的编辑动作）
                   const supportsStatus = tab.statusToggle !== false;
-                  const action = supportsStatus ? statusActionOf(tabKey, String((row as { status?: string }).status ?? '')) : null;
+                  const rowStatus = String((row as { status?: string }).status ?? '');
+                  const action = supportsStatus ? statusActionOf(tabKey, rowStatus) : null;
                   const blocked = supportsStatus ? statusBlockedReason(tabKey, row) : null;
+                  // 运维标记（只有车辆页签会返回非 null）：与启停并列的第二颗按钮，见 D-62
+                  const faultAction = supportsStatus ? faultActionOf(tabKey, rowStatus) : null;
                   return (
                     <tr key={row.id}>
                       {tab.columns.map((column) => (
@@ -412,6 +435,17 @@ export function BaseDataPage() {
                                 title={blocked ?? undefined}
                               >
                                 {action.label}
+                              </button>
+                            ) : null}
+                            {faultAction ? (
+                              <button
+                                type="button"
+                                className="udm-btn udm-btn--ghost"
+                                onClick={() => void toggleFault(row)}
+                                disabled={write.busy}
+                                title="人工报障：把车标记为故障（修好后点「恢复可用」）——派发到它的任务会在告警中心被列为执行风险"
+                              >
+                                {faultAction.label}
                               </button>
                             ) : null}
                             {tab.removable ? (
