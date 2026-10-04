@@ -8,10 +8,12 @@
  *
  * **谁在这里、谁不在这里**：按「有几个使用者」决定。
  *   - `TASK_STATUS_TONE` —— 监控工作台的任务进度条与 M3 任务页共用，故在这里；
- *   - 车队状态 / 告警级别的色调目前只有工作台用，就留在 `dashboard/model/summary.ts`。
+ *   - `VEHICLE_STATUS_TONE` —— 原只在工作台的车队分布条里，车辆中心（`pages/FleetPage.tsx`）
+ *     落地后出现第二个使用者，按本条规则上移到这里；
+ *   - 告警级别的色调目前仍只有工作台用，留在 `dashboard/model/summary.ts`。
  * 多一个使用者时把它搬过来，而不是在第二个模块里再写一份。
  */
-import type { TaskStatus } from '@udm/shared';
+import type { TaskStatus, VehicleStatus } from '@udm/shared';
 
 export type Tone = 'ok' | 'warn' | 'danger' | 'info' | 'dim';
 
@@ -61,4 +63,23 @@ export const TASK_STATUS_TONE: Record<TaskStatus, Tone> = {
   finished: 'dim',
   cancelled: 'dim',
   failed: 'danger'
+};
+
+/**
+ * 车辆状态 → tone。
+ *
+ * 判据与任务状态一致：只有「需要人介入或可能出错」的状态才给警示色 ——
+ * `idle` 是可用运力（ok），`reserved`/`busy` 是正常在途（info），
+ * `charging` 是计划内的等待（warn，提示运力暂时不可用），
+ * `offline`/`disabled` 是中性收尾（dim），只有 `fault` 是 danger。
+ * 一串全红的车队列表等于没有信号。
+ */
+export const VEHICLE_STATUS_TONE: Record<VehicleStatus, Tone> = {
+  idle: 'ok',
+  reserved: 'info',
+  busy: 'info',
+  charging: 'warn',
+  offline: 'dim',
+  fault: 'danger',
+  disabled: 'dim'
 };

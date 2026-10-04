@@ -34,6 +34,7 @@ import {
   MAX_PAGE_SIZE,
   SUPPORTED_DISPATCH_STRATEGIES,
   buildRouteGraph,
+  compositeScoreOf,
   createRunContext,
   evaluatePair,
   runDispatch,
@@ -320,8 +321,8 @@ export function mockDispatchRead(
 ): ApiResult<unknown> | null {
   if (path === '/api/dispatch/strategies') {
     const descriptions: Record<string, string> = {
-      greedy: '按优先级与时间窗逐个任务挑当前代价最小的车辆',
-      hungarian: '在整批任务上求总代价最小的指派',
+      greedy: '按优先级与时间窗逐个任务挑当前加权综合分最小的车辆',
+      hungarian: '在整批任务上求加权综合分总和最小的指派',
       genetic: '预留，二期实现'
     };
     // 与主进程 `listStrategies()` 同一份形状：`enabled` 由**已实现集合**决定
@@ -467,7 +468,7 @@ export function mockDispatchWrite(
       action: 'manual_assign',
       strategy: 'greedy',
       taskIds: [taskId],
-      summary: { totalTasks: 1, assigned: 1, rejectedCount: 0, totalCost: outcome.plan.cost, elapsedMs: 0 },
+      summary: { totalTasks: 1, assigned: 1, rejectedCount: 0, totalCost: compositeScoreOf([outcome.plan], 0), elapsedMs: 0 },
       rejected: [],
       reason,
       elapsedMs: 0,
@@ -743,7 +744,7 @@ function commitPlan(
           occupiedTo: input.plan.occupiedTo
         }
       ],
-      summary: { totalTasks: 1, assigned: 1, rejectedCount: 0, totalCost: input.plan.cost, elapsedMs: 0 }
+      summary: { totalTasks: 1, assigned: 1, rejectedCount: 0, totalCost: compositeScoreOf([input.plan], 0), elapsedMs: 0 }
     }
   };
 }
@@ -813,7 +814,7 @@ function applyStored(
     totalTasks: stored.summary.totalTasks,
     assigned: appliedPlans.length,
     rejectedCount: stored.summary.rejectedCount,
-    totalCost: stored.plans.reduce((sum, plan) => sum + plan.cost, 0),
+    totalCost: compositeScoreOf(stored.plans, stored.summary.rejectedCount),
     elapsedMs: stored.summary.elapsedMs
   };
   appendLog(store, {

@@ -13,7 +13,7 @@
  * 因此每条都带上「空驶多少秒、执行多少秒、什么时候完成」。拒绝同理：
  * 一句「载重超限」不告诉使用者超了多少，他只能去别处查。
  */
-import { DISPATCH_STRATEGY_LABELS, REJECT_REASON_LABELS } from '@udm/shared';
+import { DISPATCH_STRATEGY_LABELS, isLateWindowConflict, REJECT_REASON_LABELS } from '@udm/shared';
 import type { PlanPreview, RejectItem, StrategySummary, StrategyOutcome } from '@udm/shared';
 
 /**
@@ -69,9 +69,14 @@ export function rejectDetailSummary(item: RejectItem): string {
     case 'VEHICLE_NOT_AVAILABLE':
       return `${detail['vehicleCode'] ?? ''} 状态 ${detail['status'] ?? ''}`;
     case 'TIMEWINDOW_CONFLICT':
-      return typeof detail['lateS'] === 'number'
-        ? `预计晚点 ${detail['lateS']}s，超出容忍 ${detail['toleranceS']}s`
-        : `已在 ${String(detail['from'] ?? '').slice(11, 16)} ~ ${String(detail['to'] ?? '').slice(11, 16)} 被占用`;
+      // 同一个 code 覆盖两种情形（见 `docs/module-M4-dispatch.md` §5 步骤 5）：
+      // ① 预计完成晚于窗口末端超过容忍；② 与该车已排班次的占用区间相交。
+      // 判据用产出方显式给出的 `kind`，不再靠「detail 里有没有 lateS」反推 ——
+      // 两处消费方各推一遍就会漂移（渲染层曾因此把「被占用」印成「晚点 0s」）。
+      if (isLateWindowConflict(detail)) {
+        return `预计晚点 ${detail['lateS']}s，超出容忍 ${detail['toleranceS']}s`;
+      }
+      return `已在 ${String(detail['from'] ?? '').slice(11, 16)} ~ ${String(detail['to'] ?? '').slice(11, 16)} 被占用`;
     case 'BATTERY_INSUFFICIENT':
       return `完成后剩余 ${Number(detail['remainBattery'] ?? 0).toFixed(1)}%（下限 ${detail['minBattery']}%）`;
     case 'RESTRICTION_VIOLATED':
@@ -85,9 +90,9 @@ export function rejectDetailSummary(item: RejectItem): string {
   }
 }
 
-/** 策略小结：「策略 贪心 共指派 2/3，总代价 265.0，耗时 12ms」。 */
+/** 策略小结：「策略 贪心 共指派 2/3，加权综合分 265.0，耗时 12ms」。 */
 export function explainSummary(outcome: StrategyOutcome): string {
-  return `策略 ${STRATEGY_LABEL[outcome.strategy] ?? outcome.strategy} 共指派 ${outcome.summary.assigned}/${outcome.summary.totalTasks}，总代价 ${outcome.summary.totalCost.toFixed(1)}，耗时 ${Math.round(outcome.summary.elapsedMs)}ms`;
+  return `策略 ${STRATEGY_LABEL[outcome.strategy] ?? outcome.strategy} 共指派 ${outcome.summary.assigned}/${outcome.summary.totalTasks}，加权综合分 ${outcome.summary.totalCost.toFixed(1)}，耗时 ${Math.round(outcome.summary.elapsedMs)}ms`;
 }
 
 /**

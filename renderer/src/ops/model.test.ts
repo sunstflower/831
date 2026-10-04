@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { PlanAssignment, PlanRiskItem } from '@udm/shared';
+import type { PlanAssignment, PlanRiskItem, PlanRiskReport } from '@udm/shared';
 import {
   ALERT_STALE_MINUTES,
   RISK_LEVEL_TONE,
@@ -9,6 +9,7 @@ import {
   alertAgeOf,
   assignmentGroupsOf,
   batchAckNotice,
+  filterRiskReport,
   isOpenAlert,
   pageSummary,
   riskRowOf,
@@ -199,5 +200,70 @@ describe('风险预检表 · 长文本列必须允许换行', () => {
 
   it('建议动作列有宽度上限，避免它一条长句把整表撑开', () => {
     expect(opsCss).toMatch(/\.udm-risk__table td\.udm-risk__suggestion\s*\{[^}]*max-width:\s*\d+px/);
+  });
+});
+
+/**
+ * `filterRiskReport`：把「全量预检」裁成本批次相关的那几条（Req-M4-10）。
+ *
+ * 调度中心派发后要回答的是「**我这一批**接下来会撞上什么」，而 `/api/alerts/risks`
+ * 给的是全量。这里只做过滤与重新计数，**不重新判定** —— 判定逻辑若在这里复制一份，
+ * 同一个风险在两个页面上迟早会出现两种说法（D-34）。
+ */
+function riskItem(taskIds: string[], level: PlanRiskItem['level'] = 'warning'): PlanRiskItem {
+  return {
+    kind: 'VEHICLE_OVERLAP',
+    level,
+    message: '同一台车两单时间重叠',
+    suggestion: '错开时间窗或改派',
+    taskIds,
+    taskCodes: taskIds.map((id) => `T-${id}`),
+    vehicleIds: ['seed-veh-agv01'],
+    vehicleCodes: ['AGV-01'],
+    detail: { overlapFrom: '2026-09-28T12:00:00.000Z', overlapTo: '2026-09-28T12:30:00.000Z' }
+  };
+}
+
+function report(records: PlanRiskItem[]): PlanRiskReport {
+  return {
+    records,
+    total: records.length,
+    counts: {
+      critical: records.filter((item) => item.level === 'critical').length,
+      warning: records.filter((item) => item.level === 'warning').length,
+      info: records.filter((item) => item.level === 'info').length
+    },
+    scannedAt: '2026-09-28T12:00:00.000Z',
+    assignments: [],
+    // 待派缺口是**全量**事实：批次视图里也要照实说明「还有多少单没排上车」
+    unassignedTasks: [{ taskId: 'seed-task-p06', taskCode: 'T-DEMO-0007', timeWindowEnd: null }]
+  };
+}
+
+describe('调度中心 · 本批次风险过滤', () => {
+  it('没有报告，或没有指定批次 → 原样返回（宁可给全量，也不给一个空壳）', () => {
+    expect(filterRiskReport(null, ['a'])).toBeNull();
+    const full = report([riskItem(['a'])]);
+    expect(filterRiskReport(full, [])).toBe(full);
+  });
+
+  it('只保留任务列表里出现过的条目，并按过滤后的结果重新计数', () => {
+    const filtered = filterRiskReport(
+      report([riskItem(['a'], 'critical'), riskItem(['b'], 'warning'), riskItem(['c', 'a'], 'info')]),
+      ['a']
+    )!;
+    expect(filtered.records).toHaveLength(2);
+    expect(filtered.total).toBe(2);
+    expect(filtered.counts).toEqual({ critical: 1, warning: 0, info: 1 });
+    // 过滤是**只读**的：全量报告对象不被就地改写
+    expect(filtered.scannedAt).toBe('2026-09-28T12:00:00.000Z');
+    expect(filtered.unassignedTasks).toHaveLength(1);
+  });
+
+  it('批次里一条都不相关 → 空列表而不是回退成全量（「我这批没事」是有效结论）', () => {
+    const filtered = filterRiskReport(report([riskItem(['zzz'])]), ['a'])!;
+    expect(filtered.records).toEqual([]);
+    expect(filtered.total).toBe(0);
+    expect(filtered.counts).toEqual({ critical: 0, warning: 0, info: 0 });
   });
 });

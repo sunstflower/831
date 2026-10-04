@@ -356,7 +356,7 @@ seed 由代码执行（`desktop/src/db/seed.ts`），**幂等**：全部使用�
 | 模板 ×2 | 仓到仓标准配送、仓到充电桩回充 | `seed-tpl-std`、`seed-tpl-return` |
 | 设置 | design §4.10 键目录的默认值 | `dispatch.defaultStrategy`… |
 | 演示执行 ×1 组 | 任务 `running`（含进度）+ 路线（**每一段都是库中真实存在的边**）+ 告警 1 条（挂 DRN-01）；同时把 AGV-01 置 `busy`、`load_kg` 与任务载重一致 | `seed-task-demo`、`seed-route-demo`、`seed-alert-demo` |
-| 演示待派发 ×6 | `pending` 任务，供调度中心一打开就有活干；**时间窗跟着当前时刻刷新**（只在仍为 `pending` 时），否则这份演示数据过一天就会被 100% 以「时间窗冲突」拒绝 | `seed-task-p01`…`seed-task-p06` |
+| 演示待派发 | `pending` 任务，供调度中心一打开就有活干（条数、任务清单与每条的设计意图见 [`docs/seed-dispatch-diversity.md`](./seed-dispatch-diversity.md) 与 [`shared/src/seed-data.ts`](../shared/src/seed-data.ts)，本条不复述数值）；**时间窗跟着当前时刻刷新**（只在仍为 `pending` 时），否则这份演示数据过一天就会被 100% 以「时间窗冲突」拒绝 | `SEED_IDS.pendingTasks` |
 
 注意：seed **不写明文密码**；`admin123` 等仅在文档与演示说明中出现，DB 只存哈希。
 
@@ -372,12 +372,15 @@ seed 由代码执行（`desktop/src/db/seed.ts`），**幂等**：全部使用�
 （不能出现「running 任务挂在 idle 车上」），路线每一段也必须是真实存在的边。
 约束已由 `desktop/src/db/db.test.ts` 的用例固定。
 
-**演示待派发任务为什么有 6 条**（比 5 台车多）：任务数 ≤ 车辆数时两种策略都是
+**演示待派发任务为什么远多于车辆数**：任务数 ≤ 车辆数时两种策略都是
 「一车一单」、给出**完全一样**的计划，界面上「哪个策略更优」永远是平局；
-多出来的那一单只能靠**接力**（一辆车跑完一单再接下一单）派出，而接力只有贪心会做
+多出来的任务只能靠**接力**（一辆车跑完一单再接下一单）派出，而接力只有贪心会做
 （匈牙利是整体匹配），对比于是有了真实结论。这条与上一段一样，是**可执行的**：
 `renderer/src/api/mock-parity.test.ts` 断言「贪心里至少有一台车带两条计划，
-且两条计划的占用区间不重叠」。
+且两条计划的占用区间不重叠」。任务清单本身不在这里复述 ——
+它（连同「每条任务放大哪种差异」的设计意图）的唯一作者是
+[`shared/src/seed-data.ts`](../shared/src/seed-data.ts) 与
+[`docs/seed-dispatch-diversity.md`](./seed-dispatch-diversity.md)（D-34）。
 
 ## 5. 常用查询（Repository 参考）
 

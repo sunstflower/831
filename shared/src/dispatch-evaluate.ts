@@ -58,6 +58,7 @@ export function latest(a: number, b: number): number {
  * 因此结果按 key 缓存 —— 这是**性能**优化，不影响正确性：同 key 的输入完全一致。
  */
 import { MIN_BATTERY_PERCENT } from './constants.js';
+import { DISPATCH_UNSERVED_PENALTY_S } from './dispatch-types.js';
 import type { RejectReason, VehicleType } from './enums.js';
 import { buildRouteGraph, type RouteNodeInput } from './route-graph.js';
 import { searchRoute, type RouteGraph, type RouteSearchResult } from './route-search.js';
@@ -237,7 +238,7 @@ export function evaluatePair(
       task,
       'TIMEWINDOW_CONFLICT',
       `任务 ${task.code} 预计晚点 ${Math.round(lateS)}s，超出容忍 ${lateToleranceS}s`,
-      { taskCode: task.code, lateS: Math.round(lateS), toleranceS: lateToleranceS, expectedDoneAt: toIso(doneMs) }
+      { kind: 'late', taskCode: task.code, lateS: Math.round(lateS), toleranceS: lateToleranceS, expectedDoneAt: toIso(doneMs) }
     );
   }
 
@@ -245,6 +246,7 @@ export function evaluatePair(
   const conflict = own.find((slot) => slot.from < doneMs && t2 < slot.to);
   if (conflict) {
     return reject(task, 'TIMEWINDOW_CONFLICT', `${vehicle.code} 在 ${toIso(t2)} ~ ${toIso(doneMs)} 已被占用`, {
+      kind: 'occupied',
       vehicleId: vehicle.id,
       vehicleCode: vehicle.code,
       from: toIso(t2),
@@ -313,4 +315,36 @@ export function costOf(detail: CostDetail, weights: DispatchSnapshot['weights'])
     weights.late * detail.penaltyLateS +
     weights.chargeRisk * detail.chargeRisk
   );
+}
+
+/**
+ * 批次加权综合分（§7.3，界面 `summary.totalCost` 的**唯一算法**）：
+ *
+ *     Σ(已派发计划的 cost) + 未派发单数 × DISPATCH_UNSERVED_PENALTY_S
+ *
+ * 被拒任务必须计入 —— 否则「拒得多」会让分数更低，两个指派数不同的策略就不在同一杆秤上
+ * （`DISPATCH_UNSERVED_PENALTY_S` 的注释里有实测反例）。所有产出 `StrategySummary`
+ * 的地方都调这里，不各自写一份 `reduce`。
+ */
+export function compositeScoreOf(plans: readonly { cost: number }[], rejectedCount: number): number {
+  const served = plans.reduce((sum, plan) => sum + plan.cost, 0);
+  return served + rejectedCount * DISPATCH_UNSERVED_PENALTY_S;
+}
+
+/**
+ * `TIMEWINDOW_CONFLICT` 的**两种**情形里，这条是不是「晚点」那一种（剩下就是「被占用」）。
+ *
+ * 同一个 code 覆盖两件事（`docs/module-M4-dispatch.md` §5 步骤 5）：① 预计完成晚于窗口
+ * 末端且超出容忍；② 与该车已排班次的占用区间相交。两件事对调度员的下一步动作**不同**
+ * （调窗口 vs 换车 / 改派），所以界面必须分得开。
+ *
+ * 判据是产出方写进的 `detail.kind`，调用方**不再**用「detail 里有没有 `lateS`」反推：
+ * 主进程 `explain.ts` 与渲染层 `dispatch/model.ts` 各推一遍时，只改了一边，渲染层的
+ * 「拒绝原因」表把「被占用」印成了「预计晚点 0s，超出容忍 0s」（2026-10-03 走查发现）。
+ * `lateS` 回退分支只为兼容 `kind` 之前落到 `dispatch_logs.output_snapshot` 的旧记录。
+ */
+export function isLateWindowConflict(detail: Record<string, unknown>): boolean {
+  if (detail['kind'] === 'late') return true;
+  if (detail['kind'] === 'occupied') return false;
+  return typeof detail['lateS'] === 'number';
 }

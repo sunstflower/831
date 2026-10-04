@@ -1,7 +1,7 @@
 /**
  * 路由表（与 `design.md` §7.1 的页面清单对齐）。
  *
- * 九个模块的页面**全部已落地**，因此当前没有任何路由指向 `PlaceholderPage`。
+ * 十个模块的页面**全部已落地**（含车辆中心），因此当前没有任何路由指向 `PlaceholderPage`。
  * 保留它与其登记表 `app/modules.ts` 的 `PLANNED_MODULES` 是为了下一个模块：
  * 先登记「将来有什么能力、依赖哪些接口」再挂占位页，不静默给空白页。
  */
@@ -13,6 +13,7 @@ import {
   BaseDataPage,
   DashboardPage,
   DispatchPage,
+  FleetPage,
   LoginPage,
   SettingsPage,
   TasksPage,
@@ -34,9 +35,11 @@ export function App() {
       >
         <Route path="/" element={<DashboardPage />} />
         <Route path="/map" element={<MapView />} />
+        {/* 车辆中心：车队运行态读模型 + 单车轨迹抽屉（Req-M2-8 / Req-M7-6，D-59） */}
+        <Route path="/fleet" element={<FleetPage />} />
         {/*
          * 页面一律指向各自的组件；`PlaceholderPage` 现在**没有任何路由在用**（M1-M10
-         * 九个模块的页面都已落地）。保留它的唯一作用是：新增模块时先挂占位页，
+         * 十个模块的页面都已落地）。保留它的唯一作用是：新增模块时先挂占位页，
          * 而不是给一个空白页 —— `app/modules.ts` 的 `PLANNED_MODULES` 仍登记着
          * 「将来会有什么能力、依赖哪些接口」，占位页会把它渲出来。
          */}

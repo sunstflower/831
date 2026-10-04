@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DISPATCH_COST_WEIGHTS } from './constants.js';
 import type { RouteEdgeInput, RouteNodeInput, RouteRestrictionInput } from './route-graph.js';
-import { chargeRiskOf, costOf, createRunContext, evaluatePair, nearestNodeId, startNodeOf } from './dispatch-evaluate.js';
-import type { DispatchSnapshot, DispatchTaskView, DispatchVehicleView } from './dispatch-types.js';
+import { chargeRiskOf, compositeScoreOf, costOf, createRunContext, evaluatePair, nearestNodeId, startNodeOf } from './dispatch-evaluate.js';
+import { DISPATCH_UNSERVED_PENALTY_S, type DispatchSnapshot, type DispatchTaskView, type DispatchVehicleView } from './dispatch-types.js';
 
 const NOW = '2026-09-26T08:00:00.000Z';
 
@@ -128,6 +128,8 @@ describe('evaluate · §5 六步短路', () => {
     if (result.ok) return;
     expect(result.reject.reason).toBe('TIMEWINDOW_CONFLICT');
     expect(result.reject.detail.conflictWith).toBeDefined();
+    // 「被占用」这一种必须自报家门：界面与 explain 靠 `kind` 分辨，不靠反推
+    expect(result.reject.detail.kind).toBe('occupied');
   });
 
   it('步骤 5：别人的占用不影响本车', () => {
@@ -156,6 +158,7 @@ describe('evaluate · §5 六步短路', () => {
     if (result.ok) return;
     expect(result.reject.reason).toBe('TIMEWINDOW_CONFLICT');
     expect(result.reject.detail.lateS).toBeGreaterThan(300);
+    expect(result.reject.detail.kind).toBe('late');
   });
 
   it('步骤 5：窗口内轻微晚点只记罚分，不拒绝', () => {
@@ -215,6 +218,35 @@ describe('evaluate · 出发节点', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reject.reason).toBe('UNREACHABLE');
+  });
+});
+
+describe('批次加权综合分（§7.3）', () => {
+  it('= 已派发代价之和 + 未派发单数 × 未派发惩罚（被拒的不能记 0）', () => {
+    const plans = [{ cost: 10 }, { cost: 25.5 }];
+    expect(compositeScoreOf(plans, 0)).toBeCloseTo(35.5, 6);
+    expect(compositeScoreOf(plans, 2)).toBeCloseTo(35.5 + 2 * DISPATCH_UNSERVED_PENALTY_S, 6);
+  });
+
+  it('惩罚严格大于单条计划代价上限 →「能派就派」不会被反向激励', () => {
+    // 单条代价的上界 = 空驶+执行时长 × w1/w2 + 晚点容忍 300s × w4 + 续航风险上界 0.5 × w5。
+    // 1674 s 是**实测**值：在 30 节点 / 90 边的演示路网上穷举（车 × 有序节点对）得到的
+    // 最长「空驶 + 执行」时长 1673.3 s（AGV-01：DEPOT → GATE_N → N00）。地图变大后
+    // 这个数要重测 —— `desktop/src/domain/dispatch/dispatch.service.test.ts` 里有一条
+    // 按真实 seed 数据自动跑的同类护栏，改地图时它会先红。
+    const worstDriveS = 1674;
+    // `worstDriveS` 是「空驶 + 执行」的**合计**时长，故乘两者中较大的权重即可覆盖两者
+    const worstPlanCost =
+      worstDriveS * Math.max(DISPATCH_COST_WEIGHTS.deadhead, DISPATCH_COST_WEIGHTS.execute) +
+      300 * DISPATCH_COST_WEIGHTS.late +
+      0.5 * DISPATCH_COST_WEIGHTS.chargeRisk;
+    expect(DISPATCH_UNSERVED_PENALTY_S).toBeGreaterThan(worstPlanCost);
+  });
+
+  it('多派一单永远优于少派一单（即使那一单是最贵的一单）', () => {
+    const expensive = { cost: 1674 + 300 * DISPATCH_COST_WEIGHTS.late + 0.5 * DISPATCH_COST_WEIGHTS.chargeRisk };
+    const cheap = { cost: 0 };
+    expect(compositeScoreOf([expensive], 0)).toBeLessThan(compositeScoreOf([cheap], 1));
   });
 });
 

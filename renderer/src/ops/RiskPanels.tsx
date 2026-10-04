@@ -4,9 +4,12 @@
  * 告警列表回答「**已经**出了什么事」；这两个区块回答「按现在这份派发，
  * **接下来**会撞上什么」：
  *
- *   1. **任务冲突与超时预检** —— 车撞单、车不可用、电量不足、缺路线、预计超时、
+ *   1. **任务风险预检** —— 车撞单、车不可用、电量不足、缺路线、预计超时、
  *      窗口已过、以及还没排上车的任务。判断全部由主进程 / Mock 的后端给出
  *      （`GET /api/alerts/risks`），这里只负责渲染；
+ *      **分两节**（`planRiskSectionsOf`，口径的唯一作者在 `shared`）：依赖已生效派发的
+ *      「派发冲突与执行风险」在前、与派发无关的「待派与超时缺口」在后 ——
+ *      见 `ISS-096`：平铺在一张表里时，「一条都没派却在报冲突」是必然的误读；
  *   2. **任务分配派发** —— 按车辆分组列出已生效的派发（任务 → 车辆 → 时间区间），
  *      同一台车的第 2 单即为**接力**。
  *
@@ -23,13 +26,14 @@
  * 只有在没有风险时，区块才收敛成一行结论（`riskSummaryOf`）。
  */
 import { Link } from 'react-router-dom';
-import type { PlanRiskReport } from '@udm/shared';
+import { planRiskSectionsOf, type PlanRiskReport } from '@udm/shared';
 import { IconAlert, IconInfo } from '../components/icons';
 import { badgeToneClass, TASK_STATUS_TONE } from '../domain/tone';
 import { TASK_STATUS_LABEL } from '../domain/labels';
 import { useSelectionStore } from '../store/selection';
 import { vehicleNodeId } from '../map/model/ids';
-import { RISK_LEVEL_TONE, assignmentGroupsOf, riskRowOf, riskSummaryOf, shortTime } from './model';
+import { assignmentGroupsOf, riskSummaryOf, shortTime } from './model';
+import { RiskTable } from './RiskTable';
 
 interface RiskPanelsProps {
   report: PlanRiskReport | null;
@@ -41,20 +45,28 @@ interface RiskPanelsProps {
 export function RiskPanels({ report, loading, error, onRefresh }: RiskPanelsProps) {
   const select = useSelectionStore((state) => state.select);
   const groups = report ? assignmentGroupsOf(report.assignments) : [];
+  /*
+   * 分节只做分组，排序与分类都来自 `shared`（`planRiskSectionsOf`）——
+   * 界面不重新排一次，也不自己判断「哪一类算冲突」。
+   */
+  const sections = report ? planRiskSectionsOf(report.records) : [];
 
   return (
     <>
-      <section className="udm-card udm-risk" aria-label="任务冲突与超时预检">
+      <section className="udm-card udm-risk" aria-label="任务风险预检">
         <header className="udm-card__head">
-          <h3 className="udm-card__title">任务冲突与超时预检</h3>
+          <h3 className="udm-card__title">任务风险预检</h3>
           <span className="udm-card__aside">
             {error ? '读取失败' : loading && !report ? '扫描中…' : report ? riskSummaryOf(report.counts) : '—'}
           </span>
         </header>
         <div className="udm-card__body">
           <p className="udm-risk__lead">
-            按<strong>当前</strong>的车辆—任务—路线分配推算接下来会撞上什么：抢同一台车、车跑不了、
-            电量撑不到、缺路线、预计迟到、窗口已过，以及还没排上车的任务。
+            按<strong>当前</strong>的车辆—任务—路线分配推算接下来会撞上什么。下面分两节：
+            先看<strong>派发冲突与执行风险</strong>（抢同一台车、车跑不了、电量撑不到、缺路线、预计迟到）——
+            这一节只由已生效的派发算出来，<strong>还没派发就必然是空的</strong>；
+            再看<strong>待派与超时缺口</strong>（窗口已过、还没排上车）——它与有没有派发无关，
+            所以<strong>没派发也会出现</strong>。
             它们不是告警（没有发生），因此不能「认领」—— 要么处理掉，要么等它真的发生。
           </p>
 
@@ -71,7 +83,7 @@ export function RiskPanels({ report, loading, error, onRefresh }: RiskPanelsProp
               <span className="udm-spinner" aria-hidden="true" />
               <p className="udm-empty__title">正在扫描当前的派发…</p>
             </div>
-          ) : report.records.length === 0 ? (
+          ) : sections.length === 0 ? (
             <div className="udm-empty">
               <p className="udm-empty__title">没有发现任务冲突或超时</p>
               <p className="udm-empty__hint">
@@ -79,50 +91,30 @@ export function RiskPanels({ report, loading, error, onRefresh }: RiskPanelsProp
               </p>
             </div>
           ) : (
-            <div className="udm-table__wrap">
-              <table className="udm-table udm-risk__table">
-                <thead>
-                  <tr>
-                    <th>级别</th>
-                    <th>类型</th>
-                    <th>具体情况</th>
-                    <th>任务</th>
-                    <th>车辆</th>
-                    <th>建议动作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.records.map((item, index) => {
-                    const row = riskRowOf(item);
-                    return (
-                      <tr key={`${row.kind}-${row.taskIds.join('-')}-${index}`}>
-                        <td>
-                          <span className={badgeToneClass(RISK_LEVEL_TONE[row.level])}>
-                            {row.level === 'critical' ? '必须处理' : row.level === 'warning' ? '需留意' : '提示'}
-                          </span>
-                        </td>
-                        <td>{row.kindLabel}</td>
-                        <td className="udm-risk__message">{row.message}</td>
-                        <td>{row.tasks}</td>
-                        <td>{row.vehicles}</td>
-                        <td className="udm-risk__suggestion">{row.suggestion}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            sections.map((view) => (
+              <div key={view.section} className="udm-risk__section">
+                <div className="udm-risk__section-head">
+                  <h4 className="udm-risk__section-title">{view.title}</h4>
+                  <span className="udm-risk__section-count">{riskSummaryOf(view.counts)}</span>
+                </div>
+                <p className="udm-risk__section-hint">{view.hint}</p>
+                <RiskTable records={view.records} />
+                {/*
+                  「还有 N 条没排上车」这条结论只跟「待派」这一节有关：
+                  它数的是 pending 且没有任何计划的任务，放在第一节下面会读成冲突的一部分。
+                */}
+                {view.section === 'backlog' && report.unassignedTasks.length > 0 ? (
+                  <p className="udm-risk__foot">
+                    <IconInfo aria-hidden="true" />
+                    其中 <strong>{report.unassignedTasks.length}</strong> 条完全没有安排车辆
+                    （{report.unassignedTasks.slice(0, 6).map((row) => row.taskCode).join('、')}
+                    {report.unassignedTasks.length > 6 ? ' 等' : ''}）——
+                    <Link to="/dispatch">去调度中心派发</Link>。
+                  </p>
+                ) : null}
+              </div>
+            ))
           )}
-
-          {report && report.unassignedTasks.length > 0 ? (
-            <p className="udm-risk__foot">
-              <IconInfo aria-hidden="true" />
-              还有 <strong>{report.unassignedTasks.length}</strong> 条待派发任务没有安排车辆
-              （{report.unassignedTasks.slice(0, 6).map((row) => row.taskCode).join('、')}
-              {report.unassignedTasks.length > 6 ? ' 等' : ''}）——
-              <Link to="/dispatch">去调度中心派发</Link>。
-            </p>
-          ) : null}
         </div>
       </section>
 

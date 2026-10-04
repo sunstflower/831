@@ -16,6 +16,7 @@ import type {
   PlanAssignment,
   PlanRiskItem,
   PlanRiskKind,
+  PlanRiskReport,
   TaskStatus
 } from '@udm/shared';
 import { PLAN_RISK_LABELS, alertActionsOf } from '@udm/shared';
@@ -307,4 +308,31 @@ export function assignmentGroupsOf(rows: readonly PlanAssignment[]): AssignmentG
     group.relay = group.steps.length > 1;
   }
   return list;
+}
+
+/**
+ * 只保留与本批任务相关的预检条目（调度中心派发后的「本批次预检结论」用）。
+ *
+ * 判据是**任务 id 有交集**而不是「任务编码出现在 message 里」：一次风险（如车辆撞单）
+ * 天然横跨多条任务，用文本匹配会在文案改动时静默漏掉条目。
+ *
+ * 空 `taskIds` 视为「不过滤」，返回原报告 —— 调用方在还没有批次信息时不该看到一张空表
+ * （空表会被读成「没有风险」，与「还没扫描」是两回事）。
+ */
+export function filterRiskReport(report: PlanRiskReport | null, taskIds: readonly string[]): PlanRiskReport | null {
+  if (!report || taskIds.length === 0) {
+    return report;
+  }
+  const wanted = new Set(taskIds);
+  const records = report.records.filter((item) => item.taskIds.some((id) => wanted.has(id)));
+  const counts = { critical: 0, warning: 0, info: 0 };
+  for (const item of records) {
+    counts[item.level] += 1;
+  }
+  return {
+    ...report,
+    records,
+    total: records.length,
+    counts
+  };
 }

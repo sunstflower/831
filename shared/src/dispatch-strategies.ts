@@ -4,9 +4,9 @@
  * 任务按「优先级降序 → 时间窗升序」排序，逐个挑当前**代价最小**的可用车辆；
  * 选中即把占用槽写进本批的内存占用，后续任务立刻看得到（同一辆车不会被排两次重叠的活）。
  */
-import { PRIORITY_WEIGHT } from './enums.js';
+import { PRIORITY_WEIGHT, type RejectReason } from './enums.js';
 import type { RejectItem } from './types.js';
-import { createRunContext, evaluatePair, type PairFail, type PairPlan } from './dispatch-evaluate.js';
+import { compositeScoreOf, createRunContext, evaluatePair, type PairFail, type PairPlan } from './dispatch-evaluate.js';
 import type { DispatchSnapshot, DispatchTaskView, StrategyOutcome } from './dispatch-types.js';
 
 /**
@@ -34,6 +34,46 @@ function noCandidate(task: DispatchTaskView, vehicleCount: number): RejectItem {
   };
 }
 
+/**
+ * 拒绝原因的**信息量**排序（`ISS-093` 的修法）。
+ *
+ * 六步短路是按「车辆级 → 任务级」排的，但**不能直接按步号取最大** ——
+ * 第 1 步的 `VEHICLE_NOT_AVAILABLE` 只是「这台车现在没空」，可能换一台车就能跑，
+ * 而第 2 步的 `LOAD_EXCEEDED` 是这台车**根本装不下**。判据应该是
+ * 「**离能跑还差多少**」：越接近可行（或限制越临时），这条原因越可操作。
+ *
+ * 起因是演示数据里的一个反例：`AGV-01` 恒 `busy` 且恒在 `snapshot.vehicles` 首位，
+ * 「取第一个失败原因」于是把 11 条占用区间冲突全报成同一句「AGV-01 不可用」，
+ * 解释表看着像坏了，而真相是「四台可用车的班次都排满了」。
+ *
+ * 另一个方向的反例（同样必须成立）：900 kg 任务在 `CAR-02` 被预留后，
+ * 其余车都是 `LOAD_EXCEEDED`（装不下）。此时若优先报 `LOAD_EXCEEDED`，
+ * 就变成「没有车装得下 900 kg」—— **事实是有的，只是它现在不可用**。
+ *
+ * 于是顺序为：班次冲突 / 电量（只差资源，任务本身可做）→ 车辆不可用（临时状态）
+ * → 载重 / 不可达 / 禁行（这台车对这条任务的**固有**限制）。
+ * `NO_AVAILABLE_VEHICLE` 是「一台候选都没有」的兜底，恒排最后（正常不会参与比较）。
+ * 并列时保留先遇到的那条（`snapshot.vehicles` 顺序稳定 → 结果可复核）。
+ */
+const REJECT_STEP_ORDER: Record<RejectReason, number> = {
+  NO_AVAILABLE_VEHICLE: 0,
+  UNREACHABLE: 1,
+  RESTRICTION_VIOLATED: 2,
+  LOAD_EXCEEDED: 3,
+  VEHICLE_NOT_AVAILABLE: 4,
+  BATTERY_INSUFFICIENT: 5,
+  TIMEWINDOW_CONFLICT: 6
+};
+
+/** 从一组失败里挑一条最有信息量的（空数组返回 `null`，由调用方兜底）。 */
+export function mostInformativeReject(fails: readonly RejectItem[]): RejectItem | null {
+  let best: RejectItem | null = null;
+  for (const item of fails) {
+    if (!best || REJECT_STEP_ORDER[item.reason] > REJECT_STEP_ORDER[best.reason]) best = item;
+  }
+  return best;
+}
+
 export function runGreedy(snapshot: DispatchSnapshot): StrategyOutcome {
   const ctx = createRunContext(snapshot);
   const tasks = [...snapshot.tasks].sort(compareTasks);
@@ -43,14 +83,14 @@ export function runGreedy(snapshot: DispatchSnapshot): StrategyOutcome {
 
   for (const task of tasks) {
     let best: PairPlan | null = null;
-    let firstFail: PairFail['reject'] | null = null;
+    const fails: PairFail['reject'][] = [];
 
     for (const vehicle of snapshot.vehicles) {
       const result = evaluatePair(ctx, task, vehicle, { occupied: ctx.occupied });
       if (result.ok) {
         if (!best || result.plan.cost < best.plan.cost) best = result;
-      } else if (!firstFail) {
-        firstFail = result.reject;
+      } else {
+        fails.push(result.reject);
       }
     }
 
@@ -58,7 +98,7 @@ export function runGreedy(snapshot: DispatchSnapshot): StrategyOutcome {
       plans.push(best.plan);
       ctx.occupied.push(best.slot);
     } else {
-      rejected.push(firstFail ?? noCandidate(task, snapshot.vehicles.length));
+      rejected.push(mostInformativeReject(fails) ?? noCandidate(task, snapshot.vehicles.length));
     }
   }
 
@@ -70,7 +110,7 @@ export function runGreedy(snapshot: DispatchSnapshot): StrategyOutcome {
       totalTasks: snapshot.tasks.length,
       assigned: plans.length,
       rejectedCount: rejected.length,
-      totalCost: plans.reduce((sum, plan) => sum + plan.cost, 0),
+      totalCost: compositeScoreOf(plans, rejected.length),
       elapsedMs: 0
     }
   };
@@ -177,9 +217,9 @@ export function runHungarian(snapshot: DispatchSnapshot): StrategyOutcome {
   evaluated.forEach((row, index) => {
     const feasible = row.some((cell) => cell.ok);
     if (!feasible) {
-      const firstFail = row.find((cell): cell is PairFail => !cell.ok);
+      const fails = row.filter((cell): cell is PairFail => !cell.ok).map((cell) => cell.reject);
       const task = allTasks[index];
-      if (task) rejected.push(firstFail ? firstFail.reject : fallbackReject(task));
+      if (task) rejected.push(mostInformativeReject(fails) ?? fallbackReject(task));
     } else {
       remaining.push(index);
     }
@@ -248,7 +288,7 @@ export function runHungarian(snapshot: DispatchSnapshot): StrategyOutcome {
       totalTasks: snapshot.tasks.length,
       assigned: plans.length,
       rejectedCount: rejected.length,
-      totalCost: plans.reduce((sum, plan) => sum + plan.cost, 0),
+      totalCost: compositeScoreOf(plans, rejected.length),
       elapsedMs: 0
     }
   };

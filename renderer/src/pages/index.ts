@@ -3,6 +3,7 @@ export { AuditPage } from './AuditPage';
 export { BaseDataPage } from './BaseDataPage';
 export { DashboardPage } from './DashboardPage';
 export { DispatchPage } from './DispatchPage';
+export { FleetPage } from './FleetPage';
 export { LoginPage } from './LoginPage';
 export { PlaceholderPage } from './PlaceholderPage';
 export { SettingsPage } from './SettingsPage';

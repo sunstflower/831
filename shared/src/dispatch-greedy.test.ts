@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DISPATCH_COST_WEIGHTS } from './constants.js';
 import type { RouteEdgeInput, RouteNodeInput } from './route-graph.js';
 import { runGreedy } from './dispatch-strategies.js';
-import type { DispatchSnapshot, DispatchTaskView, DispatchVehicleView } from './dispatch-types.js';
+import { DISPATCH_UNSERVED_PENALTY_S, type DispatchSnapshot, type DispatchTaskView, type DispatchVehicleView } from './dispatch-types.js';
 
 const NOW = '2026-09-26T08:00:00.000Z';
 
@@ -120,9 +120,31 @@ describe('greedy（§7.1）', () => {
     expect(outcome.summary.totalTasks).toBe(2);
     expect(outcome.summary.assigned).toBe(1);
     expect(outcome.summary.rejectedCount).toBe(1);
-    expect(outcome.summary.totalCost).toBeCloseTo(outcome.plans[0]!.cost, 6);
+    // 加权综合分 = 已派发代价 + 未派发单数 × 未派发惩罚（§7.3）：被拒的 1 单必须计入，
+    // 否则「拒得多」会让分数更低、两个指派数不同的策略无法比较
+    expect(outcome.summary.totalCost).toBeCloseTo(outcome.plans[0]!.cost + DISPATCH_UNSERVED_PENALTY_S, 6);
     expect(outcome.summary.elapsedMs).toBe(0);
     expect(outcome.strategy).toBe('greedy');
+  });
+
+  it('拒绝原因取「更有信息量」的一条，而不是遍历到的第一台失败车辆（ISS-093）', () => {
+    // 第一台车 busy（恒 VEHICLE_NOT_AVAILABLE），真正的原因是第二台车已被本批占用
+    const vehicles = [vehicle({ id: 'v1', code: 'AGV-01', status: 'busy' }), vehicle({ id: 'v2', code: 'CAR-01' })];
+    const outcome = runGreedy(snapshot({ tasks: [task({ id: 'a', code: 'T-A' }), task({ id: 'b', code: 'T-B' })], vehicles }));
+    expect(outcome.plans).toHaveLength(1);
+    expect(outcome.rejected[0]?.reason).toBe('TIMEWINDOW_CONFLICT');
+  });
+
+  it('没有任何车装得下、且另一台只是不可用时，报 VEHICLE_NOT_AVAILABLE 而不是 LOAD_EXCEEDED', () => {
+    // 900kg：CAR-02 被预留（不可用），其余车装不下。此时若报「载重超限」，
+    // 就变成「没有车装得下 900kg」—— 事实是有的，只是它现在不可用。
+    const vehicles = [
+      vehicle({ id: 'v1', code: 'AGV-01', status: 'reserved', capacityKg: 500 }),
+      vehicle({ id: 'v2', code: 'AGV-02', capacityKg: 500 })
+    ];
+    const outcome = runGreedy(snapshot({ tasks: [task({ cargoKg: 900 })], vehicles }));
+    expect(outcome.plans).toHaveLength(0);
+    expect(outcome.rejected[0]?.reason).toBe('VEHICLE_NOT_AVAILABLE');
   });
 
   it('U10 确定性：同一快照跑两次逐字段相同', () => {

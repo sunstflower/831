@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DispatchLogListItem, PlanPreview, PreviewResult, RejectItem, StrategyResult, TaskListItem } from '@udm/shared';
 import {
   ALL_STRATEGIES_VALUE,
+  assignmentDiffsOf,
   candidateOptions,
   canApply,
   confirmLinesOf,
@@ -9,6 +10,7 @@ import {
   logRowOf,
   differenceLinesOf,
   durationText,
+  metricComparisonOf,
   outcomeMetricsOf,
   outcomeOf,
   outcomeRowOf,
@@ -139,7 +141,7 @@ describe('调度中心 · 策略与推荐', () => {
     expect(strategyLabel('hungarian')).toBe('匈牙利');
   });
 
-  it('推荐：先比指派数、再比总代价，并在两策略相同时明说「一致」', () => {
+  it('推荐：先比指派数、再比加权综合分，并在两策略相同时明说「一致」', () => {
     const greedy = outcome({ strategy: 'greedy', plans: [plan()] });
     const hungarian = outcome({
       strategy: 'hungarian',
@@ -167,7 +169,7 @@ describe('调度中心 · 策略与推荐', () => {
     expect(recommendationOf([]).strategy).toBeNull();
   });
 
-  it('对比表一行里同时有指派数 / 拒绝数 / 总代价 / 耗时，并标出推荐项', () => {
+  it('对比表一行里同时有指派数 / 拒绝数 / 加权综合分 / 耗时，并标出推荐项', () => {
     const row = outcomeRowOf(outcome(), 'greedy');
     expect(row).toMatchObject({ label: '贪心', assigned: 1, totalTasks: 2, rejectedCount: 1, totalCost: '66.6', elapsedMs: 12, recommended: true });
     expect(outcomeRowOf(outcome({ strategy: 'hungarian' }), 'greedy').recommended).toBe(false);
@@ -204,6 +206,33 @@ describe('调度中心 · 计划与拒绝行', () => {
     expect(rejectDetailOf(reject({ reason: 'VEHICLE_NOT_AVAILABLE', detail: {} }))).toBe(' 当前状态 ');
   });
 
+  it('时间窗冲突的两种情形分得开：晚点 / 被占用（走查回归：后者曾被印成「晚点 0s」）', () => {
+    // ① 晚点：预计完成晚于窗口末端超过容忍
+    expect(
+      rejectDetailOf(
+        reject({ reason: 'TIMEWINDOW_CONFLICT', detail: { kind: 'late', lateS: 433, toleranceS: 300 } })
+      )
+    ).toBe('预计晚点 433s，超出容忍 300s');
+    // ② 被占用：与该车已排班次的占用区间相交 —— detail 里根本没有 lateS
+    const occupied = rejectDetailOf(
+      reject({
+        reason: 'TIMEWINDOW_CONFLICT',
+        detail: {
+          kind: 'occupied',
+          vehicleCode: 'CAR-01',
+          from: '2026-10-03T04:33:24.000Z',
+          to: '2026-10-03T04:41:24.000Z'
+        }
+      })
+    );
+    expect(occupied).toBe('CAR-01 在 04:33:24 ~ 04:41:24 已被占用');
+    expect(occupied).not.toContain('晚点');
+    // 兼容 `kind` 之前落库的旧快照：没有 kind 时仍按「有没有 lateS」判
+    expect(rejectDetailOf(reject({ reason: 'TIMEWINDOW_CONFLICT', detail: { lateS: 433, toleranceS: 300 } }))).toBe(
+      '预计晚点 433s，超出容忍 300s'
+    );
+  });
+
   it('二次确认清单逐条列出「任务 → 车辆」与预计完成时刻，并单独列出被拒的', () => {
     const lines = confirmLinesOf(outcome(), codes);
     expect(lines).toEqual(['T20260926-0001 → CAR-01（空驶 0s + 执行 67s，预计 08:06:07 完成）']);
@@ -212,7 +241,7 @@ describe('调度中心 · 计划与拒绝行', () => {
 });
 
 describe('调度中心 · 日志与请求体', () => {
-  it('日志行把小结拼成「派 x/y · 拒 n · 代价 · 耗时」', () => {
+  it('日志行把小结拼成「派 x/y · 拒 n · 加权综合分 · 耗时」', () => {
     const record: DispatchLogListItem = {
       id: 'log-1',
       requestId: 'req-1',
@@ -228,7 +257,7 @@ describe('调度中心 · 日志与请求体', () => {
     };
     const row = logRowOf(record);
     expect(row).toMatchObject({ action: '手动指派', strategy: '贪心', taskCount: 1, reason: '客户指定', operator: '调度员' });
-    expect(row.summary).toBe('派 1/1 · 拒 0 · 代价 12.3 · 7ms');
+    expect(row.summary).toBe('派 1/1 · 拒 0 · 加权综合分 12.3 · 7ms');
     // 预览 / 应用没有原因：显示占位符而不是空白（空白看起来像「这条日志缺字段」）
     expect(logRowOf({ ...record, reason: null, operatorName: null }).reason).toBe('—');
     expect(logRowOf({ ...record, reason: null, operatorName: null }).operator).toBe('—');
@@ -254,7 +283,7 @@ describe('调度中心 · 日志与请求体', () => {
     expect(row.summary).not.toContain('派 0/1');
     // 其余动作仍是四件事一起说
     expect(logRowOf({ ...recompute, action: 'apply', elapsedMs: 3, summary: { totalTasks: 2, assigned: 1, rejectedCount: 1, totalCost: 9.5, elapsedMs: 3 } }).summary).toBe(
-      '派 1/2 · 拒 1 · 代价 9.5 · 3ms'
+      '派 1/2 · 拒 1 · 加权综合分 9.5 · 3ms'
     );
   });
 
@@ -367,5 +396,115 @@ describe('调度中心 · 参数对比与接力', () => {
     expect(groups[1]!.steps[0]!.beginsAt).toBe('08:05:00');
     expect(groups[1]!.steps[1]!.taskCode).toBe('T-DEMO-0002');
     expect(vehiclePlanGroupsOf(outcome({ plans: [] }), codes)).toEqual([]);
+  });
+});
+
+describe('调度中心 · 差异对照（逐指标 / 逐任务）', () => {
+  const codes = taskCodesOf([
+    task({ id: 't-1', code: 'T-DEMO-0001' }),
+    task({ id: 't-2', code: 'T-DEMO-0002' }),
+    task({ id: 't-3', code: 'T-DEMO-0003' })
+  ]);
+
+  /** 便宜的一单：里程 40 m、执行 20 s、加权综合分 40。 */
+  const cheapPlan = (over: Partial<PlanPreview> = {}) =>
+    plan({
+      route: { fromNodeId: 'a', toNodeId: 'b', nodeIds: ['a', 'b'], distanceM: 40, durationS: 20 },
+      cost: 40,
+      costDetail: { deadheadTimeS: 0, executeTimeS: 20, waitTimeS: 0, penaltyLateS: 0, chargeRisk: 0 },
+      occupiedTo: '2026-09-26T08:05:10.000Z',
+      ...over
+    });
+
+  const greedy = outcome({
+    strategy: 'greedy',
+    plans: [plan({ taskId: 't-1', cost: 100 })],
+    rejected: []
+  });
+  const hungarian = outcome({
+    strategy: 'hungarian',
+    plans: [cheapPlan({ taskId: 't-1' })],
+    rejected: [reject({ taskId: 't-2' })]
+  });
+
+  it('两个策略才谈得上对照；单策略返回 null 而不是编一张空表', () => {
+    expect(metricComparisonOf([greedy], 'greedy')).toBeNull();
+    expect(metricComparisonOf([greedy, hungarian], 'greedy')).not.toBeNull();
+    expect(assignmentDiffsOf([greedy], codes, 'greedy')).toBeNull();
+  });
+
+  it('推荐策略排在基准列；非基准列给带符号差值，并按指标方向判优劣', () => {
+    // 推荐匈牙利（虽然它拒了一单）—— 验证基准列跟着推荐走，而不是固定取第一个
+    const compare = metricComparisonOf([greedy, hungarian], 'hungarian')!;
+    expect(compare.columns.map((column) => column.strategy)).toEqual(['hungarian', 'greedy']);
+    expect(compare.columns[0]!.base).toBe(true);
+    expect(compare.columns[1]!.base).toBe(false);
+
+    const rowOf = (key: string) => compare.rows.find((row) => row.key === key)!;
+    // 拒绝：贪心 0 拒（更好），差值是相对基准的 +1
+    expect(rowOf('rejected').texts).toEqual(['1', '0']);
+    expect(rowOf('rejected').deltas[1]).toBe('-1 单');
+    expect(rowOf('rejected').verdicts[1]).toBe('better');
+    // 里程：基准 40 m，贪心 100 m → +60 m 且更差
+    expect(rowOf('distance').texts).toEqual(['40 m', '100 m']);
+    expect(rowOf('distance').deltas[1]).toBe('+60 m');
+    expect(rowOf('distance').verdicts[1]).toBe('worse');
+    // 加权综合分同理
+    expect(rowOf('cost').texts).toEqual(['40.0', '100.0']);
+    expect(rowOf('cost').deltas[1]).toBe('+60.0');
+    // 用车不判优劣：有展示值但没有差值、没有优劣标记
+    expect(rowOf('fleet').deltas[1]).toBe('');
+    expect(rowOf('fleet').verdicts[1]).toBe('same');
+    // 基准列永远是 base + 空差值
+    for (const row of compare.rows) {
+      expect(row.deltas[0], row.key).toBe('');
+      expect(row.verdicts[0], row.key).toBe('base');
+    }
+  });
+
+  it('单车平均抵消「派得少就天然省」：合计更小但每单更贵时也读得出来', () => {
+    // 贪心派 3 单共 300 m，匈牙利派 1 单 40 m —— 合计匈牙利小，但每单平均 40 < 100 仍然更优
+    const many = outcome({
+      strategy: 'greedy',
+      plans: [
+        plan({ taskId: 't-1', cost: 100 }),
+        plan({ taskId: 't-2', cost: 100 }),
+        plan({ taskId: 't-3', cost: 100 })
+      ],
+      rejected: []
+    });
+    const few = outcome({ strategy: 'hungarian', plans: [cheapPlan({ taskId: 't-1' })], rejected: [] });
+    const compare = metricComparisonOf([many, few], 'greedy')!;
+    const avg = compare.rows.find((row) => row.key === 'avgDistance')!;
+    expect(avg.texts).toEqual(['100 m', '40 m']);
+    expect(avg.deltas[1]).toBe('-60 m');
+    expect(avg.verdicts[1]).toBe('better');
+  });
+
+  it('派单差异只列「不一致」的行，没派的那一方是 null（界面显示未派发）', () => {
+    const a = outcome({
+      strategy: 'greedy',
+      plans: [
+        plan({ taskId: 't-1', vehicleCode: 'CAR-01' }),
+        plan({ taskId: 't-2', vehicleCode: 'CAR-02' }),
+        // t-3 两边都派给 AGV-02 —— 不是差异，不该出现在表里
+        plan({ taskId: 't-3', vehicleCode: 'AGV-02' })
+      ],
+      rejected: []
+    });
+    const b = outcome({
+      strategy: 'hungarian',
+      plans: [
+        plan({ taskId: 't-1', vehicleCode: 'DRN-01' }),
+        plan({ taskId: 't-3', vehicleCode: 'AGV-02' })
+      ],
+      rejected: [reject({ taskId: 't-2' })]
+    });
+    const diff = assignmentDiffsOf([a, b], codes, 'greedy')!;
+    expect(diff.columns.map((column) => column.label)).toEqual(['贪心', '匈牙利']);
+    expect(diff.rows.map((row) => row.taskCode)).toEqual(['T-DEMO-0001', 'T-DEMO-0002']);
+    expect(diff.rows[0]!.vehicles.map((cell) => cell.vehicleCode)).toEqual(['CAR-01', 'DRN-01']);
+    // 匈牙利没派 t-2：null 就是「未派发」的数据形态
+    expect(diff.rows[1]!.vehicles.map((cell) => cell.vehicleCode)).toEqual(['CAR-02', null]);
   });
 });

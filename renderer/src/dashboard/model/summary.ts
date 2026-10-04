@@ -16,7 +16,7 @@
  */
 import type { AlertLevel, AlertStatus, TaskStatus, VehicleStatus } from '@udm/shared';
 import type { MapAlert, MapOverview, MapTask } from '../../api/types';
-import { TASK_STATUS_TONE, toneClass, type Tone } from '../../domain/tone';
+import { TASK_STATUS_TONE, VEHICLE_STATUS_TONE, toneClass, type Tone } from '../../domain/tone';
 import {
   ALERT_LEVEL_LABEL,
   ALERT_STATUS_LABEL,
@@ -111,17 +111,6 @@ export interface FleetBucket {
  */
 const FLEET_ORDER: VehicleStatus[] = ['idle', 'reserved', 'busy', 'charging', 'offline', 'fault', 'disabled'];
 
-/** 状态 → tone：只有「需要人介入」的状态才给警示色，避免整条图都是红的。 */
-const FLEET_TONE: Record<VehicleStatus, Tone> = {
-  idle: 'ok',
-  reserved: 'info',
-  busy: 'info',
-  charging: 'warn',
-  offline: 'dim',
-  fault: 'danger',
-  disabled: 'dim'
-};
-
 /** 车辆离线 / 故障 / 停用不进入调度候选集（Req-M2-7）。 */
 const SCHEDULABLE: VehicleStatus[] = ['idle', 'reserved', 'busy', 'charging'];
 
@@ -135,7 +124,7 @@ export function buildFleetBuckets(overview: MapOverview): FleetBucket[] {
       label: VEHICLE_STATUS_LABEL[status],
       count,
       ratio: total === 0 ? 0 : count / total,
-      tone: FLEET_TONE[status],
+      tone: VEHICLE_STATUS_TONE[status],
       schedulable: SCHEDULABLE.includes(status)
     };
   });

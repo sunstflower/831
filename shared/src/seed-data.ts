@@ -149,18 +149,38 @@ const DEMO_TASK = {
 } as const;
 
 /**
- * 6 条待派发任务（**比车辆多一条**）。
+ * 待派发任务清单（**远多于可用车辆数**）。
  *
- * 为什么多一条：任务数 ≤ 车辆数时，贪心与匈牙利都只能「一车一单」，
+ * 为什么必须多于车辆数：任务数 ≤ 车辆数时，贪心与匈牙利都只能「一车一单」，
  * 两种策略会给出完全相同的计划 —— 界面上「哪个策略更优」永远是平局。
- * 多出来的那一单只能靠**接力**（一辆车跑完一单再接下一单）派出，
+ * 多出来的任务只能靠**接力**（一辆车跑完一单再接下一单）派出，
  * 而接力只有贪心会做（匈牙利是整体匹配，一辆车只接一单），对比于是有了真实结论。
+ *
+ * ## 每条任务是来「放大哪一种差异」的（删之前先读这段）
+ *
+ * 扩容的目标不是「多几行数据」，而是让两个策略在**更多维度**上分开：
+ *   - **重货**（载重只有 1200 kg 车型能接）：把「唯一的车该留给谁」变成分水岭 ——
+ *     贪心按优先级逐单挑车，可能先把它用在小件上；匈牙利在整批上会留给重货。
+ *   - **中重件**（只有 800 kg 以上车型能接）：制造「大车不够分」，
+ *     匈牙利必须放弃某些单，而贪心能靠接力排下。
+ *   - **紧窗小件**：时间窗最短且落进无人机能力，逼出两种策略在接力顺序上的不同。
+ *   - **短途小件**（起终点相邻）：执行段短，能塞进某台车已排班次之间的空档，
+ *     于是贪心的「接力」不再是偶然 —— 它能把一台车填得更满，匈牙利则一车只接一单。
+ *
+ * 短途件的起终点**必须落在有向边的正确方向上**：样本路网里
+ * `E_N12_N13` 被占道封路（`campus.obstacles.rou.xml` 的 `OBST_1`），
+ * 反向的 `E_N12_N13_R` 却畅通 —— 同一对站点换个方向，执行段就从 150 m 变成绕行 450 m，
+ * 「短途」就不再短（这一条是实测踩出来的，改任务前先跑一次调度预览）。
+ *
+ * 新任务一律**追加在尾部**：`code` 由下标派生（`T-DEMO-<index+2>`），
+ * 追加不会改动既有任务的编码，引用旧编码的用例与文档因此保持稳定。
  */
 const SEED_PENDING: Array<{
   from: string;
   to: string;
   cargoKg: number;
   priority: TaskPriority;
+  /** 时间窗长度（分钟）：`[start, start + windowMinutes]`。 */
   windowMinutes: number;
   title: string;
 }> = [
@@ -169,7 +189,35 @@ const SEED_PENDING: Array<{
   { from: 'ST09', to: 'DEPOT', cargoKg: 60, priority: 'normal', windowMinutes: 240, title: '北苑宿舍 → 配送中心 回收空箱' },
   { from: 'ST04', to: 'ST10', cargoKg: 200, priority: 'high', windowMinutes: 120, title: '教学楼A → 学生活动中心 物资转运' },
   { from: 'ST07', to: 'ST11', cargoKg: 30, priority: 'low', windowMinutes: 240, title: '体育馆 → 国际交流中心 器材归还' },
-  { from: 'ST12', to: 'ST01', cargoKg: 300, priority: 'urgent', windowMinutes: 45, title: '西区公寓 → 南苑宿舍 急需物资' }
+  { from: 'ST12', to: 'ST01', cargoKg: 300, priority: 'urgent', windowMinutes: 45, title: '西区公寓 → 南苑宿舍 急需物资' },
+  // —— 本轮扩容：让两个策略在指派车、里程、完成时刻上分出更大的差 ——
+  { from: 'ST05', to: 'ST10', cargoKg: 900, priority: 'high', windowMinutes: 240, title: '实验楼 → 学生活动中心 重型设备转运' },
+  { from: 'ST01', to: 'ST09', cargoKg: 45, priority: 'urgent', windowMinutes: 60, title: '南苑宿舍 → 北苑学生宿舍 急救药品' },
+  { from: 'ST10', to: 'ST05', cargoKg: 600, priority: 'high', windowMinutes: 150, title: '学生活动中心 → 实验楼 设备回运' },
+  // 短途件：起终点都在某台车的驻点附近，执行段短，能塞进它已排班次的空档
+  { from: 'ST09', to: 'ST04', cargoKg: 45, priority: 'normal', windowMinutes: 240, title: '北苑宿舍 → 教学楼A 教材转运' },
+  { from: 'DEPOT', to: 'ST01', cargoKg: 120, priority: 'normal', windowMinutes: 240, title: '配送中心 → 南苑宿舍 生活物资' },
+  { from: 'ST04', to: 'ST02', cargoKg: 80, priority: 'low', windowMinutes: 240, title: '教学楼A → 图书馆 教材回库' },
+  // —— 第二批扩容：把任务池撑到「一车跑不完」，让容量瓶颈与算法差异同时可见 ——
+  //
+  // 实测（2026-10-03，真实 seed + 内核，18 条待派一起跑）：贪心 9 / 匈牙利 4。
+  // 贪心比匈牙利多派的 5 单里，700 kg 中重件（`T-DEMO-0016`）与 45 kg 急件
+  // （`T-DEMO-0018`）由 CAR-02 接力跑完，300 kg 相邻短途（`T-DEMO-0019`）
+  // 与两单 150 m 短途塞进 CAR-01 的空档。
+  //
+  // 两个重货 + 一个中重件是**故意的容量压力**：1100 / 1000 kg 只有 CAR-02（1200kg）
+  // 能接，700 kg 只有两台配送车（800 / 1200 kg）能接。实测里 CAR-02 被别的单占住，
+  // 两个重货（`T-DEMO-0014` / `T-DEMO-0015`）在贪心与匈牙利下**都被拒** ——
+  // 拒绝原因会如实写成「占用区间冲突」（而不是某个无关车辆的「不可用」，见 ISS-093）。
+  // 它们的作用不是「跑起来」，而是让「车队装不下」这件事在对比表与预检里看得见。
+  { from: 'ST11', to: 'DEPOT', cargoKg: 1100, priority: 'high', windowMinutes: 240, title: '国际交流中心 → 配送中心 重型器材回库' },
+  { from: 'ST02', to: 'ST08', cargoKg: 1000, priority: 'high', windowMinutes: 240, title: '图书馆 → 教学楼B 书库搬迁' },
+  { from: 'ST12', to: 'ST09', cargoKg: 700, priority: 'normal', windowMinutes: 240, title: '西区教师公寓 → 北苑学生宿舍 家具转运' },
+  // 无人机能接的远距离小件：DRN-01（5 m/s）跑长对角线的耗时远低于地面车。
+  { from: 'ST12', to: 'ST11', cargoKg: 40, priority: 'normal', windowMinutes: 240, title: '西区教师公寓 → 国际交流中心 文件专送' },
+  { from: 'ST10', to: 'ST01', cargoKg: 45, priority: 'urgent', windowMinutes: 240, title: '学生活动中心 → 南苑宿舍 急救物资' },
+  // 相邻节点的短途件：执行段只有一条边，能塞进某台车已排班次的空档（贪心的接力样本）。
+  { from: 'ST06', to: 'ST07', cargoKg: 300, priority: 'high', windowMinutes: 240, title: '行政楼 → 体育馆 桌椅转运' }
 ];
 
 /** 站点/边的中文名来自样本，节点只给「编码 + 类型」（样本没有中文名，编一个反而像有业务含义）。 */

@@ -39,11 +39,17 @@ async function renderPage() {
       <DispatchPage />
     </MemoryRouter>
   );
+  // 「路径规划」本轮收进默认折叠的「高级操作」（Req-M4-8 的精简口径）：
+  // 折叠不等于删除，但用例要像使用者一样先展开它再看里面的表单。
+  const toggle = screen.getByText('高级操作：路径规划（试算，不落库）');
+  const details = toggle.closest('details')!;
+  expect(details.open).toBe(false);
+  fireEvent.click(toggle);
   // 节点下拉要先加载出来，否则选不到起点（`usePagedList` 是异步的）
   await waitFor(() => {
     expect(within(screen.getByLabelText('起点节点')).getAllByRole('option').length).toBeGreaterThan(1);
   });
-  return { ...view, token };
+  return { ...view, token, details };
 }
 
 function planRoute(from: string, to: string, via = '') {
@@ -61,12 +67,14 @@ describe('DispatchPage · 路径规划', () => {
   });
 
   it('两块都在页面上，且注明「规划不落库」（否则会让人以为规划结果就是任务实际路线）', async () => {
-    await renderPage();
-    // M4 调度台与 M5 路径规划同时存在；徽标如实标注各自可用范围
+    const { details } = await renderPage();
+    // M4 调度台常驻；M5 路径规划在「高级操作」折叠区里 —— 折叠不等于删除
     expect(screen.getByLabelText('调度台')).toBeInTheDocument();
     expect(screen.getByLabelText('路径规划')).toBeInTheDocument();
     expect(screen.getByText('策略预览 · 应用派发可用')).toBeInTheDocument();
-    expect(screen.getByText('路径规划可用')).toBeInTheDocument();
+    expect(screen.getByText('派发后可立即开跑')).toBeInTheDocument();
+    // 标题本身就是一句说明：它是试算、不落库（展开后 `renderPage` 已断言过初始为收起）
+    expect(details.querySelector('summary')!.textContent).toContain('试算，不落库');
     // 页面里必须有一句话说明「规划只预览、不落库，路线在应用派发时才写入」
     expect(screen.getByText(/任务实际使用的路线在/)).toBeInTheDocument();
   });

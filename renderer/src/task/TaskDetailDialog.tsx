@@ -18,7 +18,14 @@ import { ApiClient } from '../api/client';
 import { apiClient } from '../api';
 import { IconAlert, IconClose } from '../components/icons';
 import { formatDateTime, formatNumber, timeWindowText } from '../domain/format';
-import { ALERT_LEVEL_LABEL, TASK_PRIORITY_LABEL, TASK_STATUS_LABEL, TASK_ACTION_LABEL, labelOf } from '../domain/labels';
+import {
+  ALERT_LEVEL_LABEL,
+  COST_METRIC_LABEL,
+  TASK_ACTION_LABEL,
+  TASK_PRIORITY_LABEL,
+  TASK_STATUS_LABEL,
+  labelOf
+} from '../domain/labels';
 import { TASK_STATUS_TONE, badgeToneClass } from '../domain/tone';
 import type { AlertLevel, TaskAction, TaskDetail } from '@udm/shared';
 
@@ -172,7 +179,7 @@ export function TaskDetailDialog({ taskId, token, onClose }: TaskDetailDialogPro
                       <dd>{plan.strategy}</dd>
                     </div>
                     <div>
-                      <dt>代价</dt>
+                      <dt>{COST_METRIC_LABEL}</dt>
                       <dd>{formatNumber(plan.cost)}</dd>
                     </div>
                     <div>

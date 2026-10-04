@@ -1,0 +1,186 @@
+/**
+ * 车辆中心（`/fleet`）的样式。
+ *
+ * 归属（D-36）：`.udm-btn` / `.udm-card` / `.udm-table` / `.udm-panel` / `.udm-kpis` /
+ * `.udm-empty` / `.udm-list__*` 这些基元一律不在这里重定义，本文件只做**组合与版式**。
+ *
+ * ## 两个命名上的注意点
+ *
+ * 1. 前缀用 `udm-flt__` 而不是 `udm-fleet__`：后者已被监控工作台的「车队分布条」
+ *    （`dashboard/style/dashboard.css` 的 `.udm-fleet__bar` / `.udm-fleet__seg`）占用。
+ *    两组类名同前缀会让「改这个会不会影响那一页」无法回答 —— 与 D-47 把 `udm-base__*`
+ *    上收为 `udm-list__*` 是同一条判据。
+ * 2. 表格选中行沿用 `styles/ui.css` 已定义的 `.udm-table tbody tr.is-selected`，
+ *    本文件只补「有抽屉时才给手型光标」这一条。
+ *
+ * 间距与配色只用 `styles/theme.css` 的令牌；出现裸数值的后果见 `ops/style/ops.css` 的文件头。
+ */
+
+/* ==================== 状态分桶（可点击的筛选快捷方式） ==================== */
+
+.udm-flt__buckets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--udm-space-2);
+  margin: 0 0 var(--udm-space-3);
+}
+
+.udm-flt__bucket {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--udm-space-1);
+  padding: 4px 10px;
+  font: inherit;
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-hairline);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.udm-flt__bucket strong {
+  color: var(--udm-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.udm-flt__bucket:hover {
+  border-color: var(--udm-border);
+}
+
+.udm-flt__bucket.is-active {
+  color: var(--udm-text);
+  background: var(--udm-surface-3);
+  border-color: var(--udm-accent);
+}
+
+/* ==================== 表格 + 抽屉 ==================== */
+
+/**
+ * `minmax(0, …)` 而不是 `1fr`：表格内容会把网格列撑到内容宽度，
+ * 于是「表格自己横向滚动」变成「整页横向滚动」（与 `ops/style/ops.css` 同因）。
+ */
+.udm-flt__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(340px, 0.9fr);
+  gap: var(--udm-space-4);
+  align-items: start;
+}
+
+.udm-flt__split .udm-table tbody tr {
+  cursor: pointer;
+}
+
+.udm-flt__table tbody td .udm-flt__battery {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--udm-space-2);
+  min-width: 92px;
+}
+
+.udm-flt__table tbody td .udm-flt__battery .udm-progress {
+  flex: 1;
+}
+
+.udm-flt__offline {
+  color: var(--udm-text-dim);
+}
+
+@media (max-width: 1180px) {
+  .udm-flt__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ==================== 抽屉分区 ==================== */
+
+.udm-flt__drawer {
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+}
+
+.udm-flt__section {
+  padding: var(--udm-space-3) var(--udm-space-4);
+  border-top: 1px solid var(--udm-hairline);
+}
+
+.udm-flt__section:first-of-type {
+  border-top: 0;
+}
+
+.udm-flt__section-title {
+  margin: 0 0 var(--udm-space-2);
+  font-size: var(--udm-font-sm);
+  font-weight: 600;
+  color: var(--udm-text-dim);
+  letter-spacing: 0.02em;
+}
+
+/** 键值网格：`auto-fit` 让窄抽屉自动落成单列，不写断点。 */
+.udm-flt__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--udm-space-2) var(--udm-space-3);
+  margin: 0;
+}
+
+.udm-flt__facts dt {
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+}
+
+.udm-flt__facts dd {
+  margin: 2px 0 0;
+  font-size: var(--udm-font-md);
+  color: var(--udm-text);
+}
+
+.udm-flt__line {
+  display: flex;
+  gap: var(--udm-space-2);
+  margin: 0 0 var(--udm-space-2);
+  font-size: var(--udm-font-md);
+  color: var(--udm-text);
+}
+
+/** 行首的键：等宽 + 固定宽度，让多行的值竖向对齐。 */
+.udm-flt__k {
+  flex: 0 0 64px;
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+}
+
+.udm-flt__actions {
+  display: flex;
+  gap: var(--udm-space-2);
+  margin-top: var(--udm-space-2);
+}
+
+.udm-flt__track {
+  display: block;
+  width: 100%;
+  height: 120px;
+  margin: var(--udm-space-2) 0;
+  background: var(--udm-surface-2);
+  border: 1px solid var(--udm-hairline);
+  border-radius: var(--udm-radius-sm);
+}
+
+.udm-flt__track path {
+  stroke: var(--udm-accent);
+}
+
+.udm-flt__hint {
+  margin: 0 0 var(--udm-space-2);
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+}
+
+.udm-flt__points {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.udm-flt__points .udm-table {
+  font-size: var(--udm-font-sm);
+}

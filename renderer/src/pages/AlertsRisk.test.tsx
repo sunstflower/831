@@ -1,5 +1,5 @@
 import '../test/dom-stubs';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { AlertsPage } from './AlertsPage';
@@ -27,32 +27,65 @@ async function renderAs(username: 'admin' | 'dispatcher' | 'monitor', password: 
     token: login.code === 0 ? login.data.token : null,
     user: { id: `seed-${username}`, username, role: username, displayName: username, permissions: [] }
   });
-  return render(
+  render(
     <MemoryRouter>
       <AlertsPage />
     </MemoryRouter>
   );
+  return login.code === 0 ? login.data.token : null;
 }
 
 describe('告警中心 · 任务风险预检', () => {
-  it('列出「未派发」缺口：6 条待派任务都在清单里，并指向调度中心', async () => {
-    await renderAs('monitor', 'monitor123');
-    const panel = await screen.findByRole('region', { name: '任务冲突与超时预检' });
+  it('列出「未派发」缺口：每一条待派任务都在清单里，并指向调度中心', async () => {
+    const token = await renderAs('monitor', 'monitor123');
+    const panel = await screen.findByRole('region', { name: '任务风险预检' });
     expect(panel).toBeInTheDocument();
 
-    // 种子数据的 6 条待派任务一条都不该漏（这是首屏最该看到的缺口）
+    /*
+     * 待派任务的**编码与条数都从任务列表接口读**，不在用例里硬编码 ——
+     * 种子扩容（6 → 12）时，硬编码的那一份会以「用例红了」的形态出现，
+     * 看起来像功能坏了，实际只是夹具过时。
+     */
+    const page = await apiClient.invoke<{ records: Array<{ code: string }> }>(
+      '/api/tasks',
+      { status: 'pending', pageSize: 100 },
+      token
+    );
+    expect(page.code).toBe(0);
+    const codes = page.code === 0 ? page.data.records.map((record) => record.code) : [];
+    expect(codes.length).toBeGreaterThan(1); // 护栏：读不到任务时下面的循环会「全过」
+
+    // 首屏最该看到的缺口：一条都不该漏
     await waitFor(() => expect(panel).toHaveTextContent('未派发'));
-    for (const code of ['T-DEMO-0002', 'T-DEMO-0003', 'T-DEMO-0004', 'T-DEMO-0005', 'T-DEMO-0006', 'T-DEMO-0007']) {
+    for (const code of codes) {
       expect(panel, code).toHaveTextContent(code);
     }
     // 结论行说清有几条、去哪儿处理
-    expect(panel).toHaveTextContent(/还有 6 条待派发任务没有安排车辆/);
+    expect(panel).toHaveTextContent(new RegExp(`其中 ${codes.length} 条完全没有安排车辆`));
     expect(screen.getByRole('link', { name: '去调度中心派发' })).toBeInTheDocument();
+  });
+
+  /*
+   * `ISS-096` 的回归：一条派发都没应用时，面板**不能**出现「派发冲突」那一节 ——
+   * 使用者正是在这里读出了「我没派发，凭什么说有冲突」。
+   * 待派 / 过期那一节则必须照常出现（它们与有没有派发无关）。
+   */
+  it('一条派发都没应用时，只有「待派与超时缺口」一节，不出现「派发冲突」', async () => {
+    await renderAs('monitor', 'monitor123');
+    const panel = await screen.findByRole('region', { name: '任务风险预检' });
+    await waitFor(() => expect(panel).toHaveTextContent('未派发'));
+
+    expect(within(panel).getByRole('heading', { name: '待派与超时缺口' })).toBeInTheDocument();
+    // 判据落在**节标题**上：正文里有意提到这一节的名字（解释它为什么是空的），
+    // 用「整段文本不含这个词」会把那段解释也算成失败
+    expect(within(panel).queryByRole('heading', { name: '派发冲突与执行风险' })).toBeNull();
+    // 面板要写清「为什么这一节是空的」——否则下次还是会被读成 bug
+    expect(panel).toHaveTextContent(/还没派发就必然是空的/);
   });
 
   it('预检区块明确写着「不是告警、不能认领」—— 否则使用者会去找认领按钮', async () => {
     await renderAs('monitor', 'monitor123');
-    const panel = await screen.findByRole('region', { name: '任务冲突与超时预检' });
+    const panel = await screen.findByRole('region', { name: '任务风险预检' });
     await waitFor(() => expect(panel).toHaveTextContent('未派发'));
     // 区块内**没有**任何一个告警操作按钮
     expect(panel.querySelectorAll('button').length).toBe(0);

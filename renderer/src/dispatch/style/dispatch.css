@@ -247,6 +247,54 @@
   margin-right: 6px;
 }
 
+/* 「差异对照」「派单差异」两块：策略对比表下方的逐指标 / 逐任务并排视图 */
+.udm-dispatch__compare {
+  margin-top: 12px;
+}
+
+.udm-dispatch__sub-title {
+  margin: 0 0 6px;
+  font-size: var(--udm-font-xs);
+  font-weight: 600;
+  color: var(--udm-text-dim);
+}
+
+.udm-dispatch__base-tag {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: var(--udm-radius-sm);
+  background: var(--udm-surface-3, rgba(148, 163, 184, 0.18));
+  font-size: var(--udm-font-xs);
+  font-weight: 500;
+  color: var(--udm-text-dim);
+}
+
+/*
+ * 差值徽标：颜色即结论（更优 / 更差），符号即方向。
+ * 不用红绿对比度更高的写法，是因为这一屏的「更差」往往只是活干得多，
+ * 用警示色会把「口径差异」渲染成「出了问题」。
+ */
+.udm-dispatch__delta {
+  margin-left: 6px;
+  font-size: var(--udm-font-xs);
+}
+
+.udm-dispatch__delta--better {
+  color: var(--udm-ok, #34d399);
+}
+
+.udm-dispatch__delta--worse {
+  color: var(--udm-warn, #fbbf24);
+}
+
+.udm-dispatch__delta--same {
+  color: var(--udm-text-dim);
+}
+
+.udm-dispatch__none {
+  color: var(--udm-text-dim);
+}
+
 /*
  * 按车辆分组的派发明细。
  *
@@ -309,4 +357,90 @@
 /* 接力清单里的时间区间：与上下的等宽数字对齐，扫一眼就能看出「首尾相接」 */
 .udm-dispatch__fleet-time {
   font-variant-numeric: tabular-nums;
+}
+
+/* ==================== 「精简」后的折叠区与派发回执 ==================== */
+
+/**
+ * 「派发后立即开跑」开关：与主按钮同排，但视觉上**从属** ——
+ * 它不是动作，是这次应用的一个参数（见 `DispatchConsole.tsx` 的 `autoStart`）。
+ */
+.udm-dispatch__autostart {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.udm-dispatch__autostart input {
+  accent-color: var(--udm-accent);
+}
+
+/** 高级操作 / 调度日志的折叠区（`<details>`）：收起时不占高度，展开后与普通区块同排版。 */
+.udm-dispatch__advanced {
+  display: block;
+}
+
+.udm-dispatch__advanced > summary {
+  padding: 6px 0;
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+  cursor: pointer;
+}
+
+.udm-dispatch__advanced > summary:hover {
+  color: var(--udm-text);
+}
+
+.udm-dispatch__advanced[open] > summary {
+  margin-bottom: var(--udm-space-2, 8px);
+}
+
+/**
+ * 「派发 + 逐单开跑」的结果回执。
+ *
+ * 与普通 `.udm-dispatch__notice`（单行提示）的区别：它有**逐条明细**，
+ * 因此必须是纵向布局 —— 复用单行提示的 `align-items:center` 会把明细挤到同一行。
+ */
+.udm-dispatch__run {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.udm-dispatch__run-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--udm-space-3, 12px);
+}
+
+.udm-dispatch__run-details {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--udm-text-dim);
+}
+
+/** 有单未开跑时的警示配色；全部开跑沿用基础款（绿色）。 */
+.udm-dispatch__notice--warn {
+  background: rgba(250, 204, 21, 0.12);
+  border-color: rgba(250, 204, 21, 0.45);
+}
+
+/**
+ * 折叠区的标题：同时挂类名（而不是只靠 `> summary`）—— JSX 里的类名必须有定义，
+ * 由 `styles/classnames.test.ts` 保证；只写子选择器会让那个类名变成空引用。
+ */
+.udm-dispatch__advanced-summary {
+  padding: 6px 0;
+  font-size: var(--udm-font-sm);
+  color: var(--udm-text-dim);
+  cursor: pointer;
+}
+
+.udm-dispatch__advanced-summary:hover {
+  color: var(--udm-text);
 }

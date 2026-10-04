@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPlanRiskReport,
+  planRiskSectionsOf,
+  PLAN_RISK_SECTION_OF,
+  PLAN_RISK_SECTIONS,
   scanPlanRisks,
   type PlanRiskPlanInput,
   type PlanRiskTaskInput,
   type PlanRiskVehicleInput
 } from './plan-risk.js';
 import type { TaskStatus, VehicleStatus } from './enums.js';
+import { PLAN_RISK_KINDS } from './types.js';
 
 /**
  * 风险预检的用例。
@@ -211,6 +215,64 @@ describe('任务风险预检 · 报告形状', () => {
     expect(report.total).toBe(items.length);
     expect(report.counts.critical + report.counts.warning + report.counts.info).toBe(items.length);
     expect(report.counts.critical).toBeGreaterThan(0);
+  });
+});
+
+describe('任务风险预检 · 分节（`ISS-096`：没派发就不该出现「冲突」那一节）', () => {
+  it('每一个 kind 都有归属，且两节非空 —— 新增 kind 时这条先红（否则它会静默消失）', () => {
+    for (const kind of PLAN_RISK_KINDS) {
+      expect(PLAN_RISK_SECTIONS, kind).toContain(PLAN_RISK_SECTION_OF[kind]);
+    }
+    // 两节都必须真的有种类，空节意味着分类写错了
+    for (const section of PLAN_RISK_SECTIONS) {
+      expect(PLAN_RISK_KINDS.filter((kind) => PLAN_RISK_SECTION_OF[kind] === section).length, section).toBeGreaterThan(0);
+    }
+  });
+
+  it('只依赖派发的那五类进「派发冲突」，待派 / 过期两类进「待派缺口」', () => {
+    expect(PLAN_RISK_SECTION_OF['VEHICLE_OVERLAP']).toBe('dispatch');
+    expect(PLAN_RISK_SECTION_OF['LATE_FINISH']).toBe('dispatch');
+    expect(PLAN_RISK_SECTION_OF['WINDOW_EXPIRED']).toBe('backlog');
+    expect(PLAN_RISK_SECTION_OF['UNASSIGNED_TASK']).toBe('backlog');
+  });
+
+  it('一条都没派发时只有「待派缺口」一节 —— 这正是使用者会问「我没派发哪来的冲突」的那个场景', () => {
+    const items = scan([task({ id: 't1', status: 'pending' })], [], []);
+    expect(items.every((item) => item.kind === 'UNASSIGNED_TASK')).toBe(true);
+    const sections = planRiskSectionsOf(items);
+    expect(sections.map((view) => view.section)).toEqual(['backlog']);
+    expect(sections[0]?.records).toEqual(items);
+    // 空节不返回：界面因此不必自己判断「这一节要不要渲染」
+    expect(sections.some((view) => view.section === 'dispatch')).toBe(false);
+  });
+
+  it('同一单同时命中「已超时」与「未派发」时两条都保留，并落在同一节（分节不是去重）', () => {
+    const items = scan([task({ id: 't1', status: 'pending', timeWindowEnd: at(-10) })], [], []);
+    const kinds = items.map((item) => item.kind).sort();
+    expect(kinds).toEqual(['UNASSIGNED_TASK', 'WINDOW_EXPIRED']);
+    const sections = planRiskSectionsOf(items);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.records).toHaveLength(2);
+    expect(sections[0]?.counts.critical + sections[0]!.counts.warning + sections[0]!.counts.info).toBe(2);
+  });
+
+  it('两节同时出现时保持「先派发冲突、后待派缺口」，组内顺序沿用扫描结果', () => {
+    // assigned（不是 pending）：派发侧的判断只在「占用着车辆」的任务上跑，
+    // 而 assigned 也仍属「未结束」，所以两节会同时产出
+    const items = scan(
+      [task({ id: 't1', status: 'assigned', timeWindowEnd: at(-10) })],
+      [plan({ taskId: 't1', vehicleId: 'v9', routeId: null, occupiedFrom: at(0), occupiedTo: at(1) })],
+      [vehicle({ id: 'v9', vehicleCode: 'V-9', battery: 5 })]
+    );
+    // 该输入同时产出 dispatch 侧（电量 / 缺路线）与 backlog 侧（未派发）两类
+    expect(new Set(items.map((item) => PLAN_RISK_SECTION_OF[item.kind])).size).toBeGreaterThan(1);
+    const sections = planRiskSectionsOf(items);
+    expect(sections.map((view) => view.section)).toEqual(['dispatch', 'backlog']);
+    for (const view of sections) {
+      expect(view.records.map((item) => item.kind)).toEqual(
+        items.filter((item) => PLAN_RISK_SECTION_OF[item.kind] === view.section).map((item) => item.kind)
+      );
+    }
   });
 });
 

@@ -11,7 +11,8 @@
 
 - **项目**：无人物流调度管理软件（`/Users/sunsetflower/myJobs/js/831`）。
 - **阶段**：**首期十个模块（M1-M10）的业务链路全部落地，三层（`shared` / `desktop` / `renderer`）端到端可跑；
-  本轮（2026-09-28 第二批）在此之上做了四项**让调度真的有事可做**的增强**：
+  此后各批在此之上做了六项增强**（①②③④ 属 2026-09-28 第二批，⑤ 属 2026-10-03 第三批，
+  ⑥ 属 2026-10-03 第五批）**：
   ① **车辆接入**（基础数据页可新建车，「所在节点」让车从指定节点出发，新车立即进入调度候选池）；
   ② **调度对比给出了可核对的数字**（执行里程 / 行驶耗时 / 全部完成 / 用车，外加逐项差异文案
   「匈牙利少跑 680 m、少行驶 17 分 53 秒、早 12 分 2 秒完成」）与**按车辆分组的接力清单**
@@ -29,6 +30,51 @@
   主进程与浏览器 Mock 调**同一个函数**。调度中心的派发明细表同时加了**「路线（载货段）」列**
   （`2 段 · 300 m`，无路线时标黄），应用派发后的提示条给出**「在地图上查看这 N 台车」**
   —— 派发结果因此能一键落到地图上（选中车辆 → 地图自动聚焦并高亮其路线）。
+  ⑥ **订单派发主链路打通 + 新增「车辆中心」**（2026-10-03 第五批，见
+  [`docs/module-M4b-order-flow.md`](./docs/module-M4b-order-flow.md)）：调度中心**内建「新建订单」**
+  （复用 M3 表单，创建即 `submit: true` 进待派队列），从而把「建单 → 入池 → 预览策略 → 应用派发 →
+  （可选）立即开跑 → 同屏看本批次冲突 / 超时预检」收在**一页之内**；「派发后立即开跑」是**渲染层**
+  把 `dispatch/apply` 与逐单 `execution/start` 组合成的带开关流程（契约与权限点不变，D-58），
+  逐单结果显式列出（部分失败不掩盖成功部分）；调度中心按「只留主链路」精简，手动指派 / 回收重算 /
+  调度日志 / 路径规划收进默认折叠的「高级操作」（折叠≠删除，接口调用与权限判定完全不变）；
+  新增**车辆中心 `/fleet`**（运行态读模型：状态分桶 + 车队表格 + 单车抽屉的实时位置 / 当前任务 /
+  轨迹折线，D-59）——**不在本页复制车辆 CRUD**，「加车」仍归基础数据页。
+  ⑦ **待派任务池扩容 + 对比屏新增两块「差异」呈现**（2026-10-03 第六批，见
+  [`docs/seed-dispatch-diversity.md`](./docs/seed-dispatch-diversity.md)）：待派演示任务由 6 条扩到 12 条，
+  新任务按「放大哪一种算法差异」设计（只有 1200 kg 车型能拉的重货 / 只有 800 kg 以上能拉的中重件 /
+  无人机小件 / 能塞进某台车班次空档的短途件）。调度中心「策略对比」在原有对比表与差异文案之外新增两块：
+  **「差异对照（逐指标）」**（推荐策略为基准列，其余列给出带符号差值与更优 / 更差标记，并补
+  「单车平均里程 / 平均耗时」抵消「派得少就天然省」）与**「派单差异（同一单派给了不同车）」**
+  （列出两边派车不一致的任务，某一方没派就显示「未派发」—— 「贪心把唯一的重货车先用掉、
+  重货反而排不进」这一条算法差异因此第一屏就能读到）。两块都是 `renderer/src/dispatch/model.ts`
+  的新纯函数 + 只读渲染，**不触碰 `preview` / `apply` 契约、不新增接口或事件**。
+  ⑧ **待派任务池再扩容 + 加权综合分与拒绝原因的口径修正**（2026-10-03 第七批，见
+  [`docs/seed-dispatch-diversity.md`](./docs/seed-dispatch-diversity.md) §3.1 / §7 / §8）：待派任务 12 → 18
+  （新增 3 个「大车不够分」的重货 / 中重件、2 个远距离无人机小件、1 个相邻短途件；**上限 18 是产品约束** ——
+  1 演示 + 18 待派 = 19 ≤ 任务列表一页，再多一条就会把演示任务挤到第二页）。
+  两处**算法口径修正**：① 加权综合分补上「未派发惩罚」（`compositeScoreOf`，D-60）——
+  旧口径只累加已派发计划，18 条待派时把「只派 4 单」的匈牙利算得比「派 9 单」的贪心更省；
+  ② 拒绝原因不再取「遍历到的第一个失败车辆」，改按「离能跑还差多少」排序（`mostInformativeReject`，D-61），
+  修掉 `ISS-093` 的「十几行全是 AGV-01 不可用」。
+  ⑨ **真实 Electron 走查 + 时间窗冲突两种情形分口径**（2026-10-03 第八批）：在 `db:reset` 后的干净库上跑
+  `npm run dev:electron`，逐条核对调度中心（18 条待派全选 → 全部（对比）→ 预览）→ 确认第七批的加权综合分 /
+  差异对照 / 公式行在真实 `ipc` 形态下逐项一致，并**当场发现 `ISS-095`**：拒绝原因表 9 行的「具体情况」
+  全是「预计晚点 0s，超出容忍 0s」—— `TIMEWINDOW_CONFLICT` 一个 code 覆盖两种情形（预计晚点 /
+  与该车已排班次占用区间相交），主进程 `explain.ts` 用「有没有 `lateS`」分辨、渲染层 `dispatch/model.ts`
+  的同口径副本没有分。**修法是判据上移到产出方**：`shared/src/dispatch-evaluate.ts` 的 `detail.kind`
+  （`'late'` / `'occupied'`）+ 共享的 `isLateWindowConflict(detail)`（含旧快照的 `lateS` 回退），
+  两处消费方都调它，不再各自反推（与 D-34 / D-55 同一原则：**判据只能有一个作者**）。
+  修复后 9 行各说各的真实瓶颈（`AGV-02 在 04:41:22 ~ 04:46:22 已被占用` 等）。
+  ⑩ **风险预检按「是否依赖已生效派发」分两节**（2026-10-03 第九批）：此前告警中心那一块叫「任务冲突与超时预检」，
+  七类风险平铺成一张表。用户的实际疑问是「一条任务都还没派发，为什么已经在报冲突」——根因是七类里只有五类
+  （同车抢占 / 车辆不可用 / 电量不够 / 缺路线 / 预计迟到）由**已生效的派发**算出，另外两类
+  （`WINDOW_EXPIRED` 窗口已过、`UNASSIGNED_TASK` 还没排上车）与有没有派发无关；而同一单可能同时命中这两类，
+  于是「共 12 条」里只有 9 条不同任务、看起来像「凭空冒出两处冲突」。按用户要求**保留两条、不去重、改为分节**：
+  节 1「派发冲突与执行风险」（那五类，**没派发时为空则不渲染**）与节 2「待派与超时缺口」（那两类，
+  没派发也会出现）；区块标题改为**「任务风险预检」**，导语明说「先看派发冲突（还没派发就必然是空的），
+  再看待派与超时缺口」。**分类判据的唯一作者放进 `shared/src/plan-risk.ts`**
+  （`PLAN_RISK_SECTION_OF` / `planRiskSectionsOf` / `PLAN_RISK_SECTION_TEXT`；空节不返回、组内保持扫描顺序、不重排），
+  渲染层只按节渲染、不做判断（`ISS-096`）。
   此前的 M2（六类主数据读写）· M3（任务状态机 11 动作）· M4（调度全链路）· M5（A* / Dijkstra + 途经点 + 禁行）·
   M6（React Flow 地图，含共点图层避让 D-42）· M1（用户维护）· M7（监控读模型 + 模拟执行器）·
   M8（告警五态闭环）· M9（审计查询与 CSV 导出）· M10（schema 驱动设置页）保持可用。
@@ -40,7 +86,7 @@
   - `desktop/`：`node:sqlite` 连接（`createRequire` 惰性加载，见下）· 迁移（**0001 + 0003 + 0004 + 0005**，
     见 D-46 / D-54；`0005_edge_weight.sql` 给 `edges` 加 `weight REAL NOT NULL DEFAULT 1 CHECK (weight >= 1)`）·
     seed（**改为「取数（读 `data/campus/`）→ 推导（`buildSeedDataset()`）→ 落库」三步，本文件里没有业务数字**；
-    含演示执行数据与 6 条演示待派发任务，后者的时间窗跟着当前时刻刷新）· `db/campus-map-source.ts`（Node 侧取数）· **IPC Router（鉴权/权限/`traceId`，支持 `method` 与 `:name` 路径参数，D-43）** · 会话 · 审计 · **事件总线（按会话权限过滤，D-32）** · **65 条路由**：health / auth×3 / settings×2 / users / map.overview / **M7 轨迹 `GET /api/map/tracks/:vehicleId`** / **M2 读列表×6 + 写路径×13** / **M3 任务×6**（列表 · 详情 · 创建 · 编辑 · `POST :id/:action`（六类状态操作共用一段）· `DELETE :id`）· **M5 路径×3**（`POST /api/routes/plan` · `POST /api/routes/compare` · `GET /api/routes/:id`，权限 `route:plan`，**三条都不发事件** —— 规划是只读计算，没有数据变化） · **M4 调度×6**（`GET /api/dispatch/strategies` · `POST /api/dispatch/preview` · `POST /api/dispatch/apply` · `POST /api/dispatch/manual-assign` · `POST /api/dispatch/recompute` · `GET /api/dispatch/logs`；三条写路由**显式 `method: 'POST'`**，见 `ISS-066` 教训。事件只由写路径发：apply / manual-assign 发 `task.changed` + `vehicle.changed` + `map.updated`，recompute 发同三条，**preview / strategies / logs 一律不发** —— 预览只写一条调度日志，世界没有变化）—— 写接口一律经领域服务（事务 + 审计 + 跨表校验），**任务的状态操作暴露面派生自状态机**（`TASK_API_ACTIONS - {delete}`，未登记动作按「没有这条路」处理） · **M1 用户维护×4**（列表 / 新增 / 更新 / 重置密码；两条护栏「不能停用最后一个启用的管理员」「不能停用当前账号」在服务端，
+    含演示执行数据与一批演示待派发任务，后者的时间窗跟着当前时刻刷新）· `db/campus-map-source.ts`（Node 侧取数）· **IPC Router（鉴权/权限/`traceId`，支持 `method` 与 `:name` 路径参数，D-43）** · 会话 · 审计 · **事件总线（按会话权限过滤，D-32）** · **65 条路由**：health / auth×3 / settings×2 / users / map.overview / **M7 轨迹 `GET /api/map/tracks/:vehicleId`** / **M2 读列表×6 + 写路径×13** / **M3 任务×6**（列表 · 详情 · 创建 · 编辑 · `POST :id/:action`（六类状态操作共用一段）· `DELETE :id`）· **M5 路径×3**（`POST /api/routes/plan` · `POST /api/routes/compare` · `GET /api/routes/:id`，权限 `route:plan`，**三条都不发事件** —— 规划是只读计算，没有数据变化） · **M4 调度×6**（`GET /api/dispatch/strategies` · `POST /api/dispatch/preview` · `POST /api/dispatch/apply` · `POST /api/dispatch/manual-assign` · `POST /api/dispatch/recompute` · `GET /api/dispatch/logs`；三条写路由**显式 `method: 'POST'`**，见 `ISS-066` 教训。事件只由写路径发：apply / manual-assign 发 `task.changed` + `vehicle.changed` + `map.updated`，recompute 发同三条，**preview / strategies / logs 一律不发** —— 预览只写一条调度日志，世界没有变化）—— 写接口一律经领域服务（事务 + 审计 + 跨表校验），**任务的状态操作暴露面派生自状态机**（`TASK_API_ACTIONS - {delete}`，未登记动作按「没有这条路」处理） · **M1 用户维护×4**（列表 / 新增 / 更新 / 重置密码；两条护栏「不能停用最后一个启用的管理员」「不能停用当前账号」在服务端，
     字段归属随调用点走，故前端能把红框标在正确的控件上）· **M7 监控×3**（`monitor/overview` / `tasks` / `vehicles`；
     两条列表复用 `listTasks` / `listVehicles` 后补字段，不复制 SQL）· **M7 执行×2**（`execution/tasks/:id/start` / `takeover`；
     状态迁移复用 `operateTask`，遥测与轨迹写在**另一个**事务里 —— `tx()` 不支持嵌套）· **M8 告警×5**（列表 / 详情 / 认领 / 解决 / 归档；
@@ -52,8 +98,8 @@
     `adoptRunningTasks()` 把上次进程退出时仍在跑的任务接回内存续跑）**；
     路由清单与条数以 `docs/api.md` §3 为准，此处只记实测条数；`repositories/` 下 `map.repo.ts`（快照读取层）、**`site` / `vehicle` / `graph` / `restriction` / `template`（M2 读 + 写 + 引用计数）**、**`task.repo.ts`（列表 / 详情四块 / 状态写入 / 计划作废 / 物理删除）** 、**`route.repo.ts`（按 id 查路线 / 写路线 / 读全量图 `listGraphNodes` · `listGraphEdges` / 读禁行规则 —— 构图必须读全量，不能走分页列表）** 与 **`dispatch-plan.repo.ts` / `dispatch-log.repo.ts`（M4：计划写入 + 三处乐观锁 `…If` + 占用槽查询 + `hasOtherActivePlanForVehicle`；日志写入 + 存档读取 + 分页筛选）**；`domain/` 下 `base/`（六个服务）、**`task/task.service.ts`**、**`route/route.service.ts`（`planRoute` / `compareRoutes` / `getRoute`，五类失败原因 → 四个错误码）** 与 **`dispatch/`（`snapshot.ts` 组装 `DispatchSnapshot` · `explain.ts` 人读文案 · `dispatch.service.ts` 五个方法 `preview` / `apply` / `manualAssign` / `recompute` / `listDispatchLogs` + `listStrategies`）**。
   - `renderer/`：**入口与业务代码齐全，并已沉淀两层共用地基（D-36）** —— `src/main.tsx`（HashRouter，Electron `file://` 必需）、三层适配器（mock / ipc / http，**M4 的 Mock 存储 `api/mock-dispatch.ts` 复用 `shared` 同一份内核**，与主进程逐项对齐由 `mock-dispatch.test.ts` 守）、zustand store（session / selection）、路由与页面（**现代化外壳 + 监控工作台 + 登录页 + 基础数据（M2 读写）+ 任务管理（M3）+ 调度中心（M4 调度台 + M5 路径规划）+ 告警中心（M8）+ 审计日志（M9）+ 系统设置（M10）+ 用户管理（M1）** + 地图；`PlaceholderPage` 与 `app/modules.ts` 的 `PLANNED_MODULES` 保留给下一个模块，**当前没有任何路由指向占位页**）、**React Flow 地图**（`map/` 下 model / nodes / edges / hooks / stage / panels / style 全套；**本轮新增轨迹回放面板**，实时位置与历史折线分开显示）·
-    **本轮的展示层增强**：`dispatch/`（对比表加「执行里程 / 行驶耗时 / 全部完成 / 用车」四列 + 差异文案 + **按车辆分组的接力清单**）、
-    `ops/model.ts`（告警「停滞」话术与批量认领的纯函数）、`map/edges/NetEdge.tsx`（从 `data` 派生视觉标志类）、**设计系统**（`styles/theme.css` 令牌 + `styles/ui.css` 共用基元）、**信息架构**（`app/modules.ts`）、**跨模块共用层**（`domain/labels.ts`）、**监控工作台**（`dashboard/`）、**基础数据模块**（`base/`）、**任务模块**（`task/`）与**路径规划面板**（`route/`）；
+    **本轮的展示层增强**：`dispatch/`（对比表加「执行里程 / 行驶耗时 / 全部完成 / 用车」四列 + 差异文案 + **按车辆分组的接力清单** + 本批新增的 **`metricComparisonOf`（逐指标差异对照）** 与 **`assignmentDiffsOf`（同一单派给了不同车）**）、
+    `ops/model.ts`（告警「停滞」话术与批量认领的纯函数）、**`ops/RiskTable.tsx`（本批从 `RiskPanels` 抽出的预检表，供告警中心与调度中心共用）**、`map/edges/NetEdge.tsx`（从 `data` 派生视觉标志类）、**设计系统**（`styles/theme.css` 令牌 + `styles/ui.css` 共用基元）、**信息架构**（`app/modules.ts`）、**跨模块共用层**（`domain/labels.ts`）、**监控工作台**（`dashboard/`）、**基础数据模块**（`base/`）、**任务模块**（`task/`）与**路径规划面板**（`route/`）；
     另有 **首屏声明**（`index.html` 内联图标 + 深色 meta，D-37）与**弹层键盘语义**（D-38）；
     **基础数据页自本批起为六个页签**（站点 / 车辆 / 路网节点 / 有向边 / 禁行规则 / 任务模板），
     禁行规则与任务模板各自的「契约不对称」都体现在界面上（前者无启停、有二次确认删除；后者只有编辑）。
@@ -98,21 +144,142 @@
   - `npm run build` 与 `npm test` 均已通过（详见「验证基线」）。
 - **形态**：本地优先桌面应用 —— Electron 主进程（SQLite + 领域服务 + 算法）+ React 渲染层 + 三层服务适配器（IPC / 本地 HTTP / Mock）。
 - **技术栈（`node_modules` 实测版本）**：Electron 44.3.0 · React / React-DOM 18.3.1 · **`@xyflow/react` 12.11.6（仅 renderer；见 D-21）** · react-router-dom 6.30.6 · **Vite 6.4.3（renderer 独立安装）+ Vite 5.4.21（根，Vitest 侧）** · TypeScript 5.9.3 · **Node 内置 `node:sqlite`（见 D-14，非 better-sqlite3）** · zustand 5.0.15（`@xyflow/react` 另带嵌套 zustand 4.5.7，两者并存、互不影响）· Vitest 2.1.9 · bcryptjs 2.4.3 · @testing-library/react 16.3.3 · **@testing-library/jest-dom 6.10.0** · jsdom 25.0.1 · concurrently 9.2.4 · wait-on 8.0.5；运行时 Node v25.8.2 / npm 11.11.1。
-- **仓库状态**：已完成 `git init`。提交序列 `e9a6100` → **`64d9eea`（`地图 build`，68 文件）** → **`a22ae16`（`all build`，207 文件）**。
-  - `64d9eea` 与 `a22ae16` 由**使用者本人**提交（2026-09-26 / 2026-09-28），各把此前积压的一批改动合成一笔。
-    **如实记录两处与纪律的偏差**：① commit message 均未按第 6 条的 `类型(模块): 摘要` 格式；
-    ② 多批不同的改动（M2 / M3 / M4 / M5 / M6 / 设计系统 / 文档回写）被合成一笔，事后无法用 `git log` 分辨。
-  - ⚠️ **工作区仍有未提交改动（两批叠加）**：
-    ① **2026-09-28 第二批**：车辆接入 / 调度对比与接力 / 告警停滞与批量认领 / 复杂地图与边权，
-    以及为它们补的测试、文档与 `data/campus/`（新增目录）—— 见 `ISS-076`…`ISS-082`；
-    ② **2026-10-03 第三批（本批）**：任务风险预检（`GET /api/alerts/risks`）与告警中心的两个新区块、
-    调度派发明细的路线列与「在地图上查看这 N 台车」—— 见 `ISS-083`…`ISS-086`。
-    涉及 `shared/` · `desktop/` · `renderer/` · `data/` · `docs/*` · `README.md`；
-    **`AGENTS.md`（本文件）的日志与 `docs/issues.md` 已同步**，见「工作日志」末条。
+- **仓库状态**：已完成 `git init`。提交序列 `e9a6100` → `64d9eea`（`地图 build`，68 文件）→
+  `a22ae16`（`all build`，207 文件）→ **`fef52a6`（`f build`，覆盖 2026-09-28 第二批与 2026-10-03 第三批共 106 项改动）**。
+  - 四笔提交全部由**使用者本人**提交（2026-09-26 / 2026-09-28 / 2026-10-03），各把此前积压的一批改动合成一笔。
+    **如实记录与纪律的偏差（连续第三笔）**：① commit message 均未按第 6 条的
+    `类型(模块): 摘要` 格式（`地图 build` / `all build` / `f build`）；② 多批互不相关的改动
+    （M2…M10 / 设计系统 / 文档回写 / 复杂地图与边权 / 风险预检）被合成一笔，事后无法用 `git log` 分辨。
+    `fef52a6` 尤其如此：它一笔吃掉了**两批**（含 `data/campus/` 源数据与全部文档回写）。
+  - ⚠️ **工作区仍有未提交改动 —— 已积压两批（2026-10-03 第四批与第五批）**：
+    - **第四批（术语改名）**：把界面上的「代价」改称「加权综合分」（`COST_METRIC_LABEL` 唯一作者），
+      涉及 `renderer/src/domain/labels.ts` · `renderer/src/dispatch/*` ·
+      `renderer/src/task/TaskDetailDialog.tsx` · `desktop/src/domain/dispatch/*` ·
+      `renderer/src/api/mock-dispatch.ts` · `docs/api.md` · `docs/module-M4-dispatch.md` ·
+      `docs/issues.md`（含新登记的 `ISS-087`）。
+    - **第五批（订单派发主链路 + 车辆中心，本批）**：`shared/src/*` **未改动**（无新接口 / 无新事件 /
+      无新错误码 / 无新权限点）；改动集中在 `renderer/src/`（`dispatch/` 新增 `NewOrderDialog` ·
+      `applyFlow` · 两个用例文件；`DispatchConsole` / `DispatchPage` 重排；新增 `fleet/` 目录与
+      `pages/FleetPage.tsx`；`ops/` 抽出 `RiskTable` 并加 `filterRiskReport`）、`app/` 导航与路由、
+      `domain/tone.ts`（`VEHICLE_STATUS_TONE` 上移）、`docs/`（新建 `module-M4b-order-flow.md`，
+      回写 `design.md` / `api.md` §0 / `README.md` / `issues.md`）与本文件。
+    - **两批的 `AGENTS.md` 日志与 `docs/issues.md` 均已同步**，**随时可提交**；拟提交信息（第五批）：
+      `feat(dispatch): 调度中心内建建单与派发即开跑，新增车辆中心`。
   - `package-lock.json` 已纳入版本控制；开发库 `desktop/.data/app.db` 被 `.gitignore` 的 `.data/` / `*.db` 排除
     （`data/campus/` 例外 —— 它是**源数据**而不是运行产物，因此必须在版本控制里）。
 
-- **验证基线（2026-10-03 实测：任务风险预检 / 派发区块 / 路线列 / 派发后上地图）**：
+- **验证基线（2026-10-03 实测·第七批：待派再扩容 + 加权综合分 / 拒绝原因口径修正）**：
+  - ✅ `npm test`（**空载**）：**98 个套件 / 1084 个用例全通过**。本轮新增 / 改动用例：
+    `shared/src/dispatch-evaluate.test.ts` +3（`compositeScoreOf` 的算术、惩罚上界、单调性）、
+    `shared/src/dispatch-greedy.test.ts` +2（拒绝原因两个方向的反例）、
+    `desktop/src/domain/dispatch/dispatch.service.test.ts` +1（按真实 seed 数据穷举 `max(plan.cost)`，
+    断言惩罚更大 —— 地图变大或惩罚调小时它先红）；
+    `renderer/src/dispatch/DispatchConsole.test.tsx` 的「差异对照」用例 +2 条断言（公式文字与惩罚常量在表下出现）。
+  - ✅ `npm run typecheck` 三 workspace exit 0；`npm run build` 三端通过；`npx vitest run tests/docs.test.ts` 8 条通过。
+  - ✅ `npm run db:reset`：`tasks:19`（1 条演示执行 + **18 条待派**）、`vehicles:5`、`nodes:30`、`edges:90`。
+  - ✅ **两策略实测**（真实 SQLite + 主进程内核，18 条待派一起跑）：
+    贪心**派 9 / 拒 9**，已派发代价 3146、**加权综合分 35546**、执行里程 3760 m、执行时长 1666 s；
+    匈牙利**派 4 / 拒 14**，已派发代价 1256、**加权综合分 51656**、执行里程 1950 m。
+    旧口径（只加已派发）下匈牙利 1256 < 贪心 3146 —— 会推荐「少干 5 单活」的一方；
+    新口径下贪心少 16110 分，与「多派 5 单」一致。
+    （行内数字为本机一次实跑，随预览时刻有百级漂移；判定依据是「两策略指派数不同」与 `mock-parity.test.ts` 的结构断言，不是这些具体数值。）
+  - ✅ **拒绝原因**：贪心拒绝的 9 条全部指向真实瓶颈（占用区间冲突），
+    不再出现「十几行都是 AGV-01 不可用」的形态。
+  - ℹ️ 本轮的 Electron 目视核对**已由第八批补做**（下一条基线）：走查确认「加权综合分」
+    两行、差异对照、公式说明在真实 `ipc` + SQLite 形态下与上述数值逐项一致，
+    并因此发现 `ISS-095`。
+
+- **验证基线（2026-10-03 实测·第八批：真实 Electron 走查 + 时间窗冲突两种情形分口径）**：
+  - ✅ `npm test`：**98 个套件 / 1085 个用例全通过**（第七批 1084 + 本批新增 1 条
+    `renderer/src/dispatch/model.test.ts` 的「晚点 / 被占用」回归）；`npm run typecheck` 三 workspace exit 0；
+    `npm run build` 三端通过；`npx vitest run tests/docs.test.ts` 8 条通过。
+  - ✅ **`npm run dev:electron` 真实走查**（`ipc` 适配器 + 真实 SQLite，`db:reset` 后的干净库）：
+    登出状态 → `admin/admin123` 登录 → 调度中心「待派任务（18）」→ 全选 → 「全部（对比）」→ 预览派发。
+    界面读数与第七批的实测**逐项一致**：推荐语「推荐『贪心』：指派 9/18，加权综合分 35546.0，
+    比『匈牙利』多派 5 单」；对比表贪心 `9/18 · 拒 9 · 3760 m · 52 分 26 秒 · 35546.0`、
+    匈牙利 `4/18 · 拒 14 · 1950 m · 20 分 56 秒 · 51656.0`；差异对照「加权综合分 +16110.0」；
+    表下公式行「加权综合分 = Σ 已派发计划的加权代价 + 未派发单数 × 3600（未派发惩罚）；被拒任务不再记 0 分。」
+  - ✅ **走查当场发现并修掉 `ISS-095`**：修复前拒绝原因表 9 行的「具体情况」全是
+    「预计晚点 0s，超出容忍 0s」；修复后每行各说各的真实瓶颈 ——
+    `T-DEMO-0005 AGV-02 在 04:41:22 ~ 04:46:22 已被占用`、`T-DEMO-0008 CAR-02 在 04:39:02 ~ 04:42:22 已被占用`、
+    `T-DEMO-0014 CAR-02 在 04:37:22 ~ 04:41:26 已被占用` …（9 行各不相同，指向被占住的那台车与该时段）。
+  - > 这条基线是**目视核对**，不是自动断言：数值随预览时刻有百级漂移，
+    「两策略指派数不同」「9 行拒绝原因不是同一句」才是可复核的判定依据。
+
+- **验证基线（2026-10-03 实测·第九批：风险预检按是否依赖派发分两节）**：
+  - ✅ `npm test`（**空载**）：**98 个套件 / 1091 个用例全通过**（第八批 1085 + 本批新增 6 条 ——
+    `shared/src/plan-risk.test.ts` +5：每个 kind 都有归属且两节都非空 / 五类归派发节、两类归待派节 /
+    只有待派时不出派发节 / 同一单两类并存**不去重** / 两节顺序与组内顺序保持扫描顺序；
+    `renderer/src/pages/AlertsRisk.test.tsx` +1（`ISS-096` 回归：只待派时**只有**「待派与超时缺口」节标题、
+    **不出现**「派发冲突与执行风险」）；另改 2 处 `aria-label` 与 1 处「还有 N 条」→「其中 N 条」断言。
+  - ✅ `npm run typecheck` 三 workspace exit 0；`npm run build` 三端通过
+    （renderer JS 722.21 kB / gzip 224.43 kB、CSS 79.56 kB / gzip 12.94 kB）；
+    `npx vitest run tests/docs.test.ts` 8 条通过。
+  - ✅ **`npm run dev:electron` 真实走查**（`ipc` + SQLite）：`admin` 登录 → 调度中心 → 全选 9 条待派 →
+    「全部（对比）」→ 预览（贪心 6/9 · 加权综合分 12866.0 · 3080 m；匈牙利 4/9 · 19136.0 · 2100 m；
+    差异 +6270.0；3 行拒绝原因各说各的、`被占用` 句里不出现「晚点」—— 第八批修复仍生效）→
+    点「应用这 6 条派发」→ 确认框（列 6 条生效 + 3 条不派发）→ 确认 → 提示「已派发 6 单（贪心），
+    6 单已开始执行」→ 转告警中心。
+  - ✅ **分节实测**：告警中心「任务风险预检」显示 **「共 3 条 · 需留意 3」**，只渲染 **节 2「待派与超时缺口」**
+    （3 行全为「未派发」：T-DEMO-0014 / 0015 / 0016），**节 1「派发冲突与执行风险」按设计不渲染** ——
+    这批贪心计划本身无冲突（同屏「本批次预检」也显示「没有发现冲突或超时」），恰好演示了「空节不显示」；
+    导语的两节说明、结尾行「其中 3 条完全没有安排车辆」与「去调度中心派发」链接均在位。
+  - > 这条是**目视核对**：读数取自一次真实走查，判定依据是「分节标题出现 / 空节不出现」，
+    而不是上面的具体条数（随预览时刻与派发批次变化）。
+
+- **验证基线（2026-10-03 实测·第六批：待派任务扩容 / 差异对照 / 派单差异）**：
+  - ✅ `npm test`（**空载**）：**98 个套件 / 1078 个用例全通过**（第六批新增两处：`DispatchConsole.test.tsx`
+    ＋2 条渲染断言、`dispatch/model.test.ts` ＋4 条纯函数断言／改 1 条旧断言为「取第一张表」；
+    `AlertsRisk.test.tsx` 的待派编码与条数改为**从任务列表接口读**，不再硬编码 6 条）。
+  - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace 全部 exit 0。
+  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 1.94 kB + CSS 78.98 kB（gzip 12.88 kB）+
+    JS 719.21 kB（gzip 223.42 kB）。
+  - ✅ `npm run db:reset`：迁移 `1, 3, 4, 5`；seed 落 `nodes:30 · edges:90 · sites:13 · restrictions:2 ·
+    vehicles:5 · templates:2 · users:3 · settings:9 · tasks:13 · routes:1 · alerts:1`（13 = 1 条演示执行 + 12 条待派）；
+    复跑幂等。
+  - ✅ **调度对比实测（真实 SQLite + 主进程内核，12 条待派任务一起预览）**：
+    - 贪心 `9/12`（拒 3，接力 5 单，执行里程 `3310 m`，行驶耗时 `40 分 42 秒`，全部完成 `04:05:11`，
+      加权综合分 `2442.4`）；
+    - 匈牙利 `4/12`（拒 8，执行里程 `2100 m`，行驶耗时 `23 分 26 秒`，全部完成 `04:02:51`，
+      加权综合分 `1406.0`）；
+    - 差异文案「匈牙利更优的地方：少跑 1210 m、少行驶 17 分 16 秒、早 2 分 20 秒完成」；
+    - 「单车平均里程」贪心 `368 m` < 匈牙利 `525 m` —— 合计偏向派得少的一方，平均值把话说回来；
+    - 「派单差异」列出 **9 行**不一致，其中 `T-DEMO-0008`（唯一的重货）**贪心未派发、匈牙利 CAR-02**：
+      贪心把唯一能拉 900 kg 的车先用在了普通件上，重货反而排不进 —— 这正是本轮要让它「看得见」的差异。
+      （行内数字来自本机一次实跑，随机器与当前时刻略有出入；判定方式是「两策略的指派数 / 拒绝数必须不同」
+      与 `mock-parity.test.ts` 的结构断言，不是这些具体数值。）
+  - > 本轮改动只涉及 `shared/src/seed-data.ts` 的数据、`shared/src/constants.ts` 的 id 清单与
+    `renderer/` 的展示层；未重跑 Electron 端到端走查与 `npm run dev`（第五批的走查结论仍以那一节的日期为准，
+    其「候选池 6→7」等数字属**当次** 6 条待派任务的实测）。
+
+- **验证基线（2026-10-03 实测·第五批：订单派发主链路 / 派发即开跑 / 车辆中心）**：
+  - ✅ `npm run typecheck`：shared / desktop / renderer 三个 workspace 全部 exit 0。
+  - ✅ `npm run build`：三端全通；renderer 产物 `index.html` 1.94 kB + CSS 78.35 kB（gzip 12.75 kB）+
+    JS 713.25 kB（gzip 221.79 kB）。
+  - ✅ `npm run db:reset`：迁移 `1, 3, 4, 5`；seed 落 `nodes:30 · edges:90 · sites:13 · restrictions:2 ·
+    vehicles:5 · templates:2 · users:3 · settings:9 · tasks:7 · routes:1 · alerts:1`；复跑幂等。
+  - ✅ `npm test`（`npx vitest run`，**空载**）：**98 个套件 / 1072 个用例全通过**（13 s）。
+    同一天在**负载下**复跑过两次，看到的是既有 `ISS-068`（并行负载下偶发超时，原因未定位）的真实形态：
+    Electron 正在运行（执行器每秒推遥测）时 **21 条超时**、杀掉进程后同一份代码 **3 条超时**
+    （`BaseDataPage.write` 2 + `TasksPage.write` 1），而那 3 条**单独复跑 27/27 全绿（1.6 s）**；
+    两次失败的用例各不相同，失败信息都是 `Test timed out in 5000ms`。三行样本已记入
+    `docs/issues.md` 的 `ISS-068`。**结论：本批未引入新失败；这条基线必须在空载下读。**
+  - ✅ **Electron 端到端走查（真实 `ipc` + 真实 SQLite，CDP 连渲染进程）** —— 即本模块 DoD 的四条，
+    逐条实测（原文与数字见 `docs/module-M4b-order-flow.md` §8.2）：
+    ① 建单（`T20261003-0001`）→ 候选池 6→7 且自动勾选 → 「全部（对比）」预览 → 应用（开关默认开）→
+    回执「已派发 5 单（贪心），5 单已开始执行」→ 地图上 5 台车连续三次采样 `transform` 均在变
+    （`CAR-01` 6 秒内跑完转 `空闲`）→ 点「在地图上查看这 2 台车」跳地图（见下条）；
+    ② 关掉开关再派一单 → 回执「已派发 2 单（贪心），尚未启动执行」并逐条给出「去任务管理页开跑」；
+    ③ 新建一张**时间窗已过去**的订单 → 调度中心「本批次预检」2 条「必须处理」（`已超时` + `未派发`，
+    含「已经过去 36287 秒」），告警中心同一时刻读到**同样的两条**（同一次 `scanPlanRisks`）；
+    ④ 车辆中心 5 台 / 状态分桶「空闲 2 · 执行中 3」，打开 `AGV-01` 抽屉读到实时位置、当前任务
+    `T-DEMO-0001` 与 80 个采样点的轨迹折线。控制台错误 0 条。
+  - ✅ 走查另修三处（详见 `docs/issues.md`）：`ISS-090` 车辆中心抽屉坐标未走 `formatNumber`
+    （`73.59999999999991`）、`ISS-091` 新建订单后仍挂着上一批的「在地图上查看 N 台车」、
+    `ISS-092` `DispatchPage.test.tsx` 仍在断言已移除的徽标（用例与新页面漂移）。
+  - > 本轮未重跑 `npm run dev`（Vite 侧未改动）与 `db:migrate` 的冷启动引导（迁移集未变），故不声称结果。
+
+- **验证基线（2026-10-03 实测·第三批：任务风险预检 / 派发区块 / 路线列 / 派发后上地图）** —— 保留供对照：
   - ✅ `npm test`：**92 个套件 / 1041 个用例全通过**（本批新增 `shared/src/plan-risk.test.ts` 19 条、
     `desktop/src/domain/alert/risk.service.test.ts` 8 条、`renderer/src/pages/AlertsRisk.test.tsx` 3 条、
     `renderer/src/dispatch/DispatchConsole.test.tsx` 4 条；`renderer/src/ops/model.test.ts` 扩到 18 条
@@ -224,7 +391,7 @@
 
 | 位置 | 已有内容 | 缺口 |
 | --- | --- | --- |
-| `shared/src/` | `enums.ts`（角色/状态/优先级/错误原因/20 个权限点 + `ROLE_PERMISSIONS`）、`types.ts`（信封、分页、DTO（含**M2 的六个列表项**与四类地图图层契约）、调度预览类型、**`MapOverview` 快照契约 8 个接口**、**M5 的 `RoutePlan` / `RouteCompare*` / `RouteDetail`（`costDetail.travelS` 可选）**）、**`edge-code.ts`（边的业务编码唯一作者，D-35/ISS-051）**、**`route-search.ts` / `route-graph.ts` / `route-rules.ts`（M5 路径内核：图模型 + `MinHeap` + A*/Dijkstra 共用框架、`buildRouteGraph` 三层排除、`validateRouteInput` 与途经点规则；**纯函数、无 IO**，是主进程与浏览器 Mock 的同一份实现，D-49）**、**`dispatch-types.ts`（M4 快照与视图类型 + 算法常量）/ `dispatch-evaluate.ts`（占用区间 + 单车×单任务六步评估 + 代价函数）/ `dispatch-strategies.ts`（贪心 + 匈牙利，含 `solveAssignment`）/ `dispatch.ts`（`runDispatch` 分派与再导出），D-51**、`errors.ts`（**126 条**：36 运行时 + 90 导入域；**唯一登记处**，D-33。含 `DomainError`/`ok`/`fail`/`fromError`）、`errors.catalog.test.ts`（命名/severity/文档闭环断言）、`constants.ts`（`APP_NAME`、分页默认、`DISPATCH_COST_WEIGHTS`、`MIN_BATTERY_PERCENT`、`SEED_ACCOUNTS`/`SEED_IDS`（含演示任务/路线/告警 id 与**6 条演示待派发任务**）、`SETTINGS_SCHEMA`）、**`campus-map.ts`（`data/campus/` 原生 5 文件 → 内部的唯一翻译层：列名 / 单位 / 派生字段 + 拥堵叠加层 + 「障碍物 → 封路 or 权重×2」的车道数判据；纯函数无 IO，D-28）**、**`seed-data.ts`（`buildSeedDataset()`：路网 / 站点 / 车辆 / 演示任务与路线的唯一推导处，seed 与浏览器 Mock 共用同一个函数，D-55）**、**`alert-state.ts`（M8 告警状态机唯一作者：迁移表 + `alertActionsOf` + `ALERT_NEXT_STEPS`）**、**`settings-rules.ts`（`validateSettingValue`，主进程与 Mock 共用）**、**`base-rules.ts`（M2 写路径的字段长度 / 数值域 / 枚举 / 自环 / 「`code` 创建后不可改」+ `SiteCreate`…`EdgePatch` 等写 DTO；主进程与 Mock 的共同作者，D-44）** | 四类数据文件的**导入管线**（订单 CSV / 车辆参数 / 算法配置的解析器；地图解析器已落地）。M2 之外的实体仍有少数派生 DTO 未收口 |
+| `shared/src/` | `enums.ts`（角色/状态/优先级/错误原因/20 个权限点 + `ROLE_PERMISSIONS`）、`types.ts`（信封、分页、DTO（含**M2 的六个列表项**与四类地图图层契约）、调度预览类型、**`MapOverview` 快照契约 8 个接口**、**M5 的 `RoutePlan` / `RouteCompare*` / `RouteDetail`（`costDetail.travelS` 可选）**）、**`edge-code.ts`（边的业务编码唯一作者，D-35/ISS-051）**、**`route-search.ts` / `route-graph.ts` / `route-rules.ts`（M5 路径内核：图模型 + `MinHeap` + A*/Dijkstra 共用框架、`buildRouteGraph` 三层排除、`validateRouteInput` 与途经点规则；**纯函数、无 IO**，是主进程与浏览器 Mock 的同一份实现，D-49）**、**`dispatch-types.ts`（M4 快照与视图类型 + 算法常量）/ `dispatch-evaluate.ts`（占用区间 + 单车×单任务六步评估 + 代价函数）/ `dispatch-strategies.ts`（贪心 + 匈牙利，含 `solveAssignment`）/ `dispatch.ts`（`runDispatch` 分派与再导出），D-51**、`errors.ts`（**126 条**：36 运行时 + 90 导入域；**唯一登记处**，D-33。含 `DomainError`/`ok`/`fail`/`fromError`）、`errors.catalog.test.ts`（命名/severity/文档闭环断言）、`constants.ts`（`APP_NAME`、分页默认、`DISPATCH_COST_WEIGHTS`、`MIN_BATTERY_PERCENT`、`SEED_ACCOUNTS`/`SEED_IDS`（含演示任务/路线/告警 id 与**演示待派发任务 id 清单**，条数以 `seed-data.ts` 为准）、`SETTINGS_SCHEMA`）、**`campus-map.ts`（`data/campus/` 原生 5 文件 → 内部的唯一翻译层：列名 / 单位 / 派生字段 + 拥堵叠加层 + 「障碍物 → 封路 or 权重×2」的车道数判据；纯函数无 IO，D-28）**、**`seed-data.ts`（`buildSeedDataset()`：路网 / 站点 / 车辆 / 演示任务与路线的唯一推导处，seed 与浏览器 Mock 共用同一个函数，D-55）**、**`alert-state.ts`（M8 告警状态机唯一作者：迁移表 + `alertActionsOf` + `ALERT_NEXT_STEPS`）**、**`settings-rules.ts`（`validateSettingValue`，主进程与 Mock 共用）**、**`base-rules.ts`（M2 写路径的字段长度 / 数值域 / 枚举 / 自环 / 「`code` 创建后不可改」+ `SiteCreate`…`EdgePatch` 等写 DTO；主进程与 Mock 的共同作者，D-44）** | 四类数据文件的**导入管线**（订单 CSV / 车辆参数 / 算法配置的解析器；地图解析器已落地）。M2 之外的实体仍有少数派生 DTO 未收口 |
 | `desktop/src/db/` | `index.ts`（`DatabaseSync` 连接、WAL/外键/busy_timeout、`run`/`get`/`all`/`tx`、`defaultDbPath`）、**`sqlite.ts`（`createRequire` 惰性加载 `node:sqlite`，规避 vite-node 解析缺陷）**、`migrate.ts`（按序单事务 + `schema_version` 幂等；**已应用 `0001` / `0003` / `0004` / `0005`**，编号规则见 D-46 / D-54）、`seed.ts`（**只做「取数（`campus-map-source.ts` 读 `data/campus/`）→ 推导（`buildSeedDataset()`）→ 落库」三步，文件里没有业务数字**；规模见 `docs/database.md` §4）+ `campus-map-source.ts`（Node 侧取数）、`repositories/`（users / settings / audit / map；**M2 的 site / vehicle / graph / restriction / template 五件套**：读列表 + 单条读写 + 状态写入 + 跨表引用计数 + 多态目标翻译；**`task.repo.ts`（M3：列表含筛选与派生列 / 详情含计划·路线·告警·审计四块 / 状态写入 / 计划作废 / 物理删除）**、**`route.repo.ts`（M5：按 id 查路线 / 写路线 / `listGraphNodes` · `listGraphEdges` 读**全量**图 / `listRestrictionRules`；构图必须读全量，走分页列表会把路线静默规划在残缺路网上）**、**`dispatch-plan.repo.ts`（M4：`insertPlan` · 三处乐观锁 `assignTaskIfPending` / `reserveVehicleIfIdle` / `releaseVehicleIfBusy` · `listAppliedPlans` · `listActiveOccupiedSlots` · `latestOccupiedTo` · `setPlansStatus` · **`hasOtherActivePlanForVehicle`（回收前必须问这一句，见 D-53 / ISS-070）**）** 与 **`dispatch-log.repo.ts`（M4：`insertLog` · `hasApplied` · `findPreviewOutput`（排序键 `created_at DESC, rowid DESC` —— 只按 `created_at` 会在同毫秒的回收日志与新预览之间取到未定义的那一行）· `listLogs`）**；**settings 的读 / 写 / 反序列化同文件**，D-40） | seed 的 `vehicle_tracks` 初始为空（由执行器采样写入）· 导入管线的 Repository 未开工 |
 | `desktop/src/ipc/` | `router.ts`（**注册键 = 方法 + 路径模板；支持 `:name` 路径参数（`ctx.params`）；形状相同的两条模板在注册时直接报错**，D-43；另有鉴权/权限前置 + `traceId` + 统一信封兜底）、`api.ts`（**65 条路由**：health · auth×3 · settings×2 · users · map.overview · **M7 轨迹 `GET /api/map/tracks/:vehicleId`** · **M2 读×6 · M2 写×13**（6 类资源：4 类有启停、规则多一条 `DELETE`、模板只有 POST/PUT）· **M3 任务×6**（列表 / 详情 / 创建 / 编辑 / 状态操作 / 删除 —— 状态操作是**一段 `:action`** 而不是六个同构路由，允许的动作名由状态机导出，**不另写允许清单**）· **M5 路径×3**（`POST /api/routes/plan` · `POST /api/routes/compare` · `GET /api/routes/:id`，权限 `route:plan` —— **三条都不发事件**，规划是只读计算）· **M4 调度×6**（`strategies` · `preview` · `apply` · `manual-assign` · `recompute` · `logs`；三条写路由**显式 `method: 'POST'`**（`ISS-066` 的教训：不传 method 一律按 `GET` 索引，界面按契约发 `POST` 会得到「接口不存在」）；事件只由写路径发，装配在 `emitDispatchEffects`）· **M1 用户×4**（列表 / 新增 / 更新 / 重置密码）· **M7 监控×3 + 执行×2** · **M8 告警×5**（认领 / 解决 / 归档的暴露面派生自 `alert-state.ts`）· **M9 审计×2**（查询 / 导出）· **M10 设置写×1**；写路由只做「路径 → 权限 → 领域服务 → 事务提交后 emit 事件」装配）、`paging.ts`（分页解析，宽进，D-40）、`validators.ts`（`requireString` / `requireEnum` / `optionalEnumFilter` / `optionalString`，严出，D-40），三者均为纯函数、各有单测 | **四类数据文件的导入接口整体未开工**（`Req-M3-2` 的批量导入与它同批）；**M2 的详情接口 `GET /api/{资源}/{id}` 未实现**（界面不用它）；坐标/布尔类校验原语等有调用点再补 |
 | `desktop/src/services/` | `auth.ts`（登录/锁定策略）、`password.ts`（bcryptjs）、`session.ts`（内存会话）、`audit.ts`（审计写入）、`event-bus.ts`（**按会话权限过滤后**推送领域事件，D-32；含 `EVENT_PERMISSIONS`）、`event-bus.test.ts` | 告警 / 监控 / 执行的领域服务未开工（**路径 M5 在 `domain/route/`、调度 M4 在 `domain/dispatch/`**，不在本目录）；**无持续产生 `vehicle.changed` 的执行器**（故车辆静止，M7） |
@@ -234,28 +401,37 @@
 | `desktop/src/domain/dispatch/` | **M4 领域服务**：`snapshot.ts`（`loadTaskViews` / `loadVehicleViews` / `loadGraphInputs` / `loadRestrictionInputs` / `buildSnapshot` / `snapshotFingerprint`；站点→节点解析失败抛 `SnapshotProblem` 而不是让内核拿到 `undefined`）、`explain.ts`（人读文案的**唯一作者**，词表按 D-52 从 `shared` 再导出）、`dispatch.service.ts`（`listStrategies` / `preview` / `apply` / `manualAssign` / `recompute` / `listDispatchLogs`）。**apply 不重跑算法** —— 落的是预览当场存下的 `dispatch_logs.output_snapshot`，只有路线会重推（重跑会让「我确认的方案」与「实际落库的方案」不是同一个）；并发安全靠条件 UPDATE，不靠「快照没变」这种无法证伪的判据；同一辆车在一批里只预留**一次**（D-53）；`dispatch.service.test.ts`（26 例） | 跨批次的串行排程（同车在后续批次继续接单）与遗传策略（`genetic` 按设计 `enabled: false`）；执行器属 M7 |
 | `desktop/src/cli/db.ts` | `migrate` / `seed` / `reset`（reset 删 `-wal`/`-shm` 后重建） | — |
 | `desktop/preload.cjs` | `window.dispatchApi.invoke/on`（`udm:invoke` / `udm:event`，contextIsolation 开启）；**`invoke` 透传 `method`**（漏了它会让写请求退化成读请求并回报成功，见 `ISS-055`） | — |
-| `renderer/src/` | **全套已落地**：`main.tsx`（HashRouter，Electron `file://` 必需）、`api/`（client 契约 + `ipc`/`http`/`mock` 三层适配器 + `types.ts` 再导出 shared + `mock-data.ts` 与 seed 同源 + **`mock-base-write.ts`（写路径：规则共享、存储各自）+ `mock-parity.test.ts` 用同一批请求把 Mock 与真实主进程逐字段比对**）、`store/`（session / selection）、`app/`（路由 + `RequireSession` + **`modules.ts` 信息架构**）、`styles/`（**`theme.css` 令牌 + `ui.css` 共用基元** + `layout.css` 外壳）、`components/`（AppLayout / **BrandMark** / **UserMenu** / `icons.tsx` 内联图标集）、`pages/`（登录 / 工作台 / 未实现模块说明页）、**`domain/`（跨模块共用层：`labels.ts` 枚举→中文 · `table.ts` 列定义 · `form.ts` 表单机制与载荷口径 · `paging.ts` 页码收敛 · `tone.ts` 色调类名 · `format.ts` 数字/时间格式化）**、**`api/usePagedList.ts`（列表取数、竞态丢弃与页码收敛）· `api/useApiWrite.ts`（写请求与字段级错误映射）**、`dashboard/`（**工作台 model + 6 个面板 + style**）、**`base/`（M2 基础数据：`model`（列与页签）+ `form`（M2 的表单规则）+ `EntityFormDialog`（新增 / 编辑弹层，**已归公共机制之上**），页面为 `pages/BaseDataPage.tsx`）**、**`task/`（M3 任务管理：`model` 列与筛选 · `form` 表单与时间转换 · `actions` 状态操作展示（`Record<TaskAction, …>` 保证不漏）· `TaskActionDialog` 确认层 · `TaskDetailDialog` 详情 · style）**、**`route/`（M5 路径规划：`model`（途经点解析与展示口径 —— 展示值全部由函数产出，D-48）· `RoutePlanner` 面板 · style）**、**`dispatch/`（M4 调度台：`model.ts`（策略选项 / 推荐结论 / 派发明细行 / 拒绝原因行 / 确认清单 / 日志行 / 四个请求体构造函数；**纯函数，展示文案全在这里产出**，D-48）· `DispatchConsole`（两栏）· `ConfirmDispatchDialog`（二次确认）· `DispatchLogPanel`（服务端筛选 + 分页）· style；挂载页 `pages/DispatchPage.tsx`）**、`map/`（model **12** + nodes 5 + edges 2 + hooks 6 + stage + panels + style；**`model/toFlow.ts` 是图层偏移与声明尺寸的唯一作者，`model/layout.test.ts` 守住共点不遮挡**，D-42）、`test/dom-stubs.ts` | 九个模块的页面全部落地，**当前没有任何路由指向占位页**；遗留缺口：**M2 的批量导入与详情接口未开放**、**M3 的批量导入未开放**（页面内均如实标注）· 地图缺**订单端点图层**（`ISS-011`；轨迹回放已补）· `NODE_SIZE` 与 `style/map.css` 的实际尺寸**没有断言**（改字体/内边距后需重量一次，见 D-42）· **工作台数据源仍复用 `map/overview`**（刻意保持单快照，理由见 `DashboardPage.tsx` 文件头）· 无跨包 E2E 测试 |
+| `renderer/src/` | **全套已落地**：`main.tsx`（HashRouter，Electron `file://` 必需）、`api/`（client 契约 + `ipc`/`http`/`mock` 三层适配器 + `types.ts` 再导出 shared + `mock-data.ts` 与 seed 同源 + **`mock-base-write.ts`（写路径：规则共享、存储各自）+ `mock-parity.test.ts` 用同一批请求把 Mock 与真实主进程逐字段比对**）、`store/`（session / selection）、`app/`（路由 + `RequireSession` + **`modules.ts` 信息架构**）、`styles/`（**`theme.css` 令牌 + `ui.css` 共用基元** + `layout.css` 外壳）、`components/`（AppLayout / **BrandMark** / **UserMenu** / `icons.tsx` 内联图标集）、`pages/`（登录 / 工作台 / 未实现模块说明页）、**`domain/`（跨模块共用层：`labels.ts` 枚举→中文 · `table.ts` 列定义 · `form.ts` 表单机制与载荷口径 · `paging.ts` 页码收敛 · `tone.ts` 色调类名 · `format.ts` 数字/时间格式化）**、**`api/usePagedList.ts`（列表取数、竞态丢弃与页码收敛）· `api/useApiWrite.ts`（写请求与字段级错误映射）**、`dashboard/`（**工作台 model + 6 个面板 + style**）、**`base/`（M2 基础数据：`model`（列与页签）+ `form`（M2 的表单规则）+ `EntityFormDialog`（新增 / 编辑弹层，**已归公共机制之上**），页面为 `pages/BaseDataPage.tsx`）**、**`task/`（M3 任务管理：`model` 列与筛选 · `form` 表单与时间转换 · `actions` 状态操作展示（`Record<TaskAction, …>` 保证不漏）· `TaskActionDialog` 确认层 · `TaskDetailDialog` 详情 · style）**、**`route/`（M5 路径规划：`model`（途经点解析与展示口径 —— 展示值全部由函数产出，D-48）· `RoutePlanner` 面板 · style）**、**`dispatch/`（M4 调度台：`model.ts`（策略选项 / 推荐结论 / 派发明细行 / 拒绝原因行 / 确认清单 / 日志行 / 四个请求体构造函数；**纯函数，展示文案全在这里产出**，D-48）· `DispatchConsole`（两栏）· `ConfirmDispatchDialog`（二次确认）· `DispatchLogPanel`（服务端筛选 + 分页）· **本批新增 `NewOrderDialog.tsx`（新建订单弹层，复用 M3 表单并固定 `submit: true`）·
+    `applyFlow.ts`（apply + 逐单 start 的结果汇总，纯函数）** · style；挂载页 `pages/DispatchPage.tsx`（**本批改为
+    「主链路常驻 + 高级操作折叠」**））**、**`fleet/`（本批新增，车辆中心：`model.ts`（分桶 / 行组装 / 轨迹投影，纯函数）·
+    `useFleetList.ts`（`/api/monitor/vehicles` + 事件分层：带坐标的 `vehicle.changed` 只覆盖坐标，其余节流重拉）·
+    `FleetTable` · `VehicleDrawer` · style；挂载页 `pages/FleetPage.tsx`）**、`map/`（model **12** + nodes 5 + edges 2 + hooks 6 + stage + panels + style；**`model/toFlow.ts` 是图层偏移与声明尺寸的唯一作者，`model/layout.test.ts` 守住共点不遮挡**，D-42）、`test/dom-stubs.ts` | 九个模块的页面全部落地，**当前没有任何路由指向占位页**；遗留缺口：**M2 的批量导入与详情接口未开放**、**M3 的批量导入未开放**（页面内均如实标注）· 地图缺**订单端点图层**（`ISS-011`；轨迹回放已补）· `NODE_SIZE` 与 `style/map.css` 的实际尺寸**没有断言**（改字体/内边距后需重量一次，见 D-42）· **工作台数据源仍复用 `map/overview`**（刻意保持单快照，理由见 `DashboardPage.tsx` 文件头）· 无跨包 E2E 测试 |
 | `renderer/index.html` | 首屏声明：内联 `data:` SVG 图标、`color-scheme: dark`、`theme-color`（D-37）；由 `renderer/src/app/index-html.test.ts` 断言「图标色值都已登记在 `theme.css`」 | 无（该文件只需保持自包含） |
 | `tests/` | `setup.ts`（全局 setup：`@testing-library/jest-dom/vitest` + 每个用例后卸载 React 树 —— **本项目未开 `globals`，自动 cleanup 不生效**，必须显式注册）、**`docs.test.ts`（仓库级文档不变量，8 例：边界行齐全 / 文档里的源码路径必须存在 / `issues.md` 索引-锚点-明细一一对应 / **`issues.md` 的 §0 分布 · 索引表 · 明细段三处计数互相对齐**（`ISS-057` 的护栏）/ `api.md` §0 含关键事实行 / 代码里的每个路由都能在 `api.md` 查到（**单向**）/ 路由字面量必须写在 `path:` 里（元护栏）；`vitest.config.ts` 的 `include` 已纳入 `tests/**`）** | 文档护栏只覆盖「结构不变量」，**不校验正文与代码的语义一致**（那需要重新发明 D-34 的指派表）；jsdom 所需的 `ResizeObserver`/`matchMedia` stub 放在 `renderer/src/test/dom-stubs.ts` 里按需引入，**不进全局 setup**（否则 node 环境的 desktop 用例会被污染） |
 
-> 测试现状：**88 个测试文件 / 991 用例全通过**。分布（按目录，文件名即套件名）：
+> 测试现状：**98 个测试文件**（用例数以最近一次实测为准，见「验证基线」—— 用例数是最易漂移的一项，
+> 这里不再复述；负载下会撞上 `ISS-068` 的偶发超时）。分布（按目录，文件名即套件名）：
 >
-> - `shared/src/`（17）：`enums` · `errors` · `errors.catalog` · `edge-code` · `base-rules` · `task-state` ·
+> - `shared/src/`（16）：`enums` · `errors` · `errors.catalog` · `edge-code` · `base-rules` · `task-state` ·
 >   `task-rules` · `route-search` · `route-graph` · `route-rules` · `dispatch-occupancy` · `dispatch-evaluate` ·
 >   `dispatch-greedy` · `dispatch-hungarian` · `dispatch`。
-> - `desktop/src/`（25）：`db/db` · `db/repositories/{base-data.repo, map.repo, settings.repo, task.repo}` ·
+> - `desktop/src/`（26）：`db/db` · `db/repositories/{base-data.repo, map.repo, settings.repo, task.repo}` ·
 >   `services/{auth, event-bus}` · `ipc/{router, router.dispatch, paging, validators, api.auth, api.route,
 >   api.task, api.write, api.dispatch, api.ops}` · `domain/{base/base.service, task/task.service,
 >   route/route.service, dispatch/dispatch.service, user/user.service, alert/alert.service,
 >   settings/settings.service, execution/executor}`。
-> - `renderer/src/`（45）：`api/{index, mock-data, mock-parity, mock-dispatch}` ·
+> - `renderer/src/`（55）：`api/{index, mock-data, mock-parity, mock-dispatch}` ·
 >   `app/index-html` · `components/{AppLayout, UserMenu}` · `styles/classnames` ·
 >   `domain/{format, paging, labels, tone}` · `base/{model, form}` · `task/{model, form, actions, execution}` ·
 >   `route/model` · `dispatch/model` · **`ops/model`** · `dashboard/{model/summary, panels/dashboard}` ·
 >   **`map/edges/NetEdge`**（本批新增）· `map/MapView` · `map/panels/panels` · `map/hooks/useVehicleMotion` ·
 >   `map/model/{ids, projection, structural, motion, toFlow, layout, focus, metrics, detail, palette,
 >   visualization, track}` · `pages/{TasksPage, TasksPage.write, DispatchPage, DispatchPage.error,
->   BaseDataPage, BaseDataPage.write, OpsPages, AlertsBatch}`。
+>   BaseDataPage, BaseDataPage.write, OpsPages, AlertsBatch}`；
+>   **本批新增 6 个**：`dispatch/{applyFlow, NewOrderDialog, DispatchAutoStart, DispatchNewOrder}` ·
+>   `fleet/model` · `pages/FleetPage`。其中三个「会改数据」的用例刻意分成 `DispatchNewOrder` /
+>   `DispatchAutoStart` / `DispatchConsole` 三个文件 —— Mock 是内存库，`apply` 会把候选池搬空，
+>   同文件内的后续用例会因为「池子空了」而失败（那种失败长得像功能坏了）。
 > - `tests/docs.test.ts`（仓库级文档不变量）：边界行齐全 · 文档里的源码路径必须存在 · `issues.md` 索引-锚点-明细
 >   一一对应 · **§0 分布 · 索引表 · 明细段三处计数互相对齐**（`ISS-057` 的护栏）· `api.md` §0 含关键事实行 ·
 >   代码里的每个路由都能在 `api.md` 查到（单向）· 路由字面量必须写在 `path:` 里（元护栏）。
@@ -381,6 +557,10 @@
 | D-55 | seed 与浏览器 Mock 的演示数据**改为同一个函数推导**（`shared/src/seed-data.ts` 的 `buildSeedDataset()`），`desktop/src/db/seed.ts` 只做「取数（读 `data/campus/`）→ 推导 → 落库」，`renderer/src/api/mock-data.ts` 调的是**同一个函数** | 这是 D-27 的升级，不是重复：D-27 说「mock 用 `SEED_IDS` 与 seed 同规则派生」，落地后仍是**两份代码各推一遍**，比对靠测试。换成一份推导之后，**比对不可能失败，因为它不再有两份** —— 而「不可能失败」比「失败得很快」更根本。同时把业务数字从代码里赶了出去：`seed.ts` 与 `docs/database.md` §4 里都不再写「12 节点 / 34 边 / 间距 20 m」这类会漂移的数值，它们住在 `data/campus/` 的 CSV 与推导函数里（D-34 的同一原则：每个事实只有一个作者）。代价是 seed 依赖 `data/campus/` 存在 —— 因此那四个文件**必须纳入版本控制**（`.gitignore` 的 `.db` 规则不覆盖它们） | 已定 |
 | D-56 | **演示数据的时间戳必须相对「现在」派生，不得写成常量**（`renderer/src/api/mock-data.ts` 的 `MOCK_AT` 改为模块加载时刻；演示待派任务的时间窗在 seed 复跑时刷新，且**只在任务仍为 `pending` 时**刷新） | 起因是本轮实测的两个连通缺陷（`ISS-077` / `ISS-078`）：`MOCK_AT` 被写成 `'2026-01-01T00:00:00.000Z'`，而调度用的 `now` 是真实时刻 —— 于是**浏览器形态下 6 条演示任务 100% 报「时间窗冲突」**，看起来像算法或校验坏了；同一个常量还让演示告警的「停滞时长」显示成「已 9 个月未认领」。两个后果形态不同、根因相同：**把「一个具体日期」当成了「相对当前时刻的关系」**（与 `ISS-073` 是同一族）。**为什么只在 `pending` 时刷新**：任务一旦被派发/执行，时间窗就是业务数据，seed 无权改写 —— 幂等不等于「每次启动都重置」 | 已定 |
 | D-57 | **任务风险预检不是告警**：`GET /api/alerts/risks` 不读不写 `alerts` 表、不进状态机、没有 `id`、不能认领；判据（7 类风险）的唯一作者是 `shared/src/plan-risk.ts` 的 `scanPlanRisks`，主进程与浏览器 Mock 调**同一个函数**；报告一次给出「风险清单 / 已生效派发 / 未派发缺口」三个视图，`assignments` 的排序由服务端定死 | 起因是「告警中心要能把任务冲突与超时都列出来」这个诉求 —— 但**把它们做成告警是错的**：告警是「已经发生」的事（车辆离线了），有状态机、要人认领、要留处置结论；「**预计**会超时」被认领掉没有任何意义，它要么被处理掉（改派 / 调窗口），要么等它真的超时、由执行器落一条真告警。把两者混在一张表里会立刻产生两个恶果：① 预检每次刷新都新增一批「告警」（去重窗口也救不了，因为数字每次都在变）；② 使用者去点「认领」而不知道该做什么。**为什么判据放 `shared` 而不是渲染层**：`renderer/src/ops/model.ts` 只做展示，「这条计划会不会超时」是业务判断 —— 放渲染层会立刻产生第二个裁判（界面说超时 5 分钟、内核按同一份数据放行），使用者只能猜哪个对。**为什么三个视图合在一个回执里**：它们是同一次读取的三个切面，分成三次请求就会出现「风险说某车撞单，而派发区块里那两单已经不在」。见 `docs/api.md` §3.8.3 | 已定 |
+| D-58 | **「派发后立即开跑」在渲染层组合，不改服务端契约**：调度中心的 apply 仍是 `POST /api/dispatch/apply`（只到 `assigned` / `reserved`）；apply 成功后，若开关开启且会话拥有 `execution:start`，渲染层**逐单顺序**调用 `POST /api/execution/tasks/{id}/start`，并把逐单结果（成功 / 失败原因）显式展示。开关默认值 = 会话是否有 `execution:start`，无权限则整块隐藏并说明原因 | 使用者要求「订单应用后车就能在地图上跑起来」，而 D-11 把「派给谁」（`dispatch:apply`）与「现在开跑」（`execution:start`）分成两个权限点。三条路里：①服务端 apply 自动 start —— 合并权限点、推翻 D-11，且事务里混入执行器副作用，「apply 失败」与「start 失败」会退化成同一个错误码；②保持纯手动 —— 不满足诉求，地图上永远没有刚派发的车在动；③渲染层组合 —— 契约与权限点不变，代价是存在「已派发未开跑」的显式中间态。选③，并把中间态**展示出来**而不是藏起来（部分失败不掩盖成功部分）。待评审见 `docs/issues.md` ISS-088 | 已定 |
+| D-59 | **车辆中心 `/fleet` 是运行态读模型，不是第二套车辆 CRUD**：数据源为 `GET /api/monitor/vehicles` + `GET /api/map/overview` + `GET /api/map/tracks/{vehicleId}`；页面准入复用 `monitor:read`（**不新增权限点**）；`base:write` 才显示「编辑 / 启停」入口，且**跳转到基础数据页**执行，不在本页复制车辆表单 | 车辆表单与校验的唯一作者已确定（`renderer/src/base/` + `renderer/src/pages/BaseDataPage.tsx`，M2 已落地）；在 `/fleet` 再写一份 vehicle 表单会得到两处各自演化的字段清单与校验（D-34）。把「加车」留在基础数据、把「看车」独立成一页，是本轮成本最低且不产生第二作者的切法。页面路由/导航的唯一作者仍是 `renderer/src/app/modules.ts`；需求条目见 `design.md` §4.2 的 Req-M2-8 | 已定 |
+| D-60 | **批次「加权综合分」必须包含未派发惩罚**：`summary.totalCost` = `Σ(已派发计划的加权代价) + 未派发单数 × DISPATCH_UNSERVED_PENALTY_S`；算法唯一作者是 `shared/src/dispatch-evaluate.ts` 的 `compositeScoreOf(plans, rejectedCount)`，全部 7 处汇总点（`shared/src/dispatch-strategies.ts` 2 处 · `desktop/src/domain/dispatch/dispatch.service.ts` 2 处 · `renderer/src/api/mock-dispatch.ts` 3 处）**都调它**，不各自写一份 `reduce` | 缺陷是旧口径只累加**已派发**计划的 `cost`，被拒任务贡献 0 —— 于是「拒得越多分越低」。实测（18 条待派）贪心派 9 单加权综合分 35546、匈牙利派 4 单 51656；但**旧口径**下匈牙利 1256 < 贪心 3146，指标会把「少干 5 单活」推成推荐策略，与「指派数优先」的推荐口径自相矛盾。惩罚取值必须**严格大于任何单条计划代价**，否则出现「故意拒掉贵单反而分更低」的反向激励：本演示路网实测单条计划代价上界 ≈ 2773 加权秒（空驶 + 执行 + 晚点 / 续航最坏项），取 3600 留约 1.4 倍余量。`desktop/src/domain/dispatch/dispatch.service.test.ts` 用**真实 seed 穷举** `max(plan.cost)` 断言它小于惩罚 —— 地图变大或惩罚调小时该用例先红。属**口径常量**，二期接真实成本模型（违约赔付 / SLA）时改为可配置。见 `docs/module-M4-dispatch.md` §7.3 / §7.4 | 已定 |
+| D-61 | **拒绝原因按「离能跑还差多少」排序，不按六步评估的步骤号取第一条**：`mostInformativeReject(fails)` 的 `REJECT_STEP_ORDER` 为「班次冲突 / 电量不足（只差资源，任务本身可做）> 车辆不可用（临时状态）> 载重 / 可达性 / 禁行（这台车对这条任务的**固有**约束）」，`NO_AVAILABLE_VEHICLE` 兜底恒排最后；并列时保留先遇到的那条（`snapshot.vehicles` 顺序稳定 → 结果可复核）。贪心改为收集**全部**失败后取最优，匈牙利步骤 1 同步 | 起因是 `runGreedy` 原先取「遍历到的第一个失败车辆」，而 `AGV-01` 恒 `busy` 且恒在 `snapshot.vehicles` 首位 —— 十几条占用区间冲突全被报成同一句「AGV-01 不可用」，真实瓶颈（四台可用车班次排满）读不出来。**不能直接按步骤号排序**：步骤 1 的 `VEHICLE_NOT_AVAILABLE` 会把「有车能装但暂时被占」误报成「装不下」；反向反例同样必须成立 —— 900 kg 任务在唯一的大车 `CAR-02` 被预留后，其余车全是 `LOAD_EXCEEDED`，优先报它又说成「没有车装得下 900 kg」，而**事实是有的、只是不可用**。两个方向的反例各写成一条用例。修掉 `ISS-093`。见 `shared/src/dispatch-strategies.ts` | 已定 |
 
 | 2026-09-28 | 站点锚定路网节点一律取边的 `fromCode`，演示路线里程虚增近一倍 | 「边的第一个端点」是**文件里的书写方向**，被当成了「站点实际在哪一端」 | 改为按几何最近端点判定（`nearestEndpointOf`，端点缺失即抛错） | `shared/src/seed-data.ts`（ISS-076） |
 | 2026-09-28 | 浏览器 Mock 形态下 6 条演示待派任务**全部**被拒（`TIMEWINDOW_CONFLICT`），Electron 形态正常 | 演示数据的时间基准写成常量 `2026-01-01`，而调度用的 `now` 是真实时刻 —— 任务窗在 1 月、车的可用区间在 9 月 | 改为模块加载时刻派生（D-56）；写明「演示数据的时间戳不能冻结」 | `renderer/src/api/mock-data.ts`（ISS-077） |
@@ -488,6 +668,16 @@
 | 2026-10-03 | 告警中心给 seed 的演示任务报「缺路线」假红 —— 而车正按那条路线在跑 | 取数只查 `dispatch_plans`，没实现执行器那套「计划优先、按 `routes.task_id` 回退」的两级查法；这条规则此前在三个地方各写一遍 | **已解决**：抽成 `shared/src/plan-risk.ts` 的 `planInputsOf`（唯一作者），主进程与 Mock 共用；回退区间 = 起始时刻 + 路线时长，与执行器推进任务的时间轴同口径（ISS-085） |
 | 2026-10-03 | 风险预检的「已超时」对 `pending` 任务**永不触发** —— 最容易超时的一类恰好被过滤掉了 | 超时循环与「占用着车辆」循环共用了 `ACTIVE_TASK_STATUSES`，把「占用车辆」当成了「还没结束」 | **已解决**：拆出 `UNFINISHED_TASK_STATUSES`（比占用集合多一个 `pending`）专供超时判断；先确认回归用例在改动前会转红（ISS-084） |
 | 2026-10-03 | 预检表的「建议动作」在真实 Electron 里被裁半句，而 DOM / 单测 / 控制台**全绿** | 沿用了列表页的 `white-space: nowrap`；溢出的 37px 交给 `.udm-table__wrap` 的 `overflow-x: auto`，而 macOS 默认不显示滚动条 | **已解决**：该两列显式 `white-space: normal` + 建议列 `max-width`；护栏改成读 `ops.css` 断言（jsdom 量不出布局）。教训：**布局缺陷不在 DOM 里，只在真实渲染尺寸下**（ISS-086） |
+| 2026-10-03 | 车辆中心的抽屉里坐标显示成 `73.59999999999991`，而同一页表格里是 `73.6` | 抽屉直接插值 `{vehicle.x}`，绕过了展示口径的唯一作者 `domain/format.ts` 的 `formatNumber`（表格走了它，抽屉没走） | **已解决**：坐标与轨迹采样点一律走 `formatNumber`。教训同 `ISS-086`：**「同一事实两处渲染」必须走同一个函数**，否则只有打开抽屉才看得见（ISS-090） |
+| 2026-10-03 | 新建订单的提示旁边仍挂着**上一批**的「在地图上查看这 2 台车」，看起来像新单已经派了车 | `onOrderCreated` 清了 `runSummary` 与提示，却漏了 `applied`（那个按钮的渲染条件）；派发路径清了，建单路径没清 | **已解决**：建单时一并 `setApplied(null)`，并补一条「先断言按钮存在、再断言它消失」的回归用例（先确认「本来有」才能证明「被清掉了」）（ISS-091） |
+| 2026-10-03 | 调度中心精简后 `DispatchPage.test.tsx` 变红（`Unable to find an element with the text: 路径规划可用`），看起来像页面渲染坏了 | 用例断言的是「页头有某句文案」这种**与信息架构强耦合**的细节，而本轮把路径规划收进了折叠区、页头徽标也改了口径 | **已解决**：用例改为「断言折叠区默认收起 → 点开 → 照旧操作」，锁**行为与层级**而不是锁文案；同类教训见 `ISS-081`（用例引用旧节点 id）与 `ISS-073`（把未来时间写死）（ISS-092） |
+| 2026-10-03 | 同一份代码跑 `npm test`：Electron 运行中 21 条失败、杀掉进程后 3 条失败、单独复跑全绿 | `ISS-068` 的偶发超时 —— jsdom 用例的 5 s 超时窗口在并行 + 高负载下不够；失败信息是 `Test timed out in 5000ms`，与功能无关 | **未修（待办）**：本轮只把它当证据记录（负载越重失败越多、失败用例每次不同、单独跑全绿）。修它要单独成批，并在改超时 / 并行度前后各测一次影响（ISS-068） |
+| 2026-10-03 | 第一版「预留任务」用**未来时间窗**实现后，`mock-parity.test.ts` 的「两条策略逐字段相同」当场变红（加权综合分 4931.6 vs 4902.3、完成时刻差 9 s） | 时间窗起点晚于 seed 时刻后，`waitTimeS = 窗口起点 − 到达时刻`，而「窗口起点」来自**数据基准时刻**（Mock 取模块加载时刻、主进程取 seed 运行时刻）、「到达时刻」来自**预览时刻** —— 两者必然不同，差异于是**从时间字段泄漏进等待时间与加权综合分**。而这个项目此前明确写着「两种形态的差异只有时间字段」（`renderer/src/api/mock-data.ts` 文件头），一致性护栏正是为这种「看起来只是时间、其实进了业务数字」的静态排除项而设 | **已解决（改为不用时间窗错开）**：放弃未来时间窗，改用**任务端点设计**制造可接力的空档（短途件塞进某台车班次之间），差异照样拉开。教训与 `ISS-068` / D-34 同族：**「只有时间字段不同」是一个必须被守住的不变量，不是一句描述** —— 任何让时间进入业务数值的设计（等待、超时、费用）都会让两层适配器在同一份数据上给出不同的数字，而这种差异在界面上只表现为「两个形态的推荐结论不一样」· 出处：`shared/src/seed-data.ts` · `renderer/src/api/mock-parity.test.ts` · [`docs/seed-dispatch-diversity.md`](./docs/seed-dispatch-diversity.md) §3 |
+| 2026-10-03 | 待派任务扩到 19 条以上时 `api.task.test.ts` 与 `TasksPage*.test.tsx` 变红（首屏读不到 seed 的演示执行任务） | 任务列表默认一页 20 条：1 条演示执行 + 19 条待派 = 20，再多一条就把演示任务挤到第 2 页，而用例断言它首屏可见 —— 这个上限是**分页契约**造成的，不是算法问题 | 待派上限锁 18（1 + 18 = 19 ≤ 20）；其成因（浏览器 Mock 的新建记录时间戳与演示数据同基准 `MOCK_AT`，刚建的任务排在列表末尾）登记为 **`ISS-094`（待办）**，要修得改适配层的记录时间戳口径 | `shared/src/seed-data.ts` / `docs/issues.md`（ISS-094） |
+| 2026-10-03 | 第一版「未派发惩罚」取 2700 加权秒，仍可能被单条贵计划反超 | 惩罚必须**严格大于任何单条计划代价**；按本演示路网「空驶 + 执行」上限 1673 s，再叠加晚点容忍与续航风险的最坏项，理论值约 2773 s > 2700 | 取 3600（3600 ≈ 2773 × 1.3），并新增一条按**真实 seed 穷举** `max(plan.cost)` 的用例把「惩罚足够大」变成可执行断言 | `shared/src/dispatch-types.ts` / `dispatch-evaluate.test.ts`（D-60） |
+| 2026-10-03 | 改「拒绝原因取哪一条」时，第一版直接按六步**步骤号**排序，实测把要修的反例原样复现 | 步骤号顺序恰好把 `VEHICLE_NOT_AVAILABLE` 排在 `LOAD_EXCEEDED` 之前 —— 而这正是「有车能装、只是没空」被误报成「装不下」的形态；两个方向都能举出反例，说明判据不是「谁先失败」而是「离能跑还差多少」 | 改为按 `REJECT_STEP_ORDER` 的**信息量**定序（窗口冲突 / 电量 → 车辆不可用 → 载重 / 可达 / 禁行），两个方向各写一条用例（`shared/src/dispatch-greedy.test.ts`） | `shared/src/dispatch-strategies.ts`（D-61 / ISS-093） |
+| 2026-10-03 | 真实 Electron 走查：调度中心「拒绝原因」表 9 行的「具体情况」**全是同一句**「预计晚点 0s，超出容忍 0s」，而真实原因是占用区间冲突 | `TIMEWINDOW_CONFLICT` 一个 code 覆盖两种情形，主进程 `explain.ts` 用「有没有 `lateS`」分辨、渲染层的同口径副本没分（`?? 0` 于是拼出「晚点 0s」）——**两份实现各推一遍判据，只改一边就漂移** | 判据上移到产出方：`detail.kind`（`late` / `occupied`）+ 共享的 `isLateWindowConflict`，主进程与渲染层都调它；补「两种情形 + 旧快照回退」的用例，并断言「被占用」那句里不出现「晚点」 | `shared/src/dispatch-evaluate.ts` / `desktop/src/domain/dispatch/explain.ts` / `renderer/src/dispatch/model.ts`（ISS-095 / D-61 邻域） |
+| 2026-10-03 | 一条任务都没派发，告警中心却在报「冲突」；面板写「共 12 条」而待派只有 9 条（3 条各被报两遍） | 七类风险里只有五类依赖已生效派发；另外两类（`WINDOW_EXPIRED` 窗口已过 / `UNASSIGNED_TASK` 还没排上车）对同一条 `pending` 任务可同时成立，却与派发类风险平铺在一张表、共用一个「冲突与超时」标题，读者无法分辨「哪些是派发造成的」 | **已解决**：不改判定、不去重，按「是否依赖已生效派发」分两节呈现（节 1 空则不渲染）；分类判据上收到 `shared/src/plan-risk.ts` 作单点作者，渲染层只渲染不判断（ISS-096）。教训：**这类问题单测与文档都看不出，只有人读那 12 行才会发现**，与 ISS-084 / ISS-090 / ISS-095 同族 | `shared/src/plan-risk.ts` / `renderer/src/ops/RiskPanels.tsx`（ISS-096） |
 
 ## 工作日志
 
@@ -2207,7 +2397,9 @@
   4. 地图仍缺**订单端点图层**（`ISS-011`，`map/overview?include=orders`）。
   5. 告警可再加「按停滞时长排序」；调度对比表可加「按车辆分组」的第二种视图（当前是两块并列）。
 
-### 2026-10-03 — 告警中心「看未来」：任务冲突 / 超时预检 + 任务分配派发区块；调度加路线列与派发后上地图（D-57，ISS-083…ISS-086）⏳（未提交）
+### 2026-10-03 — 告警中心「看未来」：任务冲突 / 超时预检 + 任务分配派发区块；调度加路线列与派发后上地图（D-57，ISS-083…ISS-086）✅（已并入 `fef52a6`）
+
+> 同日后半段的**术语改名批次**（「代价」→「加权综合分」）见本条日志末尾的「补充」小节，那一批**尚未提交**。
 
 - **范围与目标**：使用者提出四项诉求 —— ① 调度中心要对**已有车辆**的任务分配与路线分配做算法比较；
   ② 告警中心要**列举出所有可能的任务冲突与任务超时**；③ 给出**任务分配派发的区块**；
@@ -2255,11 +2447,333 @@
   它跑的是旧 `dist/main.js`（没有 `alerts/risks` 这条路由），于是 `/api/alerts/risks` 被
   `/api/alerts/:id` 命中并返回「告警不存在」—— 看起来像新接口写错了。**重启进程后一切正常**；
   这正是既有纪律「改完主进程 / preload 必须重启 Electron 再验证」的又一次印证。
+- **补充（同日，同批未提交）：把界面上的「代价」改称「加权综合分」**
+  - 起因：使用者提出「代价」这个词容易被读成运费 / 价格，而它其实是加权秒数。
+  - 改法：新增 `renderer/src/domain/labels.ts` 的 **`COST_METRIC_LABEL = '加权综合分'`（唯一作者，
+    两个使用者：调度台与任务详情弹层）**；调度台两处列头（并加 `title` 说明「越低越好、由五项加权得出」）、
+    按车辆分组行、推荐文案、调度日志小结、任务详情弹层都改为引用它；策略描述与 `explain.ts` 的策略小结
+    （会写进调度日志、界面能读到）同步改口。**算法侧 `cost` / `costOf` / `DISPATCH_COST_WEIGHTS` /
+    「代价函数」等标识符与文档术语一律不变** —— 改的只是给人看的字；`docs/module-M4-dispatch.md` §7.3
+    加了一行「算法叫代价、界面叫加权综合分」的对照，避免后来者以为实现与文档不一致。
+  - 实测（Electron 真实 `ipc`）：对比表列头与派发明细列头均为「加权综合分」（共 4 张表的列头逐项读出）、
+    两处 `title` 生效、策略描述显示「挑当前加权综合分最小的车辆 / 求加权综合分总和最小的指派」、
+    日志小结显示「派 5/6 · 拒 1 · 加权综合分 1712.4」；**全文再无「总代价 / · 代价」**。
+    另做了一次**「只点预览不点应用」**的对照（日志前后只有一条 `preview`），确认改文案没有碰到派发链路。
+  - 顺带发现并登记 **`ISS-087`（待办）**：时间戳有两个格式化作者 —— 告警页按本地时区渲染
+    （`ops/model.ts` 的 `shortTime`），调度 / 审计等页把 UTC 串直接印出来（`domain/format.ts` 的
+    `formatDateTime` 只是删掉 `Z`），**实测相差 8 小时**。库里的值是对的，错在渲染；
+    **本轮不修**（会波及一批断言的字符串与多处页面，需先定「全系统本地时间还是 UTC」的口径）。
 - **遗留问题与下一步**：
-  1. **本批未提交**（用户未授权 `git commit`）。日志与 `docs/issues.md` 已同步，**随时可提交**。
-     拟提交信息：`feat(alert): 新增任务风险预检与派发区块，调度补路线列与派发后地图跳转`。
-  2. **`ISS-083`（Mock 读接口不校验会话）未修**：浏览器形态下读接口匿名可读，与主进程口径相反；
+  1. **本批（「代价」→「加权综合分」）尚未提交**（用户未授权 `git commit`）。日志与 `docs/issues.md`
+     已同步，**随时可提交**。拟提交信息：`refactor(dispatch): 界面术语「代价」统一改为「加权综合分」`。
+     **上一批（风险预检 / 派发区块 / 路线列 / 派发后上地图）已由使用者并入 `fef52a6`**，
+     即本条日志与 `ISS-084`…`ISS-086` 的代码与文档都已进版本库。
+  2. **`ISS-083`（Mock 读接口不校验会话）与 `ISS-087`（时间戳 UTC / 本地两套口径）未修**，
+     两者都应单独成批：前者要给 Mock 补一张「已知路径 → 是否 public」表，
+     后者要先定「全系统用本地时间还是显式 UTC」再动（会波及多个页面与断言）。`ISS-083` 细节：浏览器形态下读接口匿名可读，与主进程口径相反；
      修它要给 Mock 补一张「已知路径 → 是否 public」表，属独立一批（本批只在 `mock-parity` 里
      把断言范围限定为「有会话时一致」，并把原因写在用例注释里）。
   3. 地图仍缺**订单端点图层**（`ISS-011`）与**轨迹回放**的界面入口（接口已有，ISS-012 已关闭）。
   4. 风险清单的排序目前固定为「级别 → 类型 → 任务编码」；「按停滞时长排序」与「按车辆聚合视图」可作后续增强。
+
+### 2026-10-03 — 订单派发主链路打通 + 新增车辆中心：调度内建建单、派发即开跑、本批次预检同屏（D-58 / D-59，ISS-088…ISS-092）⏳（未提交）
+
+- **范围与目标**：使用者提出两组诉求 ——
+  ① **流程**：「调度中心创建一个新订单 → 调度中心调度一个车来派发这个订单 → 新订单提交告警中心
+  提出可能出现的冲突问题」；② **前端**：「订单应用后，车可以在前端地图中跑出来（实时仿真地行动就行）」，
+  并「额外设计一个车辆中心」；③ 前置要求：「把这些需求整理到改动文档后再进行修改」。
+  按 `design.md` 的 M4（调度）/ M2（基础数据）/ M7（监控与执行）/ M8（告警）四条需求线拆成六项，
+  **先写方案文档再动代码**（`docs/module-M4b-order-flow.md` 先于实现成文，本批按它落地）。
+- **变更清单（新增 / 修改）**：
+  - **文档（第 0 步，先于代码）**：新建 `docs/module-M4b-order-flow.md`（六项方案、口径裁决、
+    文件级改动清单、测试与 DoD、明确不做清单、登记位置表、风险；§10 为本批实现回写）；
+    `design.md` 新增 `Req-M2-8`（车辆中心）· `Req-M4-8/9/10`（建单 / 自动开跑 / 预检）· `Req-M7-6`，
+    §7.1 页面清单加「车辆中心 `/fleet`」；`README.md` 文档入口加一行；`docs/api.md` §0 的模块文档指派行
+    加入 module-M4b；本文件新增 **D-58 / D-59** 与「困难与问题记录」；`docs/issues.md` 新增 5 条
+    （`ISS-088` 待评审 + `ISS-089`…`ISS-092` 已解决）。
+  - **调度中心（`renderer/src/dispatch/`）**：新增 `NewOrderDialog.tsx`（**复用** M3 的 `TASK_FORM` +
+    `EntityFormDialog` + `buildTaskPayload`，只做三件事：套字段、固定 `submit: true`、把新任务交回调用方
+    —— 不新写第二份任务表单，D-34）· `applyFlow.ts` + `applyFlow.test.ts`（把「apply 结果 + 逐单 start 结果」
+    汇总成一段可展示的结论：`applied` / `started` / `failed[]` / `notStarted` / `headline` / `details` / `tone`）；
+    `DispatchConsole.tsx`：左栏加「新建订单」入口（`task:write`）、应用按钮旁加「派发后立即开跑」复选框
+    （默认值 = 会话是否有 `execution:start`，没有则整块隐藏并说明去哪儿手动开跑）、apply 成功后**顺序**逐单
+    `POST /api/execution/tasks/{id}/start`、右栏加「派发 + 逐单开跑」回执块与「本批次预检」块
+    （用 `filterRiskReport` 过滤出本批任务相关的条目，并链到告警中心看全量）；
+    **精简**：手动指派 / 回收重算 / 调度日志收进默认折叠的 `<details>`（折叠 ≠ 删除，接口与权限判定不变）。
+  - `renderer/src/pages/DispatchPage.tsx`：页头与文案重写（说清 apply 与 start 是两个权限点、开关在哪），
+    路径规划收进折叠区「高级操作：路径规划（试算，不落库）」。
+  - **告警预检复用（`renderer/src/ops/`）**：从 `RiskPanels.tsx` 抽出 `RiskTable.tsx`（两个页面共用同一张表，
+    否则同一批风险会在两个页面上长成两件事）；`ops/model.ts` 加 `filterRiskReport`（**只过滤与重新计数，
+    不复制判定**）。`RiskPanels.tsx` 对外行为不变。
+  - **车辆中心（新增 `renderer/src/fleet/` + `pages/FleetPage.tsx`）**：`model.ts`（分桶恒七桶 / 需关注
+    不含「停用」/ 电量两档阈值复用调度内核常量 / 行组装 / 轨迹投影含 y 轴翻转）· `useFleetList.ts`
+    （`/api/monitor/vehicles` + 事件分层：带坐标的 `vehicle.changed` 只覆盖坐标、其余节流 500 ms 重拉；
+    **不挂轮询兜底**）· `FleetTable` · `VehicleDrawer`（实时位置 / 当前任务 / 轨迹折线 + 采样点表）· style；
+    导航与路由挂到 `monitor` 组（`monitor:read`），「改车」跳基础数据页（D-59）。
+  - **测试**：新增 `dispatch/applyFlow.test.ts`（5）· `dispatch/NewOrderDialog.test.tsx`（3）·
+    `dispatch/DispatchNewOrder.test.tsx`（2）· `dispatch/DispatchAutoStart.test.tsx`（1）·
+    `fleet/model.test.ts`（10）· `pages/FleetPage.test.tsx`（6）；改 `dispatch/DispatchConsole.test.tsx`
+    （+1 折叠区）· `pages/DispatchPage.test.tsx`（改为先展开折叠区）· `ops/model.test.ts`（+3 过滤口径）。
+- **关键设计决策**：新增 **D-58**（「派发后立即开跑」在**渲染层**把 apply 与逐单 start 组合成带开关的流程，
+  服务端契约与 D-11 的权限分离都不动，代价是显式接受「已派发未开跑」的中间态并**把它展示出来**）与
+  **D-59**（车辆中心是**运行态读模型**，不复制车辆 CRUD、不新增权限点，`base:write` 才显示跳转入口）。
+- **验证与测试结果（2026-10-03 实测）**：详见「验证基线（2026-10-03 实测·第五批）」。
+  要点：`typecheck` 三端 exit 0；`build` 三端通过；`db:reset` 幂等；`npm test` 98 套件 / 1072 用例
+  （空载 98 套件 / 1072 用例全绿；同日的两次负载复跑出现过 `ISS-068` 的偶发超时）；
+  Electron 真实 `ipc` 走查按 DoD 四条逐条走通 ——
+  建单 `T20261003-0001` → 候选池 6→7 且自动勾选 → 预览 → 应用（开关默认开）→
+  「已派发 5 单（贪心），5 单已开始执行」→ 地图上 5 台车连续三次采样都在动；关掉开关再派 →
+  「已派发 2 单（贪心），尚未启动执行」；新建「时间窗已过」的订单 → 调度中心与告警中心**同时**列出
+  2 条 `必须处理`（`已超时` + `未派发`，同一次 `scanPlanRisks`）；车辆中心 5 台 / 分桶「空闲 2 · 执行中 3」，
+  `AGV-01` 抽屉读到实时位置、当前任务与 80 个采样点；控制台错误 0 条。
+- **遇到的困难与解决方案**：
+  1. **mock 内存库把同一文件里的用例互相污染**：`apply` 会把候选池搬空，于是同文件后续用例
+     「找不到候选」——失败长得像功能坏了。按既有约定（`TasksPage.test.tsx` / `TasksPage.write.test.tsx`
+     分家）拆成三个文件；这条判据写进了 `docs/module-M4b-order-flow.md` §8.1 的注。
+  2. **`npm test` 的失败数随机器负载剧烈变化**：Electron 正在运行（执行器每秒推遥测）时跑全量，
+     21 条 jsdom 用例超时；杀掉 Electron 后同一份代码只剩 3 条超时，且这 3 条单独复跑全绿。
+     这正是 `ISS-068`（并行负载下偶发超时）的现场证据 —— 本轮把成因进一步指向**负载 / 5 s 超时窗口**
+     （而不是某一条用例），但**未修**：修它要么加大超时窗口、要么降并行度，两者都该单独成批并先测影响。
+  3. **三条走查 / 写用例时当场发现并修掉的问题**（`ISS-090`…`ISS-092`）：抽屉坐标没走 `formatNumber`
+     （`73.59999999999991`）、新建订单后仍挂着上一批的「在地图上查看 N 台车」、`DispatchPage.test.tsx`
+     仍在断言已被信息架构调整移除的徽标。三条都不报错、不影响接口，只在真实渲染或被用例挡住时显形 ——
+     与 `ISS-084`…`ISS-086` 同一族。
+- **遗留问题与下一步**：
+  1. **本批与「术语改名」批都尚未提交**（用户未授权 `git commit`），两批的文档与日志均已同步，
+     **随时可提交**。拟提交信息：`feat(dispatch): 调度中心内建建单与派发即开跑，新增车辆中心`。
+  2. `ISS-088`（D-58 的口径裁决）状态仍为**待评审**：需要使用者确认「渲染层组合 apply 与 start」
+     这一取舍；若要改成服务端原子动作，应连同 D-11 一起评审。
+  3. `ISS-083`（Mock 读接口不校验会话）与 `ISS-087`（时间戳 UTC / 本地两套口径）**未修**，各自单独成批。
+  4. 逐单 `start` 是 N 次串行请求（演示规模可接受）；任务量放大后应先做批量开跑接口并回写 `docs/api.md`。
+  5. 地图仍缺**订单端点图层**（`ISS-011`）；车辆中心的轨迹回放目前是折线 + 采样点表，
+     完整回放（时间轴 + 游标）仍在地图页。
+
+### 2026-10-03 — 待派任务池扩容 + 对比屏新增「差异对照 / 派单差异」：让算法差异第一屏可见（第六批）⏳（未提交）
+
+- **范围与目标**：使用者原话 ——「多创建几个预留的待派任务，并为了更多体现算法之间的差异做出改动」。
+  拆成两项：① 把 seed 的待派演示任务**扩容**，并按「放大哪一种算法差异」来设计每一条；
+  ② 把调度中心的**差异呈现**做厚，让「差多少」不再只靠一句差异文案。
+  仍按项目纪律**先写改动文档再动代码**（新建 `docs/seed-dispatch-diversity.md`，先于实现成文）。
+- **为什么只动数据与展示层**：算法契约（贪心「重排序 + 逐个挑最小代价 + 允许接力」、匈牙利
+  「整批最小化 + 一车一单」）、成本权重、时间窗容忍、`DISPATCH_MAX_*` 全部不变（D-12）；
+  **不新增接口、不新增领域事件**，因此 `docs/api.md` §3 / §4 无需改动，也没有新的 `D-xx`。
+- **变更清单（新增 / 修改）**：
+  - **文档（第 0 步，先于代码）**：新建 `docs/seed-dispatch-diversity.md`（两项改动的设计意图、
+    每条新任务想放大哪种差异、两条实现约束、文件清单与验收；抬头写「文档边界」）；
+    `README.md` 文档入口加一行；`docs/database.md` §4 的「演示待派发 ×6」改为不固化条数并指向该文档；
+    `docs/issues.md` 新增 **`ISS-093`（待办）**：贪心的拒绝原因取「首个失败车辆」，多车池下会报出
+    与真实原因无关的那一条；本文件的项目快照、验证基线、代码现状地图、工作日志与「困难与问题记录」。
+  - **种子数据**：`shared/src/constants.ts` 的 `SEED_IDS.pendingTasks` 追加 6 个 id；
+    `shared/src/seed-data.ts` 的 `SEED_PENDING` 追加 6 条任务并补「每条放大哪种差异」的注释。
+    新任务一律**追加在尾部**：`code` 由下标派生（`T-DEMO-<index+2>`），既有 `T-DEMO-0002`…`T-DEMO-0007`
+    的编码因此保持不变，引用旧编码的用例与文档不受影响。
+  - **展示层**：`renderer/src/dispatch/model.ts` 新增两个纯函数 ——
+    `metricComparisonOf`（逐指标对照：推荐策略为基准列，其余列给带符号差值与更优 / 更差标记，
+    含「单车平均里程 / 平均耗时」以抵消「派得少就天然省」）与 `assignmentDiffsOf`
+    （同一单派给了不同车，某一方没派即 `null`）；抽 `fleetTextOf` 让两处共用同一种用车文案。
+    `renderer/src/dispatch/DispatchConsole.tsx` 在「策略对比」区块内渲染这两块（原对比表与差异文案不动），
+    `style/dispatch.css` 补少量样式（差值颜色只区分更优 / 更差，不用警示色 —— 「更差」往往只是活干得多）。
+  - **测试**：`dispatch/model.test.ts` 新增 4 条（单策略返回 null、基准列与差值方向、单车平均抵消规模差、
+    派单差异只列不一致行）；`DispatchConsole.test.tsx` 改 1 条（区块内现在有多张表，取第一张）并新增 2 条
+    （差异对照的指标行与差值徽标、派单差异的「未派发」格）；`AlertsRisk.test.tsx` 的待派编码与条数
+    改为**从任务列表接口读**，不再硬编码 6 条。
+- **关键设计决策**：无新增 `D-xx`（本轮是既有 M4 口径下的数据与呈现调整；两条实现约束写在
+  `docs/seed-dispatch-diversity.md` §3 与 `seed-data.ts` 的注释里）。
+- **验证与测试结果**（空载实测，详见「验证基线」第六批）：
+  - `npm test` **98 套件 / 1078 用例全通过**；`npm run typecheck` 三 workspace exit 0；
+    `npm run build` 三端通过；`npm run db:reset` 幂等（`tasks:13` = 1 条演示执行 + 12 条待派）。
+  - 调度对比实测（真实 SQLite + 主进程内核）：贪心 `9/12` vs 匈牙利 `4/12`，差异文案
+    「少跑 1210 m、少行驶 17 分 16 秒、早 2 分 20 秒完成」，派生差异 9 行不一致 ——
+    其中唯一的重货 `T-DEMO-0008` 是「贪心未派发、匈牙利 `CAR-02`」。
+- **遇到的困难与解决方案**：
+  1. **第一版用了「未来时间窗」来做预留任务，被一致性护栏当场拦下**：窗口起点晚于 seed 时刻后，
+     「等待时间」随「数据基准时刻 − 预览时刻」变化，而 Mock 与主进程的这两个时刻必然不同，
+     差异于是**从时间字段泄漏进 `waitTimeS` / 加权综合分**，`mock-parity.test.ts` 的逐字段一致断言变红。
+     解决办法是**放弃时间窗错开**，改用任务端点设计来制造可接力的空档（详见「困难与问题记录」）。
+  2. **短途件踩到有向边与占道规则**：第一版的「短途」选了 `ST04 → ST09`（`N12 → N13`），
+     实测执行段不是 150 m 而是绕行 450 m —— 因为 `campus.obstacles.rou.xml` 把 `E_N12_N13` 封了、
+     反向的 `E_N12_N13_R` 畅通。改选 `ST04 → ST02`（`N12 → N11`）后落入空档，接力成功。
+     这条已写进 `seed-data.ts` 注释，避免后来者重蹈。
+  3. **扩池不是「加几行」而是「让贪心真的能接上」**：最初 6→12 的版本里贪心只派出 6 单（其余因
+     占用区间相交被拒），对比反而更难看。最终按「重货 / 中重件 / 无人机小件 / 短途件」四类逐条设计，
+     贪心升到 9 单，差异才真正拉开。
+- **遗留问题与下一步**：
+  1. **第六批（本批）与第四批（术语改名）、第五批（订单派发主链路 + 车辆中心）都尚未提交**
+     （用户未授权 `git commit`），三批的文档与日志均已同步，**随时可提交**。
+     拟提交信息：`feat(dispatch): 扩容待派任务并在对比屏给出逐指标 / 逐任务的算法差异`。
+  2. 匈牙利在「任务数 ≫ 车辆数」时**必然**拒掉 `n − m` 单（一车一单是它的定义），
+     演示里因此出现「拒 8」；这是口径而不是缺陷，但若要在界面上更公平地呈现，
+     可考虑补充「每单平均」以外的第三个口径（例如「完成这批任务需要几批派发」）—— 未做，留作下一步。
+  3. **`ISS-093`（待办）是本批新登记的**：扩容后拒绝原因表几行都报「AGV-01 不可用」，
+     而真实原因是占用区间冲突 —— 它不影响派发结果，只影响可诊断性；建议单独成批（要先定口径）。
+  4. `ISS-083`（Mock 读接口不校验会话）、`ISS-087`（时间戳 UTC / 本地两套口径）、`ISS-068`
+     （并行负载下偶发超时）仍**未修**，各自单独成批。
+
+### 2026-10-03 — 待派任务再扩容（12→18）+ 加权综合分与拒绝原因口径修正（D-60 / D-61，ISS-093 已解决 / ISS-094 新增）⏳（未提交）
+
+- **范围与目标**：使用者原话 ——「多设计几个预留的待派任务以进行仿真演示，并修复加权综合分的计算」。
+  拆成两项：① 待派演示任务 **12 → 18**，按「放大容量瓶颈与算法差异」补 6 条（3 个只有大车能接的
+  重货 / 中重件 + 2 个远距离无人机小件 + 1 个相邻短途件）；② 修正界面「加权综合分」
+  （`summary.totalCost`）**只累加已派发计划**的口径缺陷 —— 它会让「拒得多」的一方看着更优。
+- **变更清单（新增 / 修改）**：
+  - **数据**：`shared/src/constants.ts` 的 `SEED_IDS.pendingTasks` 追加 `seed-task-p13`…`seed-task-p18`；
+    `shared/src/seed-data.ts` 的 `SEED_PENDING` 追加 6 条，**一律追加在尾部**（`code` 由下标派生，
+    既有 `T-DEMO-0002`…`T-DEMO-0013` 编码不变，引用旧编码的用例与文档不受影响），并补
+    「每条想放大哪种差异」与实测结论注释。
+  - **算法内核（`shared/src/`，纯函数无 IO）**：`dispatch-types.ts` 新增
+    `DISPATCH_UNSERVED_PENALTY_S = 3600`；`dispatch-evaluate.ts` 新增
+    `compositeScoreOf(plans, rejectedCount)`（批次加权综合分的唯一算法）；`dispatch-strategies.ts`
+    新增并导出 `mostInformativeReject` + `REJECT_STEP_ORDER`，贪心改为**收集全部失败后取最优原因**，
+    匈牙利步骤 1 同步（`row.filter(...).map((cell) => cell.reject)`）。
+  - **汇总点接入（共 7 处调用）**：`shared/src/dispatch-strategies.ts`（贪心 / 匈牙利）、
+    `desktop/src/domain/dispatch/dispatch.service.ts`（apply / manual-assign）、
+    `renderer/src/api/mock-dispatch.ts`（3 处）—— 全部改调 `compositeScoreOf`，不各自写 `reduce`。
+  - **展示层**：`renderer/src/dispatch/DispatchConsole.tsx` 在「差异对照」表下新增一行公式说明
+    （`加权综合分 = Σ 已派发计划的加权代价 + 未派发单数 × 3600（未派发惩罚）`，常量从 `shared` 导入，
+    不硬编码数字），读者不必翻文档。
+  - **测试**：`shared/src/dispatch-evaluate.test.ts` +3（`compositeScoreOf` 的算术、惩罚上界、
+    多派一单永远更优）；`shared/src/dispatch-greedy.test.ts` 改 1（`totalCost` 期望含惩罚）+ 新增 2
+    （拒绝原因两个方向的反例）；`desktop/src/domain/dispatch/dispatch.service.test.ts` +1
+    （按**真实 seed** 穷举 `max(plan.cost)` 断言小于惩罚）；`renderer/src/dispatch/DispatchConsole.test.tsx`
+    的「差异对照」用例 +2 条断言（表下公式含「未派发惩罚」与该常量值）。
+  - **文档**：`docs/seed-dispatch-diversity.md` 升 v1.1（新增 §0 三轮索引 · §3.1 第二轮扩容 ·
+    §7 加权综合分修正 · §8 拒绝原因修正）；`docs/module-M4-dispatch.md` §5「拒绝原因怎么挑」·
+    §7.1 c 步 · **新增 §7.4 批次加权综合分**；`docs/api.md` §3.4.2 对比表加「加权综合分」行；
+    `docs/architecture.md` 拒绝顺序段落；`docs/database.md` §4 去数值化；
+    `docs/issues.md`（`ISS-093` → 已解决、新增 `ISS-094`、§0 计数与 §2 已解决表）；本文件。
+- **关键设计决策**：新增 **D-60**（批次加权综合分必须包含未派发惩罚）与 **D-61**
+  （拒绝原因按「离能跑还差多少」排序，不按步骤号取第一条）。
+- **验证与测试结果**（空载实测，详见「验证基线·第七批」）：
+  - `npm test` **98 套件 / 1084 用例全通过**；`npm run typecheck` 三 workspace exit 0；
+    `npm run build` 三端通过；`npx vitest run tests/docs.test.ts` 8 条通过；
+    `npm run db:reset` → `tasks:19`（1 条演示执行 + **18 条待派**）。
+  - **两策略实测**（真实 SQLite + 主进程内核，数字与「验证基线·第七批」同一次复测）：
+    贪心**派 9 / 拒 9**、已派发代价 3146、加权综合分 **35546**、执行里程 3760 m；
+    匈牙利**派 4 / 拒 14**、已派发代价 1256、加权综合分 **51656**。
+    旧口径下匈牙利 1256 < 贪心 3146，会推荐「少干 5 单活」的一方；
+    新口径下贪心少 16110 分，与「多派 5 单」一致。
+  - **拒绝原因**：贪心拒绝的 9 条全部指向真实瓶颈（占用区间冲突），不再出现
+    「十几行都是 AGV-01 不可用」的形态。
+- **遇到的困难与解决方案**：
+  1. **等待派上限是分页契约给的，不是算法给的**：扩到 19 条待派时 `api.task.test.ts` 与
+     `TasksPage*.test.tsx` 变红 —— 任务列表默认一页 20 条，1 条演示执行 + 19 条待派 = 20，
+     再多一条就把演示执行任务挤到第 2 页，而用例断言它首屏可见。最终把待派上限锁在 **18**，
+     并把成因登记为 `ISS-094`（Mock 新建记录的时间戳与演示数据同基准，刚建的任务排列表末尾）。
+  2. **未派发惩罚取值要大于「任何单条计划代价」**：第一版取 2700 加权秒，按本路网
+     「空驶 + 执行」上限 1673 s 叠加晚点 / 续航最坏项后约 2773 s，仍可能被单条贵计划反超，
+     于是取 3600（约 1.3–1.4 倍余量），并加一条按真实 seed 穷举 `max(plan.cost)` 的断言。
+  3. **拒绝原因的排序方向两个方向都有反例**：第一版按六步**步骤号**排序，恰好把
+     `VEHICLE_NOT_AVAILABLE` 排在 `LOAD_EXCEEDED` 之前，把要修的反例原样复现；反向反例是
+     「唯一大车被预留时，优先报 `LOAD_EXCEEDED` 会说成『没有车装得下 900 kg』」。
+     判据改为「离能跑还差多少」，两个方向各写一条用例（见「困难与问题记录」）。
+- **遗留问题与下一步**：
+  1. **第四批（术语改名）、第五批（订单派发主链路 + 车辆中心）、第六批（差异对照 / 派单差异）、
+     第七批（本批）都尚未提交**（用户未授权 `git commit`），四批的文档与日志均已同步，
+     **随时可提交**。拟提交信息：
+     `feat(dispatch): 扩容待派任务并修正加权综合分与拒绝原因口径`。
+  2. **`ISS-094`（待办）**：Mock 的新建记录时间戳与演示数据同基准，刚建的任务排列表末尾；
+     它锁死了「待派 ≤ 18」这个演示上限，要放开得先修适配层的记录时间戳口径。
+  3. 匈牙利「任务数 ≫ 车辆数必然拒 `n − m` 单」是口径而非缺陷（一车一单是它的定义）；
+     若要更公平地呈现，可考虑补第三个口径（如「完成这批任务需要几批派发」）—— 未做。
+  4. `ISS-083`（Mock 读接口不校验会话）、`ISS-087`（时间戳 UTC / 本地两套口径）、
+     `ISS-068`（并行负载下偶发超时）仍**未修**，各自单独成批。
+  5. 本轮**未**重跑 `dev:electron` 真实 Electron 走查（改动集中在内核与种子数据，界面只多了一句
+     公式说明）；下次提交前建议补一次目视核对。
+
+### 2026-10-03 — 真实 Electron 走查：确认加权综合分口径修复，并修掉「拒绝原因只有一种说法」（ISS-095）⏳（未提交）
+
+- **范围与目标**：补做第七批欠下的**真实 Electron 目视核对**（该批改动集中在内核与种子数据，
+  界面上只多了一句公式说明，故当时未跑）。目标有三：① 确认第七批的加权综合分 / 差异对照 /
+  公式行在真实 `ipc` + SQLite 形态下与实测数值一致；② 顺手核对「拒绝原因」表；
+  ③ 按项目纪律把走查当次发现的问题**先记录后修**。
+- **走查方法（可复现）**：`npm run db:reset`（干净库：1 条演示执行 + 18 条待派）→
+  `npm run dev:electron` → `admin/admin123` 登录 → 调度中心 → 全选 18 条 → 「全部（对比）」→ 预览派发。
+- **变更清单（新增 / 修改）**：
+  - **`shared/src/dispatch-evaluate.ts`**：两处时间窗拒绝的 `detail` 各加 `kind`（`'late'` / `'occupied'`）；
+    新增并导出 `isLateWindowConflict(detail)` —— 两种情形的**唯一判据**（含 `kind` 之前的旧快照回退：
+    没有 `kind` 时仍按「有没有 `lateS`」判）。
+  - **`desktop/src/domain/dispatch/explain.ts`** 与 **`renderer/src/dispatch/model.ts`**：
+    `TIMEWINDOW_CONFLICT` 分支改为调 `isLateWindowConflict`，不再各自用 `lateS` 反推。
+  - **测试**：`renderer/src/dispatch/model.test.ts` +1（晚点 / 被占用两种情形 + 旧快照回退，
+    并断言「被占用」那句里**不出现「晚点」**）；`shared/src/dispatch-evaluate.test.ts` 两条拒绝用例
+    各加一条 `kind` 断言。
+  - **文档**：`docs/module-M4-dispatch.md` §5（步骤 5 表格补 `detail.kind`、排序段后补两种情形的分口径说明）；
+    `docs/issues.md`（新增 **`ISS-095`** 已解决 + §0 计数 94→95 / P3 36→37 / 已解决 72→73 + §2 追加一行）；
+    本文件（快照 ⑨ 段、第八批验证基线、困难与问题记录一条、本条日志）。
+- **关键设计决策**：无新 `D-xx`。修法遵循既有的 **D-34 / D-55 原则（判据只能有一个作者）**：
+  不再给渲染层补一个 `if`（那会留下两份判据），而是让**产出方**把「哪一种时间窗冲突」写进 `detail.kind`。
+- **验证与测试结果**：
+  - `npm test` **98 套件 / 1085 用例全通过**；`npm run typecheck` 三 workspace exit 0；
+    `npm run build` 三端通过；`npx vitest run tests/docs.test.ts` 8 条通过。
+  - **真实 Electron 读数**（与第七批逐项一致）：推荐语「推荐『贪心』：指派 9/18，加权综合分 35546.0，
+    比『匈牙利』多派 5 单」；贪心 `9/18 · 拒 9 · 3760 m · 52 分 26 秒 · 35546.0`、
+    匈牙利 `4/18 · 拒 14 · 1950 m · 20 分 56 秒 · 51656.0`；差异对照「加权综合分 +16110.0」；
+    公式行「= Σ 已派发计划的加权代价 + 未派发单数 × 3600（未派发惩罚）」。
+  - **修复前后对比（同一次走查的两次预览）**：修复前 9 行「具体情况」全是
+    「预计晚点 0s，超出容忍 0s」；修复后 9 行各不相同 ——
+    `T-DEMO-0005 AGV-02 在 04:41:22 ~ 04:46:22 已被占用`、`T-DEMO-0008 CAR-02 在 04:39:02 ~ 04:42:22 已被占用`、
+    `T-DEMO-0010 CAR-01 在 04:39:02 ~ 04:42:22 已被占用`、`T-DEMO-0014 CAR-02 在 04:37:22 ~ 04:41:26 已被占用` 等。
+- **遇到的困难与解决方案**：
+  1. **这条缺陷单测与文档都看不见，只有人读那 9 行才会发现**：`TIMEWINDOW_CONFLICT` 的两种情形
+     在类型上就是同一个 `reason`，两条路径各自的断言都通过（主进程那条还写对了）。
+     它属于 `ISS-084`…`ISS-086`、`ISS-090`…`ISS-092` 那一族：**不报错、不影响接口，只在真实渲染时显形**。
+  2. **走查期间把用户的 dev 会话弄断过一次**：`concurrently -k` 在 Electron 进程被单独 kill 后
+     连坐关掉了 Vite，于是界面停在旧库快照上（已 `db:reset`，但运行中的进程仍握旧文件句柄）。
+     教训：**改完库或改完主进程代码，要整套重启 `npm run dev:electron`，而不是只重启 Electron**；
+     判断「界面读的是不是新库」看窗口里的待派条数（应为 18）比看日志更快。
+- **遗留问题与下一步**：
+  1. **第四批（术语改名）、第五批、第六批、第七批、第八批（本批）均未提交**（用户未授权 `git commit`），
+     各批文档与日志已同步，**随时可提交**。拟提交信息：
+     `feat(dispatch): 扩容待派任务、修正加权综合分口径并改进拒绝原因展示`。
+  2. **`ISS-094`（待办）仍是唯一的演示规模约束**：Mock 的新建记录时间戳与演示数据同基准，
+     它锁死了「待派 ≤ 18」，要放开得先修适配层的记录时间戳口径。
+  3. 走查只覆盖了调度中心；`ISS-083`（Mock 读接口不校验会话）、`ISS-087`（时间戳 UTC / 本地两套口径）、
+     `ISS-068`（并行负载下偶发超时）仍**未修**，各自单独成批。
+  4. 告警中心的「任务冲突 / 超时预检」本批**未**目视核对（第七批的预检结论仍以那一节的日期为准）。
+
+### 2026-10-03 — 风险预检按「是否依赖已生效派发」分两节呈现（第九批，ISS-096）⏳（未提交）
+
+- **范围与目标**：用户提问「为什么我在任务中心派发任务之前，告警中心就给出冲突处理了」。
+  解释清根因后，用户给出处置口径：**「保留，但分节」** —— 不删、不去重，改为按风险是否依赖
+  「已生效的派发」分成两节，让「没派发也会出现的缺口」与「派发才可能造成的冲突」在视觉上分开。
+- **根因（为什么没派发也报冲突）**：`GET /api/alerts/risks` 的七类风险里只有五类由已生效派发算出
+  （同车抢占 / 车辆不可用 / 电量不够 / 缺路线 / 预计迟到）；`WINDOW_EXPIRED`（时间窗已过）与
+  `UNASSIGNED_TASK`（还没排上车）**与有没有派发无关**，且对同一条 `pending` 任务可同时成立 ——
+  旧版把它们平铺在一张表、共用标题「任务冲突与超时预检」，于是「共 12 条」里只有 9 条不同任务。
+- **变更清单（新增 / 修改）**：
+  - **`shared/src/plan-risk.ts`**（分类判据的唯一作者）：抽 `riskCountsOf(items)`；
+    新增 `PLAN_RISK_SECTIONS` / `PlanRiskSection` / `PLAN_RISK_SECTION_OF`（五类→`dispatch`、
+    两类→`backlog`）/ `PLAN_RISK_SECTION_TEXT`（节标题 + 一句话 hint）/ `PlanRiskSectionView` /
+    `planRiskSectionsOf(items)` —— **空节不返回、组内保持扫描顺序、不重排**。
+  - **`renderer/src/ops/RiskPanels.tsx`**：区块标题 `任务冲突与超时预检` → **`任务风险预检`**
+    （`aria-label` 与 `<h3>` 同步）；导语改为解释两节；按 `planRiskSectionsOf` 分组渲染
+    （节标题 + `riskSummaryOf(view.counts)` + hint + `RiskTable`）；结尾行「还有 N 条待派任务没有安排车辆」
+    移入 backlog 节内，文案改「其中 N 条完全没有安排车辆」。
+  - **`renderer/src/ops/style/ops.css`**：新增 `.udm-risk__section` / `__section-head` / `__section-title`
+    / `__section-count` / `__section-hint`（左侧竖线建立层次）。
+  - **测试**：`shared/src/plan-risk.test.ts` +5；`renderer/src/pages/AlertsRisk.test.tsx` +1（`ISS-096` 回归）
+    并改 2 处 `aria-label`、1 处「还有 N 条」→「其中 N 条」；`RiskTable.tsx` / `OpsPages.test.tsx` 注释里的旧区块名同步。
+  - **文档**：`docs/api.md` §3.8.3（排序段前插入「分两节呈现」表与「为什么必须分 / 为什么不去重 / 空节不显示」）；
+    `docs/issues.md`（新增 **`ISS-096`** 已解决 + 索引行 + §2 一行；§0 计数 95→96 / P3 37→38 / 已解决 73→74，
+    口径 `5+53+38 = 96 = 74+11+6+0+3+2`）；本文件（快照 ⑩ 段、第九批验证基线、困难与问题记录一条、本条日志）。
+- **关键设计决策**：无新 `D-xx`（属既有 **D-34**「每个事实只有一个作者」的又一次应用）：
+  「哪一节」必须由产出方定，**不能画在渲染层** —— 在组件里写 `if (kind === …)` 就等于把分类判据的
+  第二个作者放进 UI，日后内核加一类风险，界面会静默漏掉它。
+- **验证与测试结果**：
+  - `npm test` **98 套件 / 1091 用例全通过**；`npm run typecheck` 三 workspace exit 0；
+    `npm run build` 三端通过（renderer JS 722.21 kB / gzip 224.43 kB、CSS 79.56 kB / gzip 12.94 kB）；
+    `npx vitest run tests/docs.test.ts` 8 条通过。
+  - **真实 Electron 走查**：登录 → 调度中心 → 全选 9 条 → 全部（对比）→ 预览（贪心 6/9 · 12866.0 · 3080 m；
+    匈牙利 4/9 · 19136.0 · 2100 m；差异 +6270.0；3 行拒绝原因各说各的）→ 点「应用这 6 条派发」→
+    确认框 → 确认 → 「已派发 6 单（贪心），6 单已开始执行」→ 告警中心。
+  - **分节读数**：告警中心「任务风险预检」显示「共 3 条 · 需留意 3」，**只渲染节 2「待派与超时缺口」**
+    （3 行全为「未派发」）；**节 1「派发冲突与执行风险」按设计不渲染**（该批计划无冲突，
+    同屏「本批次预检」也写「没有发现冲突或超时」）—— 正好实测了「空节不显示」。
+- **遇到的困难与解决方案**：见「困难与问题记录」本批一行（核心：**这是单测与文档都看不见的问题，
+  只有人读那 12 行才会发现**；因此分类判据必须单点，且要有一条「只待派时不得出现派发节」的回归断言）。
+- **遗留问题与下一步**：
+  1. **第四 ~ 第九批（本批）均未提交**（用户未授权 `git commit`），文档与日志已同步，**随时可提交**。
+     拟提交信息：`feat(alerts): 风险预检按是否依赖派发分两节呈现`。
+  2. 节 1 在真实库里**尚未出现过非空形态**（演示数据是「先派发、无冲突」的干净计划）：
+     想在界面上也看一眼，需要构造一次真实的双派 / 迟到计划（例如手动指派制造同车区间重叠）。
+  3. `ISS-094`（待派 ≤ 18 的时间戳口径）、`ISS-083`、`ISS-087`、`ISS-068` 仍未修，各自单独成批。

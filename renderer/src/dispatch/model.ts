@@ -5,7 +5,7 @@
  *
  * 这一页要回答的问题不是「按钮点了有没有反应」，而是三个需要**算**的判断：
  *
- *   1. 两个策略跑完，**哪个更值得用**（指派更多？总代价更低？）；
+ *   1. 两个策略跑完，**哪个更值得用**（指派更多？加权综合分更低？）；
  *   2. 一次派发**具体派了谁**（界面上的表格、二次确认里的清单、日志里的小结，
  *      必须是同一份数据算出来的三处展示）；
  *   3. 拒绝**为什么拒**（内核给的是枚举 + 结构化 detail，人读的说法要在这里拼）。
@@ -21,6 +21,7 @@
 import {
   DISPATCH_LOG_ACTION_LABELS,
   DISPATCH_STRATEGY_LABELS,
+  isLateWindowConflict,
   PRIORITY_WEIGHT,
   REJECT_REASON_LABELS
 } from '@udm/shared';
@@ -35,7 +36,7 @@ import type {
   TaskListItem
 } from '@udm/shared';
 import { formatDateTime } from '../domain/format';
-import { TASK_PRIORITY_LABEL } from '../domain/labels';
+import { COST_METRIC_LABEL, TASK_PRIORITY_LABEL } from '../domain/labels';
 
 /**
  * 预览里的策略选择：已实现的两个 + `all`（一次跑全部，用于对比）。
@@ -239,7 +240,12 @@ export function rejectDetailOf(item: RejectItem): string {
     case 'VEHICLE_NOT_AVAILABLE':
       return `${detail['vehicleCode'] ?? ''} 当前状态 ${detail['status'] ?? ''}`;
     case 'TIMEWINDOW_CONFLICT':
-      return `预计晚点 ${seconds(Number(detail['lateS'] ?? 0))}，超出容忍 ${seconds(Number(detail['toleranceS'] ?? 0))}`;
+      // 同一个 code 覆盖「晚点」与「被占用」两种情形，判据是产出方给的 `kind`。
+      // 别再在这里用「有没有 lateS」反推：这个函数与主进程 `explain.ts` 是同口径的两份实现，
+      // 反推规则只改一边就会漂移 —— 走查里「被占用」曾被印成「晚点 0s，超出容忍 0s」。
+      return isLateWindowConflict(detail)
+        ? `预计晚点 ${seconds(Number(detail['lateS'] ?? 0))}，超出容忍 ${seconds(Number(detail['toleranceS'] ?? 0))}`
+        : `${detail['vehicleCode'] ?? ''} 在 ${clockOf(String(detail['from'] ?? ''))} ~ ${clockOf(String(detail['to'] ?? ''))} 已被占用`;
     case 'BATTERY_INSUFFICIENT':
       return `完成后剩余 ${Number(detail['remainBattery'] ?? 0).toFixed(1)}%（下限 ${detail['minBattery']}%）`;
     case 'RESTRICTION_VIOLATED':
@@ -356,11 +362,15 @@ export function outcomeRowOf(outcome: StrategyResult, recommendedStrategy: strin
     distance: `${Math.round(metrics.distanceM)} m`,
     drive: durationText(metrics.driveS),
     finishAt: metrics.finishAt ? clockOf(metrics.finishAt) : '—',
-    fleet:
-      metrics.relayTasks > 0
-        ? `${metrics.vehicleCount} 台（含接力 ${metrics.relayTasks} 单）`
-        : `${metrics.vehicleCount} 台`
+    fleet: fleetTextOf(metrics)
   };
+}
+
+/** 用车数 + 其中的接力单数（`4 台（含接力 2 单）`）。对比表与差异对照共用同一份拼法。 */
+export function fleetTextOf(metrics: OutcomeMetrics): string {
+  return metrics.relayTasks > 0
+    ? `${metrics.vehicleCount} 台（含接力 ${metrics.relayTasks} 单）`
+    : `${metrics.vehicleCount} 台`;
 }
 
 export interface DifferenceLine {
@@ -421,6 +431,263 @@ export function differenceLinesOf(
             : `「${label}」在指派数、里程、耗时、完成时刻上没有一项优于「${strategyLabel(recommendedStrategy)}」`
       };
     });
+}
+
+/* ==================== 差异对照（两个策略逐指标、逐任务并排） ==================== */
+
+/** 指标方向：`higher` 越大越好；`lower` 越小越好；`none` 只展示、不判优劣。 */
+export type MetricDirection = 'higher' | 'lower' | 'none';
+
+export interface CompareColumn {
+  strategy: string;
+  label: string;
+  /** 是否是基准列（推荐策略）。基准列不显示差值。 */
+  base: boolean;
+}
+
+export interface MetricCompareRow {
+  key: string;
+  label: string;
+  direction: MetricDirection;
+  /** 与 `columns` 同序的展示值。 */
+  texts: string[];
+  /** 与 `columns` 同序的差值文案；基准列是空串。 */
+  deltas: string[];
+  /** 与 `columns` 同序的优劣标记；基准列是 `base`。 */
+  verdicts: Array<'base' | 'better' | 'worse' | 'same'>;
+}
+
+export interface MetricComparison {
+  columns: CompareColumn[];
+  rows: MetricCompareRow[];
+}
+
+/**
+ * 把推荐策略排到第一列（作为基准），其余按原顺序跟在后面。
+ *
+ * 这样「差值」永远读作「相对推荐策略差多少」，与 `differenceLinesOf` 的口径一致；
+ * 推荐策略为空时退回原顺序，不抛错（预览失败 / 只有一个策略时界面不该崩）。
+ */
+function orderedOutcomes(
+  outcomes: readonly StrategyResult[],
+  recommendedStrategy: string | null
+): StrategyResult[] {
+  const index = outcomes.findIndex((item) => item.strategy === recommendedStrategy);
+  if (index <= 0) {
+    return [...outcomes];
+  }
+  const base = outcomes[index]!;
+  return [base, ...outcomes.filter((_, position) => position !== index)];
+}
+
+function compareColumnsOf(ordered: readonly StrategyResult[]): CompareColumn[] {
+  return ordered.map((outcome, index) => ({
+    strategy: outcome.strategy,
+    label: strategyLabel(outcome.strategy),
+    base: index === 0
+  }));
+}
+
+/**
+ * 逐指标对照：同一指标一行，推荐策略在前，其它策略给出**带符号的差值**与优劣标记。
+ *
+ * 为什么要有这一屏：`differenceLinesOf` 只回答「另一个策略在哪些项上更好」，
+ * 读不到「每个指标到底差多少」，也读不到推荐策略更差的那几项。
+ *
+ * ## 单车平均是两个抵消「派得多就天然吃亏」的口径
+ *
+ * 两个策略派单数不同时，里程 / 耗时 / 加权综合分的**合计**必然偏向派得少的一方 ——
+ * 那不是算法差，只是活少。因此除合计外再加「单车平均里程 / 平均耗时」，
+ * 让「每完成一单要跑多少」也能直接读。
+ */
+export function metricComparisonOf(
+  outcomes: readonly StrategyResult[],
+  recommendedStrategy: string | null
+): MetricComparison | null {
+  if (outcomes.length < 2) {
+    return null;
+  }
+  const ordered = orderedOutcomes(outcomes, recommendedStrategy);
+  const columns = compareColumnsOf(ordered);
+  const metrics = ordered.map((outcome) => outcomeMetricsOf(outcome));
+  const signed = (value: number, text: string) => `${value > 0 ? '+' : '-'}${text}`;
+
+  interface Spec {
+    key: string;
+    label: string;
+    direction: MetricDirection;
+    value: (outcome: StrategyResult, metric: OutcomeMetrics, index: number) => number | null;
+    text: (outcome: StrategyResult, metric: OutcomeMetrics, index: number) => string;
+    delta: (diff: number) => string;
+  }
+
+  const specs: Spec[] = [
+    {
+      key: 'assigned',
+      label: '指派任务',
+      direction: 'higher',
+      value: (outcome) => outcome.summary.assigned,
+      text: (outcome) => `${outcome.summary.assigned} / ${outcome.summary.totalTasks}`,
+      delta: (diff) => signed(diff, `${Math.abs(diff)} 单`)
+    },
+    {
+      key: 'rejected',
+      label: '拒绝',
+      direction: 'lower',
+      value: (outcome) => outcome.summary.rejectedCount,
+      text: (outcome) => `${outcome.summary.rejectedCount}`,
+      delta: (diff) => signed(diff, `${Math.abs(diff)} 单`)
+    },
+    {
+      key: 'distance',
+      label: '执行里程',
+      direction: 'lower',
+      value: (_outcome, metric) => metric.distanceM,
+      text: (_outcome, metric) => `${Math.round(metric.distanceM)} m`,
+      delta: (diff) => signed(diff, `${Math.abs(Math.round(diff))} m`)
+    },
+    {
+      key: 'drive',
+      label: '行驶耗时',
+      direction: 'lower',
+      value: (_outcome, metric) => metric.driveS,
+      text: (_outcome, metric) => durationText(metric.driveS),
+      delta: (diff) => signed(diff, durationText(Math.abs(diff)))
+    },
+    {
+      key: 'avgDistance',
+      label: '单车平均里程',
+      direction: 'lower',
+      value: (outcome, metric) => (outcome.summary.assigned > 0 ? metric.distanceM / outcome.summary.assigned : null),
+      text: (outcome, metric) =>
+        outcome.summary.assigned > 0 ? `${Math.round(metric.distanceM / outcome.summary.assigned)} m` : '—',
+      delta: (diff) => signed(diff, `${Math.abs(Math.round(diff))} m`)
+    },
+    {
+      key: 'avgDrive',
+      label: '单车平均耗时',
+      direction: 'lower',
+      value: (outcome, metric) => (outcome.summary.assigned > 0 ? metric.driveS / outcome.summary.assigned : null),
+      text: (outcome, metric) =>
+        outcome.summary.assigned > 0 ? durationText(metric.driveS / outcome.summary.assigned) : '—',
+      delta: (diff) => signed(diff, durationText(Math.abs(diff)))
+    },
+    {
+      key: 'finishAt',
+      label: '全部完成',
+      direction: 'lower',
+      value: (_outcome, metric) => (metric.finishAt ? Date.parse(metric.finishAt) : null),
+      text: (_outcome, metric) => (metric.finishAt ? clockOf(metric.finishAt) : '—'),
+      delta: (diff) => signed(diff, durationText(Math.abs(diff) / 1000))
+    },
+    {
+      key: 'cost',
+      label: COST_METRIC_LABEL,
+      direction: 'lower',
+      value: (outcome) => outcome.summary.totalCost,
+      text: (outcome) => outcome.summary.totalCost.toFixed(1),
+      delta: (diff) => signed(diff, Math.abs(diff).toFixed(1))
+    },
+    {
+      key: 'fleet',
+      label: '用车',
+      direction: 'none',
+      value: () => null,
+      text: (_outcome, metric) => fleetTextOf(metric),
+      delta: () => ''
+    }
+  ];
+
+  const baseValueOf = (spec: Spec) => spec.value(ordered[0]!, metrics[0]!, 0);
+
+  const rows = specs.map((spec) => {
+    const base = baseValueOf(spec);
+    return {
+      key: spec.key,
+      label: spec.label,
+      direction: spec.direction,
+      texts: ordered.map((outcome, index) => spec.text(outcome, metrics[index]!, index)),
+      deltas: ordered.map((_outcome, index) => {
+        if (index === 0 || spec.direction === 'none') return '';
+        const value = spec.value(ordered[index]!, metrics[index]!, index);
+        if (base === null || value === null) return '';
+        return spec.delta(value - base);
+      }),
+      verdicts: ordered.map((_outcome, index): 'base' | 'better' | 'worse' | 'same' => {
+        if (index === 0) return 'base';
+        const value = spec.value(ordered[index]!, metrics[index]!, index);
+        if (spec.direction === 'none' || base === null || value === null || value === base) return 'same';
+        const better = spec.direction === 'higher' ? value > base : value < base;
+        return better ? 'better' : 'worse';
+      })
+    };
+  });
+
+  return { columns, rows };
+}
+
+export interface AssignmentDiffRow {
+  taskId: string;
+  taskCode: string;
+  /** 与 `columns` 同序；该策略没有派这一单时为 `null`（= 没派）。 */
+  vehicles: Array<{ strategy: string; label: string; vehicleCode: string | null }>;
+}
+
+export interface AssignmentDiff {
+  columns: CompareColumn[];
+  rows: AssignmentDiffRow[];
+}
+
+/**
+ * 「同一单派给了不同车」的逐任务差异 —— 两个策略的差别最终要落到具体任务上才可核对。
+ *
+ * 只列**不一致**的行：两边派给同一台车的任务不是差异，列出来只会把真正的分歧淹掉。
+ * 某策略没派这一单时，那一格是 `null`（界面显示「未派发」）——
+ * 它正是「匈牙利为整体最优放弃的那几单」的可读形态。
+ */
+export function assignmentDiffsOf(
+  outcomes: readonly StrategyResult[],
+  taskCodes: Map<string, string>,
+  recommendedStrategy: string | null
+): AssignmentDiff | null {
+  if (outcomes.length < 2) {
+    return null;
+  }
+  const ordered = orderedOutcomes(outcomes, recommendedStrategy);
+  const columns = compareColumnsOf(ordered);
+
+  const order: string[] = [];
+  const assignment = new Map<string, Map<string, string>>();
+  for (const outcome of ordered) {
+    for (const plan of outcome.plans) {
+      let byStrategy = assignment.get(plan.taskId);
+      if (!byStrategy) {
+        byStrategy = new Map();
+        assignment.set(plan.taskId, byStrategy);
+        order.push(plan.taskId);
+      }
+      byStrategy.set(outcome.strategy, plan.vehicleCode);
+    }
+  }
+
+  const rows: AssignmentDiffRow[] = [];
+  for (const taskId of order) {
+    const byStrategy = assignment.get(taskId)!;
+    const codes = ordered.map((outcome) => byStrategy.get(outcome.strategy) ?? null);
+    if (new Set(codes.map((code) => code ?? '__unassigned__')).size < 2) {
+      continue;
+    }
+    rows.push({
+      taskId,
+      taskCode: codeOf(taskCodes, taskId),
+      vehicles: ordered.map((outcome, index) => ({
+        strategy: outcome.strategy,
+        label: columns[index]!.label,
+        vehicleCode: codes[index]!
+      }))
+    });
+  }
+  return { columns, rows };
 }
 
 /**
@@ -500,7 +767,7 @@ export interface Recommendation {
  * 推荐哪个策略。
  *
  * 判据只有两条，且**顺序不能反**：先比「指派了几个」（派不出去再便宜也没用），
- * 再比「总代价」（都派得出去时选更省的）。同分时保持列表原有顺序 ——
+ * 再比「加权综合分」（都派得出去时选综合分更低的）。同分时保持列表原有顺序 ——
  * 与内核的策略顺序一致（`greedy` 在前），推荐因此不会在两次运行之间跳来跳去。
  *
  * 当两个策略的结论**完全相同**时明说「一致」而不是硬挑一个：那说明这批任务没有
@@ -531,13 +798,13 @@ export function recommendationOf(outcomes: readonly StrategyResult[]): Recommend
   if (best.summary.assigned === second.summary.assigned && best.summary.totalCost === second.summary.totalCost) {
     return {
       strategy: best.strategy,
-      text: `两个策略结论一致（指派 ${best.summary.assigned}/${best.summary.totalTasks}，总代价 ${best.summary.totalCost.toFixed(1)}），选哪个都一样`,
+      text: `两个策略结论一致（指派 ${best.summary.assigned}/${best.summary.totalTasks}，${COST_METRIC_LABEL} ${best.summary.totalCost.toFixed(1)}），选哪个都一样`,
       tone: 'info'
     };
   }
   const saved = second.summary.totalCost - best.summary.totalCost;
   const parts = [
-    `推荐「${strategyLabel(best.strategy)}」：指派 ${best.summary.assigned}/${best.summary.totalTasks}，总代价 ${best.summary.totalCost.toFixed(1)}`
+    `推荐「${strategyLabel(best.strategy)}」：指派 ${best.summary.assigned}/${best.summary.totalTasks}，${COST_METRIC_LABEL} ${best.summary.totalCost.toFixed(1)}`
   ];
   if (best.summary.assigned > second.summary.assigned) {
     parts.push(`比「${strategyLabel(second.strategy)}」多派 ${best.summary.assigned - second.summary.assigned} 单`);
@@ -577,7 +844,7 @@ export interface LogRow {
 /**
  * 日志行。
  *
- * `summary` 拼成「派 2/3 · 拒 1 · 代价 120.4 · 12ms」：四件事都在这行里，
+ * `summary` 拼成「派 2/3 · 拒 1 · 加权综合分 120.4 · 12ms」：四件事都在这行里，
  * 因为「这条日志是成功还是失败、值不值得点开看」靠的正是这四者的组合。
  *
  * ## 为什么「重算」不能套同一个模板（实测踩到）
@@ -599,7 +866,7 @@ export function logRowOf(record: DispatchLogListItem): LogRow {
     summary:
       record.action === 'recompute'
         ? `回收 ${record.taskIds.length} 条计划 · 新建议待确认`
-        : `派 ${record.summary.assigned}/${record.summary.totalTasks} · 拒 ${record.summary.rejectedCount} · 代价 ${record.summary.totalCost.toFixed(1)} · ${Math.round(record.elapsedMs)}ms`,
+        : `派 ${record.summary.assigned}/${record.summary.totalTasks} · 拒 ${record.summary.rejectedCount} · ${COST_METRIC_LABEL} ${record.summary.totalCost.toFixed(1)} · ${Math.round(record.elapsedMs)}ms`,
     reason: record.reason ?? '—',
     operator: record.operatorName ?? '—',
     requestId: record.requestId

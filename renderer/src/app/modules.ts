@@ -22,6 +22,7 @@ import {
   IconSettings,
   IconTasks,
   IconUsers,
+  IconVehicle,
   type IconProps
 } from '../components/icons';
 
@@ -71,6 +72,14 @@ export const NAV_ITEMS: NavItem[] = [
     group: 'monitor',
     permission: 'map:read',
     description: '路网、车辆、路线与告警同图联动'
+  },
+  {
+    route: '/fleet',
+    label: '车辆中心',
+    icon: IconVehicle,
+    group: 'monitor',
+    permission: 'monitor:read',
+    description: '车队运行态、单车位置与轨迹'
   },
   {
     route: '/alerts',

@@ -425,10 +425,7 @@ export function buildPlanRiskReport(
     plans?: readonly PlanRiskPlanInput[];
   } = {}
 ): PlanRiskReport {
-  const counts = { critical: 0, warning: 0, info: 0 };
-  for (const item of items) {
-    counts[item.level] += 1;
-  }
+  const counts = riskCountsOf(items);
 
   const tasks = context.tasks ?? [];
   const plans = context.plans ?? [];
@@ -477,3 +474,81 @@ export const PLAN_RISK_LABELS: Record<PlanRiskKind, string> = {
   WINDOW_EXPIRED: '已超时',
   UNASSIGNED_TASK: '未派发'
 };
+
+/** 按级别计数（`PlanRiskReport.counts` 与分节标题共用同一份算法）。 */
+export function riskCountsOf(items: readonly PlanRiskItem[]): { critical: number; warning: number; info: number } {
+  const counts = { critical: 0, warning: 0, info: 0 };
+  for (const item of items) {
+    counts[item.level] += 1;
+  }
+  return counts;
+}
+
+/**
+ * 风险预检的**两节**（`docs/api.md` §3.8.3）。
+ *
+ * 七类风险按「**判断它需不需要已生效派发**」分成两节：
+ *
+ *   - `dispatch`（派发冲突与执行风险）：遍历 `dispatch_plans.status='applied'` 才能算出 ——
+ *     **没有派发就一条也不会有**；
+ *   - `backlog`（待派与超时缺口）：只看任务本身（状态、时间窗），与有没有排上车无关。
+ *
+ * **为什么要分**：两类混在一张表里、标题又统称「冲突与超时预检」时，会出现一种必然的误读 ——
+ * 「我一条都没派，它凭什么说我有冲突」（`ISS-096`，使用者在真实界面上提出的问题）。
+ * 分节之后，「没派发也会出现的那些」落在第二节，第一节空了就是**真的**没有派发引起的风险。
+ *
+ * **为什么不去重**：同一条 `pending` 任务可能同时命中 `WINDOW_EXPIRED` 与 `UNASSIGNED_TASK`，
+ * 两条说的是不同的事（「本来就没排上车」vs「窗口已经过去了」），合并会丢掉其中一条的信息。
+ * 分节只解决「看起来像两处冲突」，不删信息。
+ *
+ * 分类的**唯一作者在这里**（与 `PLAN_RISK_LABELS` 同处）：放到渲染层就会产生第二个
+ * 「哪一类算冲突」的判据（D-34 / D-61 的同一教训）。
+ */
+export const PLAN_RISK_SECTIONS = ['dispatch', 'backlog'] as const;
+
+export type PlanRiskSection = (typeof PLAN_RISK_SECTIONS)[number];
+
+export const PLAN_RISK_SECTION_OF: Record<PlanRiskKind, PlanRiskSection> = {
+  VEHICLE_OVERLAP: 'dispatch',
+  VEHICLE_UNAVAILABLE: 'dispatch',
+  BATTERY_RISK: 'dispatch',
+  PLAN_WITHOUT_ROUTE: 'dispatch',
+  LATE_FINISH: 'dispatch',
+  WINDOW_EXPIRED: 'backlog',
+  UNASSIGNED_TASK: 'backlog'
+};
+
+/** 分节标题与「这一节在说什么」的一句话（界面直接渲染，不再自己拼）。 */
+export const PLAN_RISK_SECTION_TEXT: Record<PlanRiskSection, { title: string; hint: string }> = {
+  dispatch: {
+    title: '派发冲突与执行风险',
+    hint: '依据已生效派发推算 —— 还没有派发时这一节必然是空的'
+  },
+  backlog: {
+    title: '待派与超时缺口',
+    hint: '与是否已排车无关：同一单可能既在这里（窗口已过），也在下面的「未派发」里'
+  }
+};
+
+/** 一节条目（`records` 保持服务端排序，`counts` 供节标题显示）。 */
+export interface PlanRiskSectionView {
+  section: PlanRiskSection;
+  title: string;
+  hint: string;
+  records: PlanRiskItem[];
+  counts: { critical: number; warning: number; info: number };
+}
+
+/**
+ * 按节分组（**空节不返回**，界面因此不必自己判断「这一节要不要渲染」）。
+ *
+ * 组内保持入参顺序：`scanPlanRisks` 已经按「级别 → 类型 → 任务编码」排过，
+ * 这里再排一次就成了第二个排序作者（两处排序一旦分叉，同一份数据在两个界面上顺序不同）。
+ */
+export function planRiskSectionsOf(items: readonly PlanRiskItem[]): PlanRiskSectionView[] {
+  return PLAN_RISK_SECTIONS.map((section) => {
+    const records = items.filter((item) => PLAN_RISK_SECTION_OF[item.kind] === section);
+    const text = PLAN_RISK_SECTION_TEXT[section];
+    return { section, title: text.title, hint: text.hint, records, counts: riskCountsOf(records) };
+  }).filter((view) => view.records.length > 0);
+}

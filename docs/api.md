@@ -35,7 +35,7 @@
 | 传输层参数校验与分页的归属、以及「非法分页值怎么处理」 | `desktop/src/ipc/paging.ts` · `desktop/src/ipc/validators.ts`（代码即事实，见 D-40） | 引用 D-40；具体容错口径不复述 |
 | 边的**业务编码**命名约定（`E_<小>_<大>` / 反向后缀 `_R`）、以及「`edges.code` 列还没落地时由谁推导」 | `shared/src/edge-code.ts`（代码即事实，见 D-35；条数/取值不复述） | 引用该文件与 D-35 |
 | 枚举值 → 中文展示文案 | `renderer/src/domain/labels.ts` | 引用文案表，不另写一份映射 |
-| 各模块的**模块内实现口径**（文件划分、校验顺序、事务与副作用边界、审计动作命名、测试清单） | `docs/module-M2-base-data.md` · `docs/module-M3-task.md` · `docs/module-M4-dispatch.md` · **`docs/module-M5-route.md`** · `docs/module-M6-map.md` | 引用模块文档的 §号；**不复述**其文件清单与步骤 |
+| 各模块的**模块内实现口径**（文件划分、校验顺序、事务与副作用边界、审计动作命名、测试清单） | `docs/module-M2-base-data.md` · `docs/module-M3-task.md` · `docs/module-M4-dispatch.md` · **`docs/module-M4b-order-flow.md`** · **`docs/module-M5-route.md`** · `docs/module-M6-map.md` | 引用模块文档的 §号；**不复述**其文件清单与步骤 |
 | 路径规划的车种默认速度、通行速度取小规则、绕行阈值与警告产生条件 | `shared/src/route-graph.ts` · `shared/src/route-search.ts`（代码即事实，见 D-49 / D-50） | 引用文件与常量名，**不复述**数值 |
 | 表与列 DDL | `desktop/migrations/*.sql` → `docs/database.md` | 引用表名与列名 |
 
@@ -707,7 +707,7 @@ query：`status`(可逗号多值)/`priority`/`vehicleId`/`from`(timeWindowStart�
 `GET /api/dispatch/strategies` · `dispatch:read`
 
 ```json
-{ "strategies": [ { "key": "greedy", "label": "贪心", "description": "按优先级/时间窗逐个最优分配", "enabled": true }, { "key": "hungarian", "label": "匈牙利", "description": "整体最小代价指派", "enabled": true }, { "key": "genetic", "label": "遗传", "description": "预留，二期", "enabled": false } ] }
+{ "strategies": [ { "key": "greedy", "label": "贪心", "description": "按优先级与时间窗逐个任务挑当前加权综合分最小的车辆", "enabled": true }, { "key": "hungarian", "label": "匈牙利", "description": "在整批任务上求加权综合分总和最小的指派", "enabled": true }, { "key": "genetic", "label": "遗传", "description": "预留，二期", "enabled": false } ] }
 ```
 
 #### 3.4.2 调度预览（可多策略对比）
@@ -747,6 +747,7 @@ query：`status`(可逗号多值)/`priority`/`vehicleId`/`from`(timeWindowStart�
 | 行驶耗时 | `costDetail.deadheadTimeS + executeTimeS` | 空驶 + 执行，即**车真正在动**的时间；不含等待与充电风险项 |
 | 全部完成 | `max(occupiedTo)` | 整批最后一单的结束时刻；只要有一条计划取不到时刻就显示 `—`，不显示一个凭空的早时刻 |
 | 用车 | `Set(vehicleId)` 的大小 | 其中「接力 n 单」= 同一台车在这批里接了第 2 单及以后的次数 |
+| 加权综合分 | `summary.totalCost` | **`Σ(已派发计划的 cost) + 未派发单数 × 未派发惩罚`**，算法唯一作者是 `shared/src/dispatch-evaluate.ts` 的 `compositeScoreOf`（口径见 [`docs/module-M4-dispatch.md`](./module-M4-dispatch.md) §7.4）。**不是**「只加已派发」：只加已派发会让「派得少」的一方分数更低（实测 18 条待派时，匈牙利派 4 单反而比派 9 单的贪心「更省」），跨策略比较必须带上未派发项 |
 
 `weight` 会进入 `route.durationS` 与 `costDetail`（见 §3.2.4），因此改一条边的权重就会改变
 两个策略的相对结论 —— 这正是「让调度更复杂」的入口：长度相同的两条路，哪条更快由 `weight` 决定。
@@ -1057,8 +1058,22 @@ query：`type/level/status/objectType/objectId/from/to/page/pageSize`。记录�
 | | `WINDOW_EXPIRED` | warning / critical | 时间窗已过而任务仍未结束（**含 `pending`**） |
 | | `UNASSIGNED_TASK` | warning / critical | `pending` 任务还没排上车；已过窗口则升为 critical |
 
+**分两节呈现（`ISS-096`，2026-10-03）**：上表七类按「**判断它需不需要已生效派发**」分组 ——
+这一分组是契约的一部分（唯一作者 `shared/src/plan-risk.ts` 的 `PLAN_RISK_SECTION_OF` /
+`planRiskSectionsOf`，界面只按它渲染，不自己判断「哪一类算冲突」）：
+
+| 节 | `kind` | 一句话 |
+| --- | --- | --- |
+| `dispatch` · 派发冲突与执行风险 | `VEHICLE_OVERLAP` · `VEHICLE_UNAVAILABLE` · `BATTERY_RISK` · `PLAN_WITHOUT_ROUTE` · `LATE_FINISH` | 遍历 `dispatch_plans`（`status='applied'`）才能算出 —— **没有派发就一条也不会有** |
+| `backlog` · 待派与超时缺口 | `WINDOW_EXPIRED` · `UNASSIGNED_TASK` | 只看任务本身，与有没有排上车无关；**没派发也会出现** |
+
+**为什么必须分**：两类平铺在一张表里、标题又统称「冲突与超时」时，「我一条都没派，它凭什么说我有冲突」
+是**必然**的误读（`ISS-096`，使用者在真实界面上提出）。**为什么不去重**：同一条 `pending` 任务可能同时命中
+`WINDOW_EXPIRED` 与 `UNASSIGNED_TASK`，两条说的是不同的事（「本来就没排上车」vs「窗口已经过去了」）——
+分节只解决「看起来像两处冲突」，不删信息，因此 `total` 仍可能大于不同任务数。空节不出现在界面上。
+
 排序由服务端定死：先按 `level`（critical → warning → info），再按上表 `kind` 的顺序，
-同类内按任务编码 —— 同一份数据两次扫描必然同序，界面不再排一次。
+同类内按任务编码 —— 同一份数据两次扫描必然同序，界面不再排一次（分节也不重排，只按上式分组）。
 
 响应（`PlanRiskReport`）：
 

@@ -350,6 +350,7 @@ interface DomainError {
 | Req-M2-5 | 任务模板：默认优先级、载重、时间窗、目标类型等默认参数 | 创建任务时可套用 |
 | Req-M2-6 | 主数据变更写审计（before/after） | 审计可查 |
 | Req-M2-7 | 车辆离线/故障/停用不应进入调度候选集 | 由快照筛选保证 |
+| Req-M2-8 | 车辆中心（`/fleet`）：车队运行态单页视图，按状态分桶展示实时位置、电量、当前任务，并可打开单车抽屉做轨迹回放 | 数据与地图同源、同一时刻一致（见 `docs/module-M4b-order-flow.md` §3.2） |
 
 **接口概览**：`/api/sites`、`/api/vehicles`、`/api/nodes`、`/api/edges`、`/api/restrictions`、`/api/task-templates`（均为列表/详情/新增/更新/状态操作）。权限点：`base:write` / `base:read`。
 
@@ -466,6 +467,9 @@ stateDiagram-v2
 | Req-M4-5 | 车辆/任务数据变化后重算（recompute） | 结果与日志成对 |
 | Req-M4-6 | 每次预览/应用/重算写调度日志（含输入快照、结果快照、策略） | 可复核可回放 |
 | Req-M4-7 | 同一车辆不能在同一时间窗被重复指派 | 冲突检测 |
+| Req-M4-8 | 调度中心内建「新建订单」：在同一页创建任务并直接提交为 `pending`，随后进入待派候选池 | 一页完成「建单 → 入池 → 预览」 |
+| Req-M4-9 | 应用派发支持「派发后立即开跑」（默认开启、可关闭）：apply 成功后按 `execution:start` 逐单启动执行 | 车真的动起来；逐单结果可分辨部分失败 |
+| Req-M4-10 | 派发结果同屏给出本次派发的冲突 / 超时预检结论，并提供进入告警中心的入口 | 与告警中心同一份判定（`GET /api/alerts/risks`） |
 
 **接口概览**：`/api/dispatch/strategies`、`/api/dispatch/preview`、`/api/dispatch/apply`、`/api/dispatch/manual-assign`、`/api/dispatch/recompute`、`/api/dispatch/logs`。权限点：`dispatch:read` / `dispatch:preview` / `dispatch:apply`。
 
@@ -542,6 +546,7 @@ stateDiagram-v2
 | Req-M7-3 | 关键状态变化（开始/完成/失败/告警）实时推送并在监控页提示 | 事件驱动 |
 | Req-M7-4 | 异常任务提供「手动接管」：暂停并生成告警 + 给出下一步建议 | 见告警建议 |
 | Req-M7-5 | 接管操作写审计与调度日志 | 留痕 |
+| Req-M7-6 | 车辆中心内单车的实时位置与轨迹回放（读模型） | 与地图事件同源，位置不落后于地图 |
 
 **接口概览**：`/api/monitor/overview`、`/api/monitor/tasks`、`/api/monitor/vehicles`、`/api/execution/tasks/{id}/start`、`/api/execution/tasks/{id}/takeover`、事件订阅。权限点：`monitor:read`、`execution:start`、`execution:takeover`。
 
@@ -787,6 +792,7 @@ erDiagram
 | 登录 | `/login` | 登录 | 匿名 |
 | 监控工作台 | `/` | 概览指标、异常任务、事件流 | 全部 |
 | 地图 | `/map` | 五类图层、联动、轨迹回放 | 全部 |
+| 车辆中心 | `/fleet` | 车队运行态、单车位置与轨迹、跳转基础数据维护 | 全部（写操作按权限） |
 | 任务管理 | `/tasks` | 列表/筛选/导入/操作 | 全部（写操作按权限） |
 | 任务详情 | 任务列表抽屉/路由 `/tasks/:id` | 详情、路线、告警、审计 | 全部 |
 | 调度中心 | `/dispatch` | 预览/策略对比/应用/手动指派/日志 | admin/dispatcher |

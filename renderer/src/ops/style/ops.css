@@ -342,6 +342,50 @@
   max-width: 340px;
 }
 
+/* ---- 风险预检的两节（`ISS-096`） ---- */
+
+/*
+ * 分节之后，节标题必须比表头「重」一点，否则读者会以为下面两张表是并列的两张清单。
+ * 用一条左侧竖线 + 小号标题建立层次（不引大色块：这一页已经有级别徽标的颜色了）。
+ */
+.udm-risk__section {
+  border-left: 2px solid var(--udm-border);
+  padding-left: var(--udm-space-3);
+  margin-top: var(--udm-space-4);
+}
+
+.udm-risk__section:first-of-type {
+  margin-top: 0;
+}
+
+.udm-risk__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--udm-space-3);
+}
+
+.udm-risk__section-title {
+  margin: 0;
+  /* 卡片标题是 sm(12)，节标题取 lg(15) —— 分节后它必须比卡片标题更重，
+   * 否则读者会把两节读成「两张并列的表」（字号档位见 theme.css 的排版刻度） */
+  font-size: var(--udm-font-lg);
+  font-weight: 600;
+}
+
+.udm-risk__section-count {
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+  white-space: nowrap;
+}
+
+.udm-risk__section-hint {
+  margin: 2px 0 var(--udm-space-3);
+  color: var(--udm-text-dim);
+  font-size: var(--udm-font-sm);
+  line-height: 1.6;
+}
+
 .udm-risk__foot {
   display: flex;
   align-items: center;

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { SEED_IDS, type AuditContext, type DomainError } from '@udm/shared';
+import { DISPATCH_UNSERVED_PENALTY_S, SEED_IDS, type AuditContext, type DomainError } from '@udm/shared';
 import { all, get, openDatabase, run, type Db } from '../../db/index.js';
 import { applyMigrations } from '../../db/migrate.js';
 import { seedDatabase } from '../../db/seed.js';
@@ -115,6 +115,17 @@ describe('M4 调度服务 · preview', () => {
     expect(count(db, 'SELECT COUNT(*) AS total FROM routes')).toBe(routesBefore);
     // 只有日志 +1（预览本身要留痕，Req-M4-6）
     expect(count(db, "SELECT COUNT(*) AS total FROM dispatch_logs WHERE action = 'preview'")).toBe(logsBefore + 1);
+  });
+
+  it('未派发惩罚大于本演示数据里任何一条可行计划的代价（「能派就派」的数据护栏）', () => {
+    // 口径护栏：惩罚必须盖过「单条最贵计划」，否则拒绝一单会让总分变低。
+    // 用真实 seed 数据穷举（所有待派任务 × 所有候选车辆），改地图或调小惩罚时先红。
+    const result = preview(ctx, { taskIds: [...SEED_IDS.pendingTasks], strategy: 'all' });
+    const costs = result.strategies.flatMap((outcome) => outcome.plans.map((plan) => plan.cost));
+    expect(costs.length).toBeGreaterThan(0);
+    expect(DISPATCH_UNSERVED_PENALTY_S).toBeGreaterThan(Math.max(...costs));
+    // 反例形态：拒一单的分数增量必须为正（曾出现「拒得多反而分低」）
+    expect(DISPATCH_UNSERVED_PENALTY_S).toBeGreaterThan(0);
   });
 
   it('预览落库的 output_snapshot 就是回执：apply 靠它做到「所见即所得」', () => {

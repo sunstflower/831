@@ -96,12 +96,16 @@ export const SEED_IDS = {
   demoRoute: 'seed-route-demo',
   demoAlert: 'seed-alert-demo',
   /**
-   * 演示**待派发**任务（6 条）：调度中心一打开就有活可干。
+   * 演示**待派发**任务：调度中心一打开就有活可干。
    *
-   * 为什么是 6 条（比 5 台车多）：任务数 ≤ 车辆数时，贪心与匈牙利都是「一车一单」，
+   * 为什么必须多于车辆数：任务数 ≤ 车辆数时，贪心与匈牙利都是「一车一单」，
    * 两种策略会给出**完全一样**的计划 —— 界面上「哪个策略更优」永远是平局。
-   * 多出来的那一单只能靠**接力**（一辆车跑完一单再接下一单）派出，
+   * 多出来的任务只能靠**接力**（一辆车跑完一单再接下一单）派出，
    * 而接力只有贪心会做（匈牙利是整体匹配，一辆车只接一单），对比于是有了真实结论。
+   *
+   * 本轮进一步扩容：任务数已是可用车辆数的数倍，接力成为常态，里程 / 耗时 /
+   * 完成时刻的差值随之放大，匈牙利拒掉的那几单也不再与贪心重合 ——
+   * 「多派 N 单」不再只是 1。**数值与设计意图的唯一作者是 `seed-data.ts`**（D-34）。
    */
   pendingTasks: [
     'seed-task-p01',
@@ -109,7 +113,19 @@ export const SEED_IDS = {
     'seed-task-p03',
     'seed-task-p04',
     'seed-task-p05',
-    'seed-task-p06'
+    'seed-task-p06',
+    'seed-task-p07',
+    'seed-task-p08',
+    'seed-task-p09',
+    'seed-task-p10',
+    'seed-task-p11',
+    'seed-task-p12',
+    'seed-task-p13',
+    'seed-task-p14',
+    'seed-task-p15',
+    'seed-task-p16',
+    'seed-task-p17',
+    'seed-task-p18'
   ]
 } as const;
 

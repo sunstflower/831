@@ -34,6 +34,7 @@ import {
   DomainError,
   SUPPORTED_DISPATCH_STRATEGIES,
   buildRouteGraph,
+  compositeScoreOf,
   createRunContext,
   evaluatePair,
   runDispatch,
@@ -74,8 +75,8 @@ import { SnapshotProblem, buildSnapshot, loadGraphInputs, loadTaskStatuses, snap
 /** 可用策略清单（`GET /api/dispatch/strategies`，§3.4.1）。 */
 export function listStrategies(): DispatchStrategyInfo[] {
   const descriptions: Record<DispatchStrategy, { label: string; description: string }> = {
-    greedy: { label: STRATEGY_LABEL['greedy'] ?? '贪心', description: '按优先级与时间窗逐个任务挑当前代价最小的车辆' },
-    hungarian: { label: STRATEGY_LABEL['hungarian'] ?? '匈牙利', description: '在整批任务上求总代价最小的指派' },
+    greedy: { label: STRATEGY_LABEL['greedy'] ?? '贪心', description: '按优先级与时间窗逐个任务挑当前加权综合分最小的车辆' },
+    hungarian: { label: STRATEGY_LABEL['hungarian'] ?? '匈牙利', description: '在整批任务上求加权综合分总和最小的指派' },
     genetic: { label: STRATEGY_LABEL['genetic'] ?? '遗传', description: '预留，二期实现' }
   };
   return DISPATCH_STRATEGIES.map((key) => ({
@@ -489,7 +490,7 @@ export function apply(ctx: CrudContext, raw: Record<string, unknown>): ApplyResu
       totalTasks: stored.summary.totalTasks,
       assigned: plans.length,
       rejectedCount: stored.summary.rejectedCount,
-      totalCost: plans.reduce((sum, plan) => sum + plan.cost, 0),
+      totalCost: compositeScoreOf(plans, stored.summary.rejectedCount),
       elapsedMs: Date.now() - startedAt
     };
     insertLog(ctx.db, {
@@ -604,7 +605,7 @@ export function manualAssign(ctx: CrudContext, raw: Record<string, unknown>): Ap
       totalTasks: 1,
       assigned: 1,
       rejectedCount: 0,
-      totalCost: outcome.plan.cost,
+      totalCost: compositeScoreOf([outcome.plan], 0),
       elapsedMs: Date.now() - startedAt
     };
     insertLog(ctx.db, {

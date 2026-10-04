@@ -133,6 +133,7 @@ interface StrategyResult {
   strategy: DispatchStrategy;
   plans: PlanPreview[];
   rejected: RejectItem[];
+  // totalCost 见 §7.4：Σ(已派发 cost) + 未派发单数 × 未派发惩罚（不是「只加已派发」）
   summary: { totalTasks: number; assigned: number; rejectedCount: number; totalCost: number; elapsedMs: number };
   explain: string[];
 }
@@ -170,10 +171,34 @@ interface ApplyResult {
 | 2 | `capacityKg - loadKg >= cargoKg` | `LOAD_EXCEEDED` | 任务载重 {cargoKg}kg 超过 {code} 剩余载重 {remain}kg |
 | 3 | 车辆位置可达（构图后起点节点存在出边/连通） | `UNREACHABLE` | {code} 无法到达任务起点（节点不连通） |
 | 4 | 按约束构图求路线（M5）；无解区分原因 | `UNREACHABLE`（不连通/断开）或 `RESTRICTION_VIOLATED`（禁行封闭） | 无可行路径 / 途经禁行区 / 图断开 |
-| 5 | 时间窗：`freeAt + deadheadTimeS` 起，`executeTimeS` 后完成 ≤ `timeWindowEnd + penaltyLateLimit`；与既有 `occupiedSlots` 不相交 | `TIMEWINDOW_CONFLICT` | {code} 在 {区间} 已被占用或无法满足时间窗 |
+| 5 | 时间窗：`freeAt + deadheadTimeS` 起，`executeTimeS` 后完成 ≤ `timeWindowEnd + penaltyLateLimit`；与既有 `occupiedSlots` 不相交 | `TIMEWINDOW_CONFLICT`（`detail.kind` 区分 `late` / `occupied` 两种情形） | {code} 在 {区间} 已被占用或无法满足时间窗 |
 | 6 | 电量：`battery - kmToWh(总里程) ≥ minBattery` | `BATTERY_INSUFFICIENT` | 预计耗电超过剩余电量 |
 
-**短路顺序即优先顺序**：同一任务多个候选都不满足时，取第一个失败原因（按车辆排序稳定）。
+**拒绝原因怎么挑（2026-10-03 修正）**：六步短路决定了**每台车**失败在哪一步，但同一任务往往在
+多台车上失败于不同步骤，报哪一条需要口径 —— 原来的「取第一个失败车辆」在多车池下会报出
+与真实原因无关的那条（`ISS-093`：`AGV-01` 恒 `busy` 且恒在列表首位，于是十几条「占用区间冲突」
+全被写成「AGV-01 不可用」）。
+
+现口径是**按「离能跑还差多少」排序**，取最有信息量的一条（`mostInformativeReject`）：
+
+```
+TIMEWINDOW_CONFLICT > BATTERY_INSUFFICIENT > VEHICLE_NOT_AVAILABLE
+                    > LOAD_EXCEEDED > RESTRICTION_VIOLATED > UNREACHABLE
+```
+
+- 前两类说明「任务本身能做，只是这次排不进去 / 电量不够」——最可操作，优先报；
+- `VEHICLE_NOT_AVAILABLE` 是**临时状态**，要排在 `LOAD_EXCEEDED` 这类**固有**限制之前：
+  900 kg 任务在 `CAR-02` 被预留、其余车装不下时，报「载重超限」等于说「没有车装得下 900 kg」，
+  而事实是有的、只是它现在不可用；
+- 并列时保留先遇到的那条（`snapshot.vehicles` 顺序稳定 → 结果可复核）。
+- 这条排序**不是**六步的步骤号顺序（步骤号顺序会把「车辆不可用」排在最前，正是要修的那个反例）。
+
+> **同一个 `TIMEWINDOW_CONFLICT` 要能被分得开（2026-10-03，`ISS-095`）**：它覆盖两种情形 ——
+> ① 预计完成晚于窗口末端超过容忍（该调窗口）、② 与该车已排班次的占用区间相交（该换车 / 改派）。
+> 判据由**产出方**写在 `detail.kind`（`'late'` / `'occupied'`）里，消费方（主进程 `explain.ts`、
+> 渲染层 `dispatch/model.ts`）统一调 `shared/src/dispatch-evaluate.ts` 的 `isLateWindowConflict`，
+> **不再各自用「有没有 `lateS`」反推** —— 两份副本只改一边就会漂移，走查时渲染层曾把「被占用」
+> 印成「预计晚点 0s，超出容忍 0s」。
 
 `message/detail` 必须带上车辆编码与具体数值，保证「拒绝可解释」（Req-M4-2）。
 
@@ -207,7 +232,7 @@ occupied = [t2, t3]                                   // 与其它任务时间�
 2. 遍历任务：
    a. 遍历候选车辆（状态 idle 集合）；
    b. 对每辆车执行 §5 评估；可行则记录 cost（§7.3）；
-   c. 取 cost 最小车辆，否则记 rejected（取首个失败原因）；
+   c. 取 cost 最小车辆，否则记 rejected（原因取最有信息量的一条，见 §5 末）；
    d. 选中后把 [t2, t3] 加入该车辆内存占用槽，继续下一任务。
 3. 输出 plans / rejected / explain。
 ```
@@ -229,6 +254,11 @@ occupied = [t2, t3]                                   // 与其它任务时间�
 
 ### 7.3 代价函数（evaluate.ts 共用）
 
+> **叫法**：算法与本文档里这个量叫「代价」(`cost`)；**界面上显示为「加权综合分」**
+> （`renderer/src/domain/labels.ts` 的 `COST_METRIC_LABEL`，唯一作者）。
+> 改名是因为「代价」容易让人读成「运费 / 价格」，而它其实是一个**越低越好的加权秒数**。
+> `cost` / `costOf` / `DISPATCH_COST_WEIGHTS` 等代码标识符**不变**。
+
 ```
 cost = w1*deadheadTimeS + w2*executeTimeS + w3*waitTimeS
      + w4*penaltyLateS + w5*chargeRisk
@@ -244,13 +274,33 @@ cost = w1*deadheadTimeS + w2*executeTimeS + w3*waitTimeS
 - `chargeRisk`：`预计完成剩余电量 < chargeMinBattery` 时按缺口比例计风险分，否则 0。
 - 每条 `PlanPreview` 必须携带完整 `costDetail` 供 UI 展开解释。
 
+### 7.4 批次加权综合分（`summary.totalCost`）
+
+界面上的「加权综合分」= `StrategySummary.totalCost`，它的算法是
+**`shared/src/dispatch-evaluate.ts` 的 `compositeScoreOf(plans, rejectedCount)`**（唯一作者）：
+
+```
+totalCost = Σ(已派发计划的 cost) + 未派发单数 × DISPATCH_UNSERVED_PENALTY_S
+```
+
+**为什么要加未派发项**（2026-10-03 修正）：只累加已派发计划时，被拒任务记 0，
+于是「派得越少分数越低」。实测反例（18 条待派）：贪心派 9 单、已派发代价 3146；
+匈牙利派 4 单、已派发代价 1256 —— 旧口径下匈牙利「更省」，而它少干了 5 单活，
+指标与「指派数优先」的推荐口径自相矛盾。
+
+`DISPATCH_UNSERVED_PENALTY_S`（`shared/src/dispatch-types.ts`，当前值见该常量）语义是
+「少派一单的等效加权秒数」，取值必须**大于任何单条计划的代价**，否则会出现
+「故意拒掉贵单反而分更低」的反向激励；两条护栏用例分别盯住这个性质
+（`shared/src/dispatch-evaluate.test.ts` 的常数上界、`desktop/src/domain/dispatch/dispatch.service.test.ts`
+的按真实 seed 数据穷举）。并列或同指派数时该项相消，比较退化成「谁更省」。
+
 ## 8. explain 生成规则（explain.ts）
 
 每条 explain 一句话、可读、可复核：
 
 - 派发：「任务 {code} 派给 {vehicleCode}：空驶 {s}s + 执行 {s}s，预计 {time} 完成」。
 - 拒绝：「任务 {code} 拒绝：{reason 中文}（{detail 摘要}）」。
-- 策略对比：「策略 {strategy} 共指派 {assigned}/{totalTasks}，总代价 {totalCost}」。
+- 策略对比：「策略 {strategy} 共指派 {assigned}/{totalTasks}，加权综合分 {totalCost}」。
 
 中文文案统一放 renderer 侧的文案模块（当前仍内联在 `renderer/src/pages/`；**尚无 `shared/i18n/`**，落地时再建），算法层只产出结构化原因，**文案在表现层/服务层翻译**（算法保持语言无关）。
 
